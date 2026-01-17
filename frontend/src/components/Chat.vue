@@ -285,46 +285,46 @@ const sendMessage = async () => {
 </script>
 
 <style scoped lang="scss">
-.api-key-dialog {
-    :deep(.el-dialog) {
-        background: #1c1c1f;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 16px;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-        padding: 0;
-        overflow: hidden;
-    }
 
-    :deep(.el-dialog__header) {
-        margin: 0;
-        padding: 20px 24px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        
-        .el-dialog__title {
-            color: var(--text-primary);
-            font-size: 16px;
-            font-weight: 600;
-        }
-        
-        .el-dialog__headerbtn .el-dialog__close {
-            color: var(--text-secondary);
-            &:hover {
-                color: var(--text-primary);
-            }
-        }
-    }
+  :deep(.el-dialog) {
+      background: #1c1c1f;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      padding: 0;
+      overflow: hidden;
+  }
 
-    :deep(.el-dialog__body) {
-        padding: 24px;
-        color: var(--text-primary);
-    }
-    
-    :deep(.el-dialog__footer) {
-        padding: 16px 24px;
-        background: rgba(0, 0, 0, 0.2);
-        border-top: 1px solid rgba(255, 255, 255, 0.05);
-    }
-}
+  :deep(.el-dialog__header) {
+      margin: 0;
+      padding: 20px 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      
+      .el-dialog__title {
+          color: var(--text-primary);
+          font-size: 16px;
+          font-weight: 600;
+      }
+      
+      .el-dialog__headerbtn .el-dialog__close {
+          color: var(--text-secondary);
+          &:hover {
+              color: var(--text-primary);
+          }
+      }
+  }
+
+  :deep(.el-dialog__body) {
+      padding: 24px;
+      color: var(--text-primary);
+  }
+  
+  :deep(.el-dialog__footer) {
+      padding: 16px 24px;
+      background: rgba(0, 0, 0, 0.2);
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
 
 .dialog-content {
     display: flex;
