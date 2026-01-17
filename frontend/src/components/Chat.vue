@@ -100,6 +100,7 @@ import { ref, nextTick, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { UserFilled, Promotion, Key, Lock } from '@element-plus/icons-vue'
 import { renderMarkdown } from '../utils/markdown'
+import { getChatHistory, sendStreamChat } from '../api/chat'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -164,14 +165,10 @@ const loadHistory = async (id: number) => {
     loading.value = true
     messages.value = []
     try {
-        const res = await fetch(`/api/chats/${id}`)
-        if (res.ok) {
-            const data = await res.json()
-            messages.value = data.messages || []
-        }
+        const data: any = await getChatHistory(id)
+        messages.value = data.messages || []
     } catch (e) {
         console.error(e)
-        ElMessage.error('Failed to load chat history')
     } finally {
         loading.value = false
         scrollToBottom()
@@ -216,71 +213,31 @@ const sendMessage = async () => {
   
   await scrollToBottom()
 
-  try {
-    const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-    }
-    if (userApiKey.value) {
-        headers['X-Api-Key'] = userApiKey.value
-    }
-
-    const response = await fetch('/api/stream-chat', {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify({ question, chatId: chatId.value }),
-    })
-
-    if (!response.ok) throw new Error('Network response was not ok')
-    if (!response.body) throw new Error('Response body is null')
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-
-    let eventType = 'message'
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      
-      const chunk = decoder.decode(value, { stream: true })
-      const lines = chunk.split('\n')
-      for (const line of lines) {
-        if (line.startsWith('event:')) {
-            eventType = line.slice(6).trim()
-        } else if (line.startsWith('data:')) {
-            const data = line.slice(5).trim()
-            if (data) {
-                if (eventType === 'chatId') {
-                    const newChatId = parseInt(data)
-                    if (!isNaN(newChatId)) {
-                        chatId.value = newChatId
-                        emit('chat-created', newChatId)
-                    }
-                } else {
-                    try {
-                        const token = JSON.parse(data)
-                        messages.value[aiMsgIndex].content += token
-                        await scrollToBottom()
-                    } catch (e) {
-                        console.error('Error parsing SSE data', e)
-                    }
-                }
-            }
-        } else if (line.trim() === '') {
-            eventType = 'message'
+  await sendStreamChat(
+    { question, chatId: chatId.value },
+    {
+      onMessage: (token) => {
+        messages.value[aiMsgIndex].content += token
+        scrollToBottom()
+      },
+      onChatId: (id) => {
+        chatId.value = id
+        emit('chat-created', id)
+      },
+      onError: (err) => {
+        console.error(err)
+        ElMessage.error('Failed to get response')
+        messages.value[aiMsgIndex].content += "\n[Error generating response]"
+      },
+      onFinish: async () => {
+        loading.value = false
+        if (messages.value[aiMsgIndex]) {
+            messages.value[aiMsgIndex].loading = false
         }
+        await scrollToBottom()
       }
     }
-  } catch (error) {
-    ElMessage.error('Failed to get response')
-    messages.value[aiMsgIndex].content += "\n[Error generating response]"
-  } finally {
-    loading.value = false
-    if (messages.value[aiMsgIndex]) {
-        messages.value[aiMsgIndex].loading = false
-    }
-    await scrollToBottom()
-  }
+  )
 }
 </script>
 
