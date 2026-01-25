@@ -1,5 +1,7 @@
 package com.example.rag.service;
 
+import com.example.rag.entity.DocumentFile;
+import com.example.rag.repository.DocumentFileRepository;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.splitter.DocumentSplitters;
@@ -24,9 +26,15 @@ public class DocumentService {
 
     private final EmbeddingModel embeddingModel;
     private final EmbeddingStore<TextSegment> embeddingStore;
+    private final DocumentFileRepository documentFileRepository;
 
     public void ingest(MultipartFile file) throws IOException {
         String content = parseFile(file);
+        
+        // Save raw content for Mind Map generation
+        DocumentFile docFile = new DocumentFile(file.getOriginalFilename(), content);
+        documentFileRepository.save(docFile);
+
         Document document = Document.from(content);
 
         // Split document into segments (e.g., 500 characters with 50 overlap)

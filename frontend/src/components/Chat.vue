@@ -5,8 +5,8 @@
         <div class="logo-container">
           <div class="logo">AI</div>
         </div>
-        <h1>How can I help you today?</h1>
-        <p class="subtitle">Ask anything about your uploaded documents</p>
+        <h1>有什么我可以帮您的吗？</h1>
+        <p class="subtitle">您可以询问关于上传文档的任何问题</p>
       </div>
       
       <div 
@@ -21,7 +21,7 @@
             <el-avatar v-else :size="32" icon="UserFilled" class="user-avatar" />
           </div>
           <div class="message-text">
-            <div class="role-name">{{ msg.role === 'user' ? 'You' : 'AI Assistant' }}</div>
+            <div class="role-name">{{ msg.role === 'user' ? '您' : 'AI 助手' }}</div>
             <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)" class="markdown-body"></div>
             <div v-else class="user-content">{{ msg.content }}</div>
             <span v-if="msg.role === 'assistant' && msg.loading" class="cursor"></span>
@@ -35,7 +35,7 @@
         <div class="input-box">
           <textarea 
             v-model="input" 
-            placeholder="Send a message..." 
+            placeholder="发送消息..." 
             @keydown.enter.prevent="handleEnter"
             :disabled="loading"
             rows="1"
@@ -46,14 +46,14 @@
           </button>
         </div>
         <div class="disclaimer">
-          AI can make mistakes. Consider checking important information.
+          AI 可能会犯错。请核对重要信息。
         </div>
       </div>
     </div>
 
     <el-dialog
       v-model="apiKeyDialogVisible"
-      title="API Key Configuration"
+      title="API Key 配置"
       width="440px"
       :close-on-click-modal="false"
       class="api-key-dialog"
@@ -65,11 +65,11 @@
                  <el-icon><Key /></el-icon>
              </div>
          </div>
-         <h3>Set Your API Key</h3>
-         <p class="dialog-desc">Your API key is stored locally in your browser and never sent to our servers except to authenticate with the LLM provider.</p>
+         <h3>设置您的 API Key</h3>
+         <p class="dialog-desc">您的 API Key 仅存储在本地浏览器中，除了用于 LLM 认证外不会发送到我们的服务器。</p>
          
          <div class="input-group">
-            <label>OpenAI / Compatible Key</label>
+            <label>OpenAI / 兼容 Key</label>
             <el-input
               v-model="apiKeyInput"
               placeholder="sk-..."
@@ -85,9 +85,9 @@
       </div>
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="apiKeyDialogVisible = false" class="cancel-btn">Cancel</el-button>
+          <el-button @click="apiKeyDialogVisible = false" class="cancel-btn">取消</el-button>
           <el-button type="primary" @click="saveApiKey" class="save-btn">
-            Save Configuration
+            保存配置
           </el-button>
         </div>
       </template>
@@ -137,13 +137,13 @@ const openApiKeyDialog = () => {
 
 const saveApiKey = () => {
     if (!apiKeyInput.value.trim()) {
-        ElMessage.warning('Please enter a valid API Key')
+        ElMessage.warning('请输入有效的 API Key')
         return
     }
     userApiKey.value = apiKeyInput.value.trim()
     localStorage.setItem('user_api_key', userApiKey.value)
     apiKeyDialogVisible.value = false
-    ElMessage.success('API Key saved')
+    ElMessage.success('API Key 已保存')
 }
 
 const scrollToBottom = async () => {
@@ -169,6 +169,7 @@ const loadHistory = async (id: number) => {
         messages.value = data.messages || []
     } catch (e) {
         console.error(e)
+        ElMessage.error('加载聊天记录失败')
     } finally {
         loading.value = false
         scrollToBottom()
@@ -198,7 +199,7 @@ const sendMessage = async () => {
   if (!input.value.trim() || loading.value) return
   
   if (!userApiKey.value) {
-      ElMessage.warning('Please set your API Key first')
+      ElMessage.warning('请先设置 API Key')
       openApiKeyDialog()
       return
   }
@@ -226,8 +227,8 @@ const sendMessage = async () => {
       },
       onError: (err) => {
         console.error(err)
-        ElMessage.error('Failed to get response')
-        messages.value[aiMsgIndex].content += "\n[Error generating response]"
+        ElMessage.error('获取响应失败')
+        messages.value[aiMsgIndex].content += "\n[生成响应时出错]"
       },
       onFinish: async () => {
         loading.value = false

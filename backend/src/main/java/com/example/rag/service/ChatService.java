@@ -37,7 +37,7 @@ public class ChatService {
     public String chat(String question) {
         String prompt = createPrompt(question);
         if (prompt == null) {
-            return "抱歉，我没有在上传的文档中找到相关内容。请确认文档已成功上传，或尝试换一种提问方式。";
+            prompt = question;
         }
         return chatLanguageModel.generate(prompt);
     }
@@ -45,8 +45,7 @@ public class ChatService {
     public void chatStream(String question, String apiKey, StreamingResponseHandler<AiMessage> handler) {
         String prompt = createPrompt(question);
         if (prompt == null) {
-            handler.onError(new RuntimeException("No context found"));
-            return;
+            prompt = question;
         }
 
         StreamingChatLanguageModel model = defaultStreamingChatLanguageModel;

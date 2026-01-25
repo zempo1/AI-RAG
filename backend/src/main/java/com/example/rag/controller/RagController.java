@@ -114,18 +114,6 @@ public class RagController {
             System.err.println("Failed to save user message: " + e.getMessage());
         }
 
-        if (!chatService.hasContext(question)) {
-             try {
-                emitter.send(SseEmitter.event().data("\"抱歉，我没有在上传的文档中找到相关内容。请确认文档已成功上传，或尝试换一种提问方式。\""));
-                // Also save this error response as assistant message? Maybe.
-                historyService.addMessage(finalChatId, "assistant", "抱歉，我没有在上传的文档中找到相关内容。请确认文档已成功上传，或尝试换一种提问方式。");
-                emitter.complete();
-            } catch (IOException e) {
-                // ignore
-            }
-            return emitter;
-        }
-
         StringBuilder fullResponse = new StringBuilder();
 
         try {

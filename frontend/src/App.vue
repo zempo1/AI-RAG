@@ -7,7 +7,7 @@
              <el-icon><Menu /></el-icon>
           </div>
           <div class="brand" v-show="!isCollapsed">
-            <h2>RAG Chat</h2>
+            <h2>RAG 问答</h2>
           </div>
           <div class="new-chat-icon" v-show="!isCollapsed" @click="startNewChat">
             <el-icon><EditPen /></el-icon>
@@ -20,12 +20,12 @@
         
         <div class="new-chat-btn-full" @click="startNewChat" v-if="!isCollapsed">
           <el-icon><Plus /></el-icon> 
-          <span>New Chat</span>
+          <span>新对话</span>
         </div>
       </div>
       
       <div class="sidebar-content">
-        <div class="section-title" v-show="!isCollapsed">Recent</div>
+        <div class="section-title" v-show="!isCollapsed">最近</div>
         <div class="chat-list" v-show="!isCollapsed">
             <div 
                 v-for="chat in chats" 
@@ -44,16 +44,37 @@
             </div>
         </div>
 
-        <div class="section-title" v-show="!isCollapsed" style="margin-top: 24px">Documents</div>
+        <div class="section-title" v-show="!isCollapsed" style="margin-top: 24px">文档</div>
         <div class="upload-wrapper" v-show="!isCollapsed">
-          <Upload />
+          <Upload @generated="onMindMapGenerated" />
         </div>
         <div class="upload-collapsed" v-show="isCollapsed">
-           <el-tooltip content="Upload Document" placement="right">
+           <el-tooltip content="上传文档" placement="right">
              <el-button circle class="collapsed-upload-btn">
                <el-icon><UploadFilled /></el-icon>
              </el-button>
            </el-tooltip>
+        </div>
+
+        <div class="section-title" v-show="!isCollapsed" style="margin-top: 24px">思维导图</div>
+        <div class="chat-list" v-show="!isCollapsed">
+            <div 
+                v-for="map in mindMaps" 
+                :key="map.id" 
+                class="chat-item"
+                @click="openMindMap(map)"
+            >
+                <div class="chat-title-wrapper">
+                    <el-icon><Connection /></el-icon>
+                    <span class="chat-title-text">{{ map.title }}</span>
+                </div>
+                <div class="chat-actions">
+                     <el-icon class="delete-icon" @click.stop="(e) => deleteMindMap(map.id, e)"><Delete /></el-icon>
+                </div>
+            </div>
+            <div v-if="mindMaps.length === 0" style="padding: 0 12px; color: var(--text-secondary); font-size: 0.8rem;">
+                暂无思维导图
+            </div>
         </div>
       </div>
 
@@ -61,8 +82,8 @@
         <div class="user-info">
           <el-avatar :size="32" class="user-avatar" icon="UserFilled" />
           <div class="user-details" v-show="!isCollapsed">
-            <span class="name">User</span>
-            <span class="status">Pro Plan</span>
+            <span class="name">用户</span>
+            <span class="status">专业版</span>
           </div>
         </div>
         <div class="settings-trigger" @click="openSettings" v-show="!isCollapsed">
@@ -74,6 +95,12 @@
     <main class="main-content">
       <Chat ref="chatRef" @chat-created="onChatCreated" />
     </main>
+
+    <MindMapEditor
+      v-model="mindMapEditorVisible"
+      :mind-map-data="currentMindMap"
+      @saved="onMindMapSaved"
+    />
   </div>
 </template>
 
@@ -81,7 +108,9 @@
 import { ref, onMounted } from 'vue'
 import Upload from './components/Upload.vue'
 import Chat from './components/Chat.vue'
-import { Plus, UserFilled, UploadFilled, Menu, EditPen, ChatLineRound, Delete, Setting } from '@element-plus/icons-vue'
+import MindMapEditor from './components/MindMapEditor.vue'
+import { getMindMaps, deleteMindMap as apiDeleteMindMap, type MindMap } from './api/mindmap'
+import { Plus, UserFilled, UploadFilled, Menu, EditPen, ChatLineRound, Delete, Setting, Connection } from '@element-plus/icons-vue'
 
 interface ChatItem {
     id: number
@@ -91,8 +120,44 @@ interface ChatItem {
 
 const isCollapsed = ref(false)
 const chats = ref<ChatItem[]>([])
+const mindMaps = ref<MindMap[]>([])
 const chatRef = ref<any>(null)
 const currentChatId = ref<number | null>(null)
+
+// Mind Map Logic
+const mindMapEditorVisible = ref(false)
+const currentMindMap = ref<MindMap | null>(null)
+
+const loadMindMaps = async () => {
+    try {
+        const res: any = await getMindMaps()
+        mindMaps.value = res
+    } catch (e) {
+        console.error(e)
+    }
+}
+
+const openMindMap = (map: MindMap) => {
+    currentMindMap.value = map
+    mindMapEditorVisible.value = true
+}
+
+const deleteMindMap = async (id: number, e: Event) => {
+    try {
+        await apiDeleteMindMap(id)
+        await loadMindMaps()
+    } catch (e) {
+        console.error(e)
+    }
+}
+
+const onMindMapSaved = () => {
+    loadMindMaps()
+}
+
+const onMindMapGenerated = () => {
+    loadMindMaps()
+}
 
 const openSettings = () => {
     chatRef.value?.openApiKeyDialog()
@@ -142,6 +207,7 @@ const toggleSidebar = () => {
 
 onMounted(() => {
     loadChats()
+    loadMindMaps()
 })
 </script>
 
