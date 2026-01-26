@@ -32,14 +32,16 @@ public class MindMapService {
                 .orElseThrow(() -> new RuntimeException("No uploaded file found to generate mind map"));
 
         String content = latestFile.getContent();
-        // Truncate if too long (simple protection, though better to use LLM context window mgmt)
+        // Truncate if too long (simple protection, though better to use LLM context
+        // window mgmt)
         if (content.length() > 20000) {
             content = content.substring(0, 20000);
         }
 
         String prompt = "Generate a mind map structure based on the following text. " +
                 "The output must be a valid JSON object strictly following this format: " +
-                "{ \"root\": { \"data\": { \"text\": \"Main Topic\" }, \"children\": [ { \"data\": { \"text\": \"Subtopic\" }, \"children\": [] } ] } }. " +
+                "{ \"root\": { \"data\": { \"text\": \"Main Topic\" }, \"children\": [ { \"data\": { \"text\": \"Subtopic\" }, \"children\": [] } ] } }. "
+                +
                 "Do not include any markdown formatting (like ```json). Just the raw JSON string. " +
                 "Text content: \n\n" + content;
 
@@ -54,23 +56,30 @@ public class MindMapService {
         }
 
         String jsonResponse = model.generate(prompt);
-        
-        // Clean up markdown code blocks if present
-        if (jsonResponse.startsWith("```json")) {
-            jsonResponse = jsonResponse.substring(7);
-        }
-        if (jsonResponse.startsWith("```")) {
-            jsonResponse = jsonResponse.substring(3);
-        }
-        if (jsonResponse.endsWith("```")) {
-            jsonResponse = jsonResponse.substring(0, jsonResponse.length() - 3);
+
+        // Clean up markdown code blocks if present (Robust Regex)
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("(\\{.*\\})", java.util.regex.Pattern.DOTALL);
+        java.util.regex.Matcher matcher = pattern.matcher(jsonResponse);
+        if (matcher.find()) {
+            jsonResponse = matcher.group(1);
+        } else {
+            // Fallback cleanup
+            if (jsonResponse.startsWith("```json")) {
+                jsonResponse = jsonResponse.substring(7);
+            }
+            if (jsonResponse.startsWith("```")) {
+                jsonResponse = jsonResponse.substring(3);
+            }
+            if (jsonResponse.endsWith("```")) {
+                jsonResponse = jsonResponse.substring(0, jsonResponse.length() - 3);
+            }
         }
         jsonResponse = jsonResponse.trim();
-        
+
         // Ensure it's not empty or invalid
         if (jsonResponse.isEmpty() || !jsonResponse.startsWith("{")) {
-             // Fallback minimal JSON
-             jsonResponse = "{ \"root\": { \"data\": { \"text\": \"Error Generating Map\" }, \"children\": [] } }";
+            // Fallback minimal JSON
+            jsonResponse = "{ \"root\": { \"data\": { \"text\": \"Error Generating Map\" }, \"children\": [] } }";
         }
 
         MindMap mindMap = new MindMap(latestFile.getFilename() + " - Mind Map", jsonResponse);

@@ -1,150 +1,165 @@
 <template>
-  <el-dialog
-    v-model="visible"
-    :title="currentMap?.title || '思维导图'"
-    fullscreen
-    custom-class="mindmap-dialog"
-    :before-close="handleClose"
-    @opened="initMindMap"
-  >
-    <div class="mindmap-container" ref="mindmapRef"></div>
-    
-    <template #footer>
-      <div class="dialog-footer">
+  <div v-if="visible" class="mindmap-overlay">
+    <div class="mindmap-header">
+      <div class="title">{{ currentMap?.title || '思维导图' }}</div>
+      <div class="actions">
         <el-button @click="handleClose">关闭</el-button>
         <el-button type="primary" @click="saveMap">保存更改</el-button>
       </div>
-    </template>
-  </el-dialog>
+    </div>
+    <div class="mindmap-container" ref="mindmapRef"></div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from 'vue'
-import MindElixir, { E } from 'mind-elixir'
-import { updateMindMap, type MindMap } from '../api/mindmap'
+import { ref, watch, onBeforeUnmount, nextTick, onMounted } from 'vue'
+import MindMap from 'simple-mind-map'
+import 'simple-mind-map/dist/simpleMindMap.esm.css'
+import { updateMindMap, type MindMap as MindMapType } from '../api/mindmap'
 import { ElMessage } from 'element-plus'
-
-// Import MindElixir styles - Critical for correct layout!
-// Try to import from node_modules if possible, otherwise we might need to rely on global style or copy it
-// Standard import for MindElixir 2.x/3.x
-import 'mind-elixir/style.css'
 
 const props = defineProps<{
   modelValue: boolean
-  mindMapData: MindMap | null
+  mindMapData: MindMapType | null
 }>()
 
 const emit = defineEmits(['update:modelValue', 'saved'])
 
 const visible = ref(false)
 const mindmapRef = ref<HTMLElement | null>(null)
-const currentMap = ref<MindMap | null>(null)
-let me: any = null
+const currentMap = ref<MindMapType | null>(null)
+let mindMap: MindMap | null = null
 
 watch(() => props.modelValue, (val) => {
   visible.value = val
   if (val && props.mindMapData) {
     currentMap.value = props.mindMapData
-    // initMindMap is now called by @opened event on dialog
+    if (val) {
+      // Initialize when opened
+      initMindMap()
+    }
   }
 })
 
 watch(() => visible.value, (val) => {
   emit('update:modelValue', val)
+  if (!val && mindMap) {
+    mindMap.destroy()
+    mindMap = null
+  }
 })
 
-const initMindMap = () => {
-  if (!mindmapRef.value || !currentMap.value) return
-  
-  try {
-    console.log('Mind Map Data:', currentMap.value.data)
-    
-    // 1. Get raw data
-    let rawData = currentMap.value.data
-    let data
-
-    // 2. Parse data: handle string, object, or null/undefined
-    if (typeof rawData === 'string') {
-        try {
-            // Prevent parsing "undefined" string
-            if (rawData === 'undefined' || !rawData) {
-                data = null
-            } else {
-                data = JSON.parse(rawData)
-            }
-        } catch (e) {
-            console.warn('JSON parse error, using default', e)
-            data = null
-        }
-    } else {
-        // Already object or undefined/null
-        data = rawData
-    }
-    
-    // 3. Transformation logic
-    const transformNode = (node: any): any => {
-        return {
-            topic: node.data?.text || node.topic || 'Node',
-            id: Math.random().toString(36).substr(2, 9),
-            children: node.children ? node.children.map(transformNode) : []
-        }
-    }
-    
-    let processedData
-    
-    // 4. Build MindElixir structure
-    if (data && data.root) {
-        // Adapt LLM format
-        processedData = {
-            nodeData: transformNode(data.root),
-            linkData: {}
-        }
-    } else if (data && data.nodeData) {
-        // Standard MindElixir format
-        processedData = data
-    } else {
-        // 5. Fallback default (Critical: prevents undefined passing to MindElixir)
-        console.warn('Invalid or empty data, using default template')
-        processedData = {
-            nodeData: { topic: '新思维导图', id: 'root', children: [] },
-            linkData: {}
-        }
-    }
-
-    // 6. Deep clone to remove Vue Proxy and ensure plain object
-    // This prevents "undefined is not valid JSON" errors in MindElixir internal cloning
-    const finalData = JSON.parse(JSON.stringify(processedData))
-    console.log('Final MindElixir Data:', finalData)
-
-    me = new MindElixir({
-      el: mindmapRef.value,
-      direction: MindElixir.RIGHT, // Changed to RIGHT for standard layout
-      draggable: true,
-      contextMenu: true,
-      toolBar: true,
-      nodeMenu: true,
-      keypress: true,
-      locale: 'zh_CN',
-    })
-    
-    me.init(finalData)
-  } catch (e) {
-    console.error('Failed to init mind map', e)
-    ElMessage.error('Failed to load mind map data')
+// Theme Configuration
+const customTheme = {
+  backgroundColor: '#f5f7fa',
+  lineColor: '#cbd5e1',
+  lineWidth: 2,
+  fontSize: 14,
+  color: '#334155',
+  fillColor: '#ffffff',
+  borderColor: '#e2e8f0',
+  borderWidth: 1,
+  borderRadius: 6,
+  activeStrokeColor: '#8b5cf6',
+  root: {
+    fillColor: '#8b5cf6',
+    color: '#ffffff',
+    fontSize: 20,
+    borderRadius: 8,
+    activeStrokeColor: '#7c3aed',
+  },
+  second: {
+    fillColor: '#f1f5f9',
+    color: '#1e293b',
+    borderColor: '#cbd5e1',
+    activeStrokeColor: '#8b5cf6',
   }
 }
 
+const initMindMap = () => {
+  // Wait for DOM render
+  nextTick(() => {
+    if (!mindmapRef.value || !currentMap.value) return
+    
+    // Clear container
+    mindmapRef.value.innerHTML = ''
+
+    try {
+      // 1. Get raw data
+      let rawData = currentMap.value.data
+      let data: any
+
+      // 2. Parse data
+      if (typeof rawData === 'string') {
+          try {
+              if (rawData === 'undefined' || !rawData) {
+                  data = null
+              } else {
+                  data = JSON.parse(rawData)
+              }
+          } catch (e) {
+              console.warn('JSON parse error, using default', e)
+              data = null
+          }
+      } else {
+          data = rawData
+      }
+
+      // 3. Transform Data
+      let processedData
+      
+      const transformNode = (node: any): any => {
+          return {
+              data: {
+                  text: node.data?.text || node.topic || node.text || 'Node',
+                  ...node.data
+              },
+              children: node.children ? node.children.map(transformNode) : []
+          }
+      }
+
+      if (data && data.root) {
+          processedData = transformNode(data.root)
+      } else if (data && data.nodeData) {
+          processedData = transformNode(data.nodeData)
+      } else if (data && data.data && data.data.text) {
+          processedData = data
+      } else {
+          processedData = {
+              data: { text: '新思维导图' },
+              children: []
+          }
+      }
+
+      // 4. Initialize simple-mind-map
+      mindMap = new MindMap({
+        el: mindmapRef.value,
+        data: processedData,
+        theme: 'default',
+        themeConfig: customTheme,
+        layout: 'logicalStructure',
+        readonly: false,
+        supportNodeDrag: true,
+        dragMinimizeDiff: 5
+      })
+      
+      // Delay fit to ensure rendering is complete
+      setTimeout(() => {
+        mindMap?.view.fit()
+      }, 200)
+
+    } catch (e) {
+      console.error('Failed to init mind map', e)
+      ElMessage.error('加载思维导图失败')
+    }
+  })
+}
+
 const saveMap = async () => {
-  if (!currentMap.value || !me) return
+  if (!currentMap.value || !mindMap) return
   
   try {
-    const data = me.getData()
-    // We save the MindElixir format directly now to preserve layout/changes
-    // But we need to wrap it or just stringify it.
-    // Wait, our backend expects the "data" field to be the JSON string.
-    // We can just save the raw MindElixir data structure.
-    // But next time we load, we should check if it's already in MindElixir format.
-    
+    const data = mindMap.getData()
     const dataStr = JSON.stringify(data)
     await updateMindMap(currentMap.value.id, dataStr)
     ElMessage.success('思维导图保存成功')
@@ -158,25 +173,49 @@ const saveMap = async () => {
 const handleClose = () => {
   visible.value = false
 }
+
+onBeforeUnmount(() => {
+    if (mindMap) {
+        mindMap.destroy()
+    }
+})
 </script>
 
 <style scoped>
+.mindmap-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #f5f7fa;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+}
+
+.mindmap-header {
+  height: 60px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
 .mindmap-container {
-  width: 100%;
   flex: 1;
-  background: #f5f5f5;
-  border-radius: 0;
-}
-:deep(.mindmap-dialog) {
-    background: #1c1c1f;
-    display: flex;
-    flex-direction: column;
-}
-:deep(.el-dialog__body) {
-    padding: 0;
-    flex: 1;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
+  width: 100%;
+  height: 100%; /* Ensure it fills remaining space */
+  overflow: hidden;
 }
 </style>
