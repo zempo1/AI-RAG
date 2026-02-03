@@ -1,5 +1,6 @@
 package com.example.rag.service;
 
+import com.example.rag.config.UserContext;
 import com.example.rag.entity.DocumentFile;
 import com.example.rag.entity.MindMap;
 import com.example.rag.repository.DocumentFileRepository;
@@ -28,7 +29,8 @@ public class MindMapService {
     private String defaultModelName;
 
     public MindMap generateMindMap(String apiKey) {
-        DocumentFile latestFile = documentFileRepository.findTopByOrderByUploadTimeDesc()
+        DocumentFile latestFile = documentFileRepository
+                .findTopByUserOrderByUploadTimeDesc(UserContext.getCurrentUser())
                 .orElseThrow(() -> new RuntimeException("No uploaded file found to generate mind map"));
 
         String content = latestFile.getContent();
@@ -83,15 +85,18 @@ public class MindMapService {
         }
 
         MindMap mindMap = new MindMap(latestFile.getFilename() + " - Mind Map", jsonResponse);
+        mindMap.setUser(UserContext.getCurrentUser());
         return mindMapRepository.save(mindMap);
     }
 
     public List<MindMap> getAllMindMaps() {
-        return mindMapRepository.findAllByOrderByCreatedAtDesc();
+        return mindMapRepository.findByUserOrderByCreatedAtDesc(UserContext.getCurrentUser());
     }
 
     public MindMap getMindMap(Long id) {
-        return mindMapRepository.findById(id).orElseThrow(() -> new RuntimeException("Mind Map not found"));
+        return mindMapRepository.findById(id)
+                .filter(map -> map.getUser().getId().equals(UserContext.getCurrentUser().getId()))
+                .orElseThrow(() -> new RuntimeException("Mind Map not found"));
     }
 
     public MindMap updateMindMap(Long id, String data) {
@@ -101,6 +106,7 @@ public class MindMapService {
     }
 
     public void deleteMindMap(Long id) {
-        mindMapRepository.deleteById(id);
+        MindMap mindMap = getMindMap(id);
+        mindMapRepository.delete(mindMap);
     }
 }

@@ -16,6 +16,11 @@ public class DocumentFile {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = true)
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private User user;
+
     private String filename;
 
     @Lob

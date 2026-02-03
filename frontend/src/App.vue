@@ -1,5 +1,8 @@
 <template>
-  <div class="app-layout">
+  <div v-if="!isLoggedIn" class="landing-wrapper">
+    <LoginLanding @success="onAuthSuccess" />
+  </div>
+  <div v-else class="app-layout">
     <aside class="sidebar" :class="{ 'collapsed': isCollapsed }">
       <div class="sidebar-header">
         <div class="header-top">
@@ -82,9 +85,12 @@
         <div class="user-info">
           <el-avatar :size="32" class="user-avatar" icon="UserFilled" />
           <div class="user-details" v-show="!isCollapsed">
-            <span class="name">用户</span>
+            <span class="name">{{ username }}</span>
             <span class="status">专业版</span>
           </div>
+          <el-tooltip content="退出登录" placement="top" v-if="!isCollapsed">
+            <el-icon class="logout-icon" @click.stop="logout"><SwitchButton /></el-icon>
+          </el-tooltip>
         </div>
         <div class="settings-trigger" @click="openSettings" v-show="!isCollapsed">
             <el-icon><Setting /></el-icon>
@@ -105,12 +111,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import Upload from './components/Upload.vue'
 import Chat from './components/Chat.vue'
 import MindMapEditor from './components/MindMapEditor.vue'
+import LoginLanding from './components/LoginLanding.vue'
 import { getMindMaps, deleteMindMap as apiDeleteMindMap, type MindMap } from './api/mindmap'
-import { Plus, UserFilled, UploadFilled, Menu, EditPen, ChatLineRound, Delete, Setting, Connection } from '@element-plus/icons-vue'
+import { Plus, UserFilled, UploadFilled, Menu, EditPen, ChatLineRound, Delete, Setting, Connection, SwitchButton } from '@element-plus/icons-vue'
 
 interface ChatItem {
     id: number
@@ -123,12 +130,28 @@ const chats = ref<ChatItem[]>([])
 const mindMaps = ref<MindMap[]>([])
 const chatRef = ref<any>(null)
 const currentChatId = ref<number | null>(null)
+const username = ref(localStorage.getItem('username') || '用户')
+const authToken = ref(localStorage.getItem('auth_token'))
+
+const isLoggedIn = computed(() => !!authToken.value)
 
 // Mind Map Logic
 const mindMapEditorVisible = ref(false)
 const currentMindMap = ref<MindMap | null>(null)
 
+const onAuthSuccess = (name: string) => {
+    authToken.value = localStorage.getItem('auth_token')
+    username.value = name
+    loadChats()
+    loadMindMaps()
+}
+
+const handleAuthExpired = () => {
+    logout()
+}
+
 const loadMindMaps = async () => {
+    if (!isLoggedIn.value) return
     try {
         const res: any = await getMindMaps()
         mindMaps.value = res
@@ -164,8 +187,13 @@ const openSettings = () => {
 }
 
 const loadChats = async () => {
+    if (!isLoggedIn.value) return
     try {
-        const res = await fetch('/api/chats')
+        const res = await fetch('/api/chats', {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+            }
+        })
         if (res.ok) {
             chats.value = await res.json()
         }
@@ -186,7 +214,12 @@ const startNewChat = () => {
 
 const deleteChat = async (id: number, e: Event) => {
     try {
-        await fetch(`/api/chats/${id}`, { method: 'DELETE' })
+        await fetch(`/api/chats/${id}`, { 
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+            }
+        })
         await loadChats()
         if (currentChatId.value === id) {
             startNewChat()
@@ -205,9 +238,26 @@ const toggleSidebar = () => {
   isCollapsed.value = !isCollapsed.value
 }
 
+const logout = () => {
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('username')
+    authToken.value = null
+    username.value = '用户'
+    chats.value = []
+    mindMaps.value = []
+    startNewChat()
+}
+
 onMounted(() => {
-    loadChats()
-    loadMindMaps()
+    window.addEventListener('auth-expired', handleAuthExpired)
+    if (isLoggedIn.value) {
+        loadChats()
+        loadMindMaps()
+    }
+})
+
+onBeforeUnmount(() => {
+    window.removeEventListener('auth-expired', handleAuthExpired)
 })
 </script>
 
@@ -545,6 +595,19 @@ body {
         .status {
           font-size: 0.75rem;
           color: var(--text-secondary);
+        }
+      }
+
+      .logout-icon {
+        color: var(--text-secondary);
+        font-size: 18px;
+        padding: 4px;
+        border-radius: 4px;
+        transition: all 0.2s;
+        
+        &:hover {
+          background: rgba(255, 255, 255, 0.1);
+          color: #ef4444;
         }
       }
     }

@@ -5,6 +5,7 @@
         class="upload-demo"
         drag
         action="/api/upload"
+        :headers="uploadHeaders"
         :on-success="handleSuccess"
         :on-error="handleError"
         :before-upload="beforeUpload"
@@ -61,6 +62,10 @@ const editorVisible = ref(false)
 const currentMindMap = ref<MindMap | null>(null)
 
 const emit = defineEmits(['generated'])
+
+const uploadHeaders = {
+  Authorization: `Bearer ${localStorage.getItem('auth_token')}`
+}
 
 const handleGenerateMindMap = async () => {
     generating.value = true

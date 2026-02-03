@@ -29,8 +29,13 @@ public class RagController {
     private final HistoryService historyService;
 
     @GetMapping("/chats")
-    public ResponseEntity<List<Chat>> getChats() {
-        return ResponseEntity.ok(historyService.getAllChats());
+    public ResponseEntity<?> getChats() {
+        try {
+            return ResponseEntity.ok(historyService.getAllChats());
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("Error fetching chats: " + e.getMessage());
+        }
     }
 
     @GetMapping("/chats/{id}")
