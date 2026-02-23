@@ -16,8 +16,8 @@ service.interceptors.request.use(
     if (apiKey) {
       config.headers['X-Api-Key'] = apiKey
     }
-    
-    const token = localStorage.getItem('auth_token')
+
+    const token = localStorage.getItem('token')
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`
     }
@@ -36,7 +36,7 @@ service.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       // Clear token and redirect or show login
-      localStorage.removeItem('auth_token')
+      localStorage.removeItem('token')
       localStorage.removeItem('username')
       // Only show message if it's not the auth endpoint itself failing
       if (!error.config.url.includes('/api/auth/')) {

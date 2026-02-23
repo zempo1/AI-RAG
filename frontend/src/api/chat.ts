@@ -26,6 +26,10 @@ export const sendStreamChat = async (
     if (apiKey) {
       headers['X-Api-Key'] = apiKey
     }
+    const token = localStorage.getItem('token')
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
 
     const response = await fetch('/api/stream-chat', {
       method: 'POST',
@@ -46,7 +50,7 @@ export const sendStreamChat = async (
 
       const chunk = decoder.decode(value, { stream: true })
       const lines = chunk.split('\n')
-      
+
       for (const line of lines) {
         if (line.startsWith('event:')) {
           eventType = line.slice(6).trim()
@@ -75,5 +79,6 @@ export const sendStreamChat = async (
     callbacks.onFinish()
   } catch (error) {
     callbacks.onError(error)
+    callbacks.onFinish()
   }
 }

@@ -42,7 +42,7 @@
                     <span class="chat-title-text">{{ chat.title }}</span>
                 </div>
                 <div class="chat-actions">
-                     <el-icon class="delete-icon" @click.stop="(e) => deleteChat(chat.id, e)"><Delete /></el-icon>
+                     <el-icon class="delete-icon" @click.stop="(e: Event) => deleteChat(chat.id, e)"><Delete /></el-icon>
                 </div>
             </div>
         </div>
@@ -72,7 +72,7 @@
                     <span class="chat-title-text">{{ map.title }}</span>
                 </div>
                 <div class="chat-actions">
-                     <el-icon class="delete-icon" @click.stop="(e) => deleteMindMap(map.id, e)"><Delete /></el-icon>
+                     <el-icon class="delete-icon" @click.stop="(e: Event) => deleteMindMap(map.id, e)"><Delete /></el-icon>
                 </div>
             </div>
             <div v-if="mindMaps.length === 0" style="padding: 0 12px; color: var(--text-secondary); font-size: 0.8rem;">
@@ -131,7 +131,7 @@ const mindMaps = ref<MindMap[]>([])
 const chatRef = ref<any>(null)
 const currentChatId = ref<number | null>(null)
 const username = ref(localStorage.getItem('username') || '用户')
-const authToken = ref(localStorage.getItem('auth_token'))
+const authToken = ref(localStorage.getItem('token'))
 
 const isLoggedIn = computed(() => !!authToken.value)
 
@@ -140,7 +140,7 @@ const mindMapEditorVisible = ref(false)
 const currentMindMap = ref<MindMap | null>(null)
 
 const onAuthSuccess = (name: string) => {
-    authToken.value = localStorage.getItem('auth_token')
+    authToken.value = localStorage.getItem('token')
     username.value = name
     loadChats()
     loadMindMaps()
@@ -191,7 +191,7 @@ const loadChats = async () => {
     try {
         const res = await fetch('/api/chats', {
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
         })
         if (res.ok) {
@@ -217,7 +217,7 @@ const deleteChat = async (id: number, e: Event) => {
         await fetch(`/api/chats/${id}`, { 
             method: 'DELETE',
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
         })
         await loadChats()
@@ -239,7 +239,7 @@ const toggleSidebar = () => {
 }
 
 const logout = () => {
-    localStorage.removeItem('auth_token')
+    localStorage.removeItem('token')
     localStorage.removeItem('username')
     authToken.value = null
     username.value = '用户'

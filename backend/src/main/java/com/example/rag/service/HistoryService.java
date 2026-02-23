@@ -51,6 +51,15 @@ public class HistoryService {
     }
 
     @Transactional
+    public Message addMessageToChat(Chat chat, String role, String content) {
+        Message message = new Message();
+        message.setChat(chat);
+        message.setRole(role);
+        message.setContent(content);
+        return messageRepository.save(message);
+    }
+
+    @Transactional
     public void deleteChat(Long id) {
         chatRepository.deleteById(id);
     }

@@ -48,7 +48,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { UploadFilled, CircleCheckFilled, Close, Connection } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { UploadProps } from 'element-plus'
@@ -63,9 +63,9 @@ const currentMindMap = ref<MindMap | null>(null)
 
 const emit = defineEmits(['generated'])
 
-const uploadHeaders = {
-  Authorization: `Bearer ${localStorage.getItem('auth_token')}`
-}
+const uploadHeaders = computed(() => ({
+  Authorization: `Bearer ${localStorage.getItem('token')}`
+}))
 
 const handleGenerateMindMap = async () => {
     generating.value = true

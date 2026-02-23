@@ -162,12 +162,14 @@ const handleAuth = async () => {
   
   try {
     const res: any = await request.post(endpoint, form)
-    localStorage.setItem('auth_token', res.token)
+    localStorage.setItem('token', res.token)
     localStorage.setItem('username', res.username)
     ElMessage.success(isLogin.value ? '登录成功' : '注册成功')
     emit('success', res.username)
-  } catch (e) {
+  } catch (e: any) {
     // Handled by request interceptor
+    //弹窗错误提示
+    ElMessage.error(e?.message || '操作失败')
   } finally {
     loading.value = false
   }
