@@ -1,5 +1,6 @@
 package com.example.rag.service;
 
+import com.example.rag.config.UserContext;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.StreamingResponseHandler;
@@ -37,7 +38,7 @@ public class ChatService {
     public String chat(String question) {
         String prompt = createPrompt(question);
         if (prompt == null) {
-            return "抱歉，我没有在上传的文档中找到相关内容。请确认文档已成功上传，或尝试换一种提问方式。";
+            prompt = question;
         }
         return chatLanguageModel.generate(prompt);
     }
@@ -45,12 +46,11 @@ public class ChatService {
     public void chatStream(String question, String apiKey, StreamingResponseHandler<AiMessage> handler) {
         String prompt = createPrompt(question);
         if (prompt == null) {
-            handler.onError(new RuntimeException("No context found"));
-            return;
+            prompt = question;
         }
 
         StreamingChatLanguageModel model = defaultStreamingChatLanguageModel;
-        
+
         if (apiKey != null && !apiKey.trim().isEmpty()) {
             model = OpenAiStreamingChatModel.builder()
                     .apiKey(apiKey)
@@ -73,16 +73,26 @@ public class ChatService {
         Embedding questionEmbedding = embeddingModel.embed(question).content();
 
         // 2. Find relevant segments
-        int maxResults = 5;
+        int maxResults = 10; // Get more results to filter manually
         double minScore = 0.5;
-        List<EmbeddingMatch<TextSegment>> relevant = embeddingStore.findRelevant(questionEmbedding, maxResults,
+        List<EmbeddingMatch<TextSegment>> matches = embeddingStore.findRelevant(questionEmbedding, maxResults,
                 minScore);
+
+        // 3. Filter by userId
+        Long currentUserId = UserContext.getCurrentUser().getId();
+        List<EmbeddingMatch<TextSegment>> relevant = matches.stream()
+                .filter(match -> {
+                    Object userId = match.embedded().metadata().get("userId");
+                    return userId != null && userId.toString().equals(currentUserId.toString());
+                })
+                .limit(5)
+                .collect(Collectors.toList());
 
         if (relevant.isEmpty()) {
             return null;
         }
 
-        // 3. Create a prompt with context
+        // 4. Create a prompt with context
         String context = relevant.stream()
                 .map(match -> match.embedded().text())
                 .collect(Collectors.joining("\n\n"));

@@ -29,8 +29,13 @@ public class RagController {
     private final HistoryService historyService;
 
     @GetMapping("/chats")
-    public ResponseEntity<List<Chat>> getChats() {
-        return ResponseEntity.ok(historyService.getAllChats());
+    public ResponseEntity<?> getChats() {
+        try {
+            return ResponseEntity.ok(historyService.getAllChats());
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("Error fetching chats: " + e.getMessage());
+        }
     }
 
     @GetMapping("/chats/{id}")
@@ -91,39 +96,34 @@ public class RagController {
             return emitter;
         }
 
-        // Handle Chat Creation / Retrieval
-        final Long finalChatId;
+        // Handle Chat Creation / Retrieval — must be done in main thread while UserContext is valid
+        final Chat finalChat;
         if (chatId == null) {
             String title = question.length() > 30 ? question.substring(0, 30) + "..." : question;
-            Chat chat = historyService.createChat(title);
-            finalChatId = chat.getId();
+            finalChat = historyService.createChat(title);
             try {
-                // Send chat ID to client
-                emitter.send(SseEmitter.event().name("chatId").data(finalChatId));
+                emitter.send(SseEmitter.event().name("chatId").data(finalChat.getId()));
             } catch (IOException e) {
                 // ignore
             }
         } else {
-            finalChatId = chatId;
+            finalChat = historyService.getChat(chatId).orElse(null);
+            if (finalChat == null) {
+                try {
+                    emitter.send(SseEmitter.event().data("\"[Chat not found]\""));
+                    emitter.complete();
+                } catch (IOException e) {
+                    // ignore
+                }
+                return emitter;
+            }
         }
 
-        // Save User Message
+        // Save User Message — still in main thread
         try {
-            historyService.addMessage(finalChatId, "user", question);
+            historyService.addMessageToChat(finalChat, "user", question);
         } catch (Exception e) {
             System.err.println("Failed to save user message: " + e.getMessage());
-        }
-
-        if (!chatService.hasContext(question)) {
-             try {
-                emitter.send(SseEmitter.event().data("\"抱歉，我没有在上传的文档中找到相关内容。请确认文档已成功上传，或尝试换一种提问方式。\""));
-                // Also save this error response as assistant message? Maybe.
-                historyService.addMessage(finalChatId, "assistant", "抱歉，我没有在上传的文档中找到相关内容。请确认文档已成功上传，或尝试换一种提问方式。");
-                emitter.complete();
-            } catch (IOException e) {
-                // ignore
-            }
-            return emitter;
         }
 
         StringBuilder fullResponse = new StringBuilder();
@@ -143,15 +143,29 @@ public class RagController {
 
                 @Override
                 public void onComplete(Response<AiMessage> response) {
-                    // Save Assistant Message
-                    historyService.addMessage(finalChatId, "assistant", fullResponse.toString());
-                    emitter.complete();
+                    try {
+                        // Save Assistant Message — use Chat object directly, no UserContext needed
+                        historyService.addMessageToChat(finalChat, "assistant", fullResponse.toString());
+                    } catch (Exception e) {
+                        System.err.println("Failed to save assistant message: " + e.getMessage());
+                    } finally {
+                        emitter.complete();
+                    }
                 }
 
                 @Override
                 public void onError(Throwable error) {
                     System.err.println("Streaming error: " + error.getMessage());
                     error.printStackTrace();
+                    try {
+                        // Save whatever was accumulated before the error
+                        String savedContent = fullResponse.length() > 0
+                            ? fullResponse.toString() + "\n[生成中断]"
+                            : "[生成失败: " + error.getMessage() + "]";
+                        historyService.addMessageToChat(finalChat, "assistant", savedContent);
+                    } catch (Exception e) {
+                        System.err.println("Failed to save error message: " + e.getMessage());
+                    }
                     try {
                         String errorJson = "\"" + "[Error: " + error.getMessage() + "]" + "\"";
                         emitter.send(SseEmitter.event().data(errorJson));
@@ -167,10 +181,10 @@ public class RagController {
             try {
                 String errorJson = "\"" + "[System Error: " + e.getMessage() + "]" + "\"";
                 emitter.send(SseEmitter.event().data(errorJson));
-                emitter.completeWithError(e);
             } catch (IOException ex) {
                 // ignore
             }
+            emitter.completeWithError(e);
         }
 
         return emitter;

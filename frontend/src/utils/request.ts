@@ -16,6 +16,11 @@ service.interceptors.request.use(
     if (apiKey) {
       config.headers['X-Api-Key'] = apiKey
     }
+
+    const token = localStorage.getItem('token')
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`
+    }
     return config
   },
   (error) => {
@@ -29,8 +34,20 @@ service.interceptors.response.use(
     return response.data
   },
   (error) => {
-    const msg = error.response?.data?.message || error.message || 'Request Error'
-    ElMessage.error(msg)
+    if (error.response?.status === 401) {
+      // Clear token and redirect or show login
+      localStorage.removeItem('token')
+      localStorage.removeItem('username')
+      // Only show message if it's not the auth endpoint itself failing
+      if (!error.config.url.includes('/api/auth/')) {
+        ElMessage.error('登录已过期，请重新登录')
+        // We can emit a custom event or rely on App.vue watching the state
+        window.dispatchEvent(new Event('auth-expired'))
+      }
+    } else {
+      const msg = error.response?.data?.message || error.message || '请求错误'
+      ElMessage.error(msg)
+    }
     return Promise.reject(error)
   }
 )

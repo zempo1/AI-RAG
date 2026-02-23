@@ -5,14 +5,12 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 @Entity
-@Table(name = "chats")
 @Data
 @NoArgsConstructor
-public class Chat {
+@Table(name = "mind_maps")
+public class MindMap {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -25,15 +23,15 @@ public class Chat {
 
     private String title;
 
-    @Column(name = "created_at")
+    @Lob
+    @Column(columnDefinition = "LONGTEXT")
+    private String data; // JSON structure for the mind map
+
     private LocalDateTime createdAt;
 
-    @OneToMany(mappedBy = "chat", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
-    @OrderBy("createdAt ASC")
-    private List<Message> messages = new ArrayList<>();
-
-    @PrePersist
-    protected void onCreate() {
-        createdAt = LocalDateTime.now();
+    public MindMap(String title, String data) {
+        this.title = title;
+        this.data = data;
+        this.createdAt = LocalDateTime.now();
     }
 }

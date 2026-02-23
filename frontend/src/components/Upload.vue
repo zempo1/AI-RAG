@@ -5,6 +5,7 @@
         class="upload-demo"
         drag
         action="/api/upload"
+        :headers="uploadHeaders"
         :on-success="handleSuccess"
         :on-error="handleError"
         :before-upload="beforeUpload"
@@ -27,21 +28,65 @@
         <el-icon class="success-icon"><CircleCheckFilled /></el-icon>
         <span class="filename">{{ uploadedFileName }}</span>
       </div>
-      <el-button type="danger" circle size="small" @click="resetUpload">
-        <el-icon><Close /></el-icon>
-      </el-button>
+      <div class="actions">
+        <el-button type="primary" size="small" @click="handleGenerateMindMap" :loading="generating">
+           <el-icon class="el-icon--left"><Connection /></el-icon>
+           生成思维导图
+        </el-button>
+        <el-button type="danger" circle size="small" @click="resetUpload">
+          <el-icon><Close /></el-icon>
+        </el-button>
+      </div>
     </div>
   </div>
+
+  <MindMapEditor
+    v-model="editorVisible"
+    :mind-map-data="currentMindMap"
+    @saved="handleSaved"
+  />
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { UploadFilled, CircleCheckFilled, Close } from '@element-plus/icons-vue'
+import { ref, computed } from 'vue'
+import { UploadFilled, CircleCheckFilled, Close, Connection } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { UploadProps } from 'element-plus'
+import MindMapEditor from './MindMapEditor.vue'
+import { generateMindMap, type MindMap } from '../api/mindmap'
 
 const isUploaded = ref(false)
 const uploadedFileName = ref('')
+const generating = ref(false)
+const editorVisible = ref(false)
+const currentMindMap = ref<MindMap | null>(null)
+
+const emit = defineEmits(['generated'])
+
+const uploadHeaders = computed(() => ({
+  Authorization: `Bearer ${localStorage.getItem('token')}`
+}))
+
+const handleGenerateMindMap = async () => {
+    generating.value = true
+    try {
+        const map = await generateMindMap()
+        currentMindMap.value = map
+        editorVisible.value = true
+        ElMessage.success('思维导图生成成功！')
+        emit('generated')
+    } catch (e) {
+        console.error(e)
+        ElMessage.error('生成思维导图失败')
+    } finally {
+        generating.value = false
+    }
+}
+
+const handleSaved = () => {
+    // maybe refresh history if we have one visible
+}
+
 
 const handleSuccess: UploadProps['onSuccess'] = (response, uploadFile) => {
   ElMessage.success('文件处理成功！')
@@ -146,10 +191,12 @@ const resetUpload = () => {
       align-items: center;
       gap: 12px;
       overflow: hidden;
+      flex: 1;
       
       .success-icon {
         color: #10b981;
         font-size: 20px;
+        flex-shrink: 0;
       }
       
       .filename {
@@ -160,6 +207,13 @@ const resetUpload = () => {
         overflow: hidden;
         text-overflow: ellipsis;
       }
+    }
+    
+    .actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
     }
     
     :deep(.el-button--danger) {
