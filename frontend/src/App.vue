@@ -13,6 +13,7 @@
       @logout="logout"
       @open-settings="openSettings"
       @open-mind-map="openMindMap"
+      @username-changed="handleUsernameChanged"
     />
 
     <main class="main-content">
@@ -110,6 +111,10 @@ const logout = () => {
   authToken.value = null;
   username.value = "用户";
   startNewChat();
+};
+
+const handleUsernameChanged = (newUsername: string) => {
+  username.value = newUsername;
 };
 
 onMounted(async () => {

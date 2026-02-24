@@ -115,7 +115,7 @@
           <span class="status">专业版</span>
         </div>
         <div class="user-actions" v-if="!isCollapsed">
-          <el-tooltip content="修改密码" placement="top">
+          <el-tooltip content="账户设置" placement="top">
             <el-icon class="action-icon" @click.stop="handleChangePassword">
               <Setting />
             </el-icon>
@@ -131,7 +131,9 @@
 
     <ChangePasswordDialog
       v-model="changePasswordVisible"
+      :current-username="username"
       @success="handlePasswordChanged"
+      @username-changed="handleUsernameChanged"
     />
   </aside>
 </template>
@@ -174,6 +176,7 @@ const emit = defineEmits<{
   (e: "logout"): void;
   (e: "open-settings"): void;
   (e: "open-mind-map", map: MindMap): void;
+  (e: "username-changed", username: string): void;
 }>();
 
 const confirm = useConfirm();
@@ -222,6 +225,10 @@ const handleChangePassword = () => {
 };
 
 const handlePasswordChanged = () => {};
+
+const handleUsernameChanged = (newUsername: string) => {
+  emit("username-changed", newUsername);
+};
 
 const handleOpenMindMap = (map: MindMap) => {
   emit("open-mind-map", map);

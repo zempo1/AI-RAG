@@ -54,6 +54,27 @@ public class AuthService {
         userRepository.save(user);
     }
 
+    public void changeUsername(Long userId, String newUsername) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        
+        if (newUsername == null || newUsername.trim().isEmpty()) {
+            throw new RuntimeException("用户名不能为空");
+        }
+        
+        if (newUsername.length() < 2 || newUsername.length() > 20) {
+            throw new RuntimeException("用户名长度需要在2-20个字符之间");
+        }
+        
+        if (!user.getUsername().equals(newUsername)) {
+            if (userRepository.findByUsername(newUsername).isPresent()) {
+                throw new RuntimeException("用户名已被使用");
+            }
+            user.setUsername(newUsername);
+            userRepository.save(user);
+        }
+    }
+
     public Optional<User> findById(Long id) {
         return userRepository.findById(id);
     }

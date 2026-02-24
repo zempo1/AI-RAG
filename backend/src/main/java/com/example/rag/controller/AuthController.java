@@ -65,4 +65,25 @@ public class AuthController {
             return ResponseEntity.status(400).body(e.getMessage());
         }
     }
+
+    @PostMapping("/change-username")
+    public ResponseEntity<?> changeUsername(@RequestBody Map<String, String> payload) {
+        try {
+            User user = UserContext.getCurrentUser();
+            if (user == null) {
+                return ResponseEntity.status(401).body("未登录");
+            }
+            
+            String newUsername = payload.get("newUsername");
+            
+            authService.changeUsername(user.getId(), newUsername);
+            
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "用户名修改成功");
+            response.put("username", newUsername);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(400).body(e.getMessage());
+        }
+    }
 }

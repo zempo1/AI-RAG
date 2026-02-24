@@ -6,3 +6,9 @@ export const changePassword = async (oldPassword: string, newPassword: string) =
     newPassword
   })
 }
+
+export const changeUsername = async (newUsername: string) => {
+  return request.post('/api/auth/change-username', {
+    newUsername
+  })
+}
