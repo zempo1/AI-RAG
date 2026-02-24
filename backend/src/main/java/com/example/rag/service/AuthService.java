@@ -38,6 +38,22 @@ public class AuthService {
         return jwtUtils.generateToken(user.getId(), user.getUsername());
     }
 
+    public void changePassword(Long userId, String oldPassword, String newPassword) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        
+        if (!BCrypt.checkpw(oldPassword, user.getPassword())) {
+            throw new RuntimeException("原密码错误");
+        }
+        
+        if (newPassword == null || newPassword.length() < 6) {
+            throw new RuntimeException("新密码长度不能少于6位");
+        }
+        
+        user.setPassword(BCrypt.hashpw(newPassword, BCrypt.gensalt()));
+        userRepository.save(user);
+    }
+
     public Optional<User> findById(Long id) {
         return userRepository.findById(id);
     }

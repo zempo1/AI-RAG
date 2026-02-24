@@ -1,5 +1,7 @@
 package com.example.rag.controller;
 
+import com.example.rag.config.UserContext;
+import com.example.rag.entity.User;
 import com.example.rag.service.AuthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -40,6 +42,27 @@ public class AuthController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.status(401).body(e.getMessage());
+        }
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<?> changePassword(@RequestBody Map<String, String> payload) {
+        try {
+            User user = UserContext.getCurrentUser();
+            if (user == null) {
+                return ResponseEntity.status(401).body("未登录");
+            }
+            
+            String oldPassword = payload.get("oldPassword");
+            String newPassword = payload.get("newPassword");
+            
+            authService.changePassword(user.getId(), oldPassword, newPassword);
+            
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "密码修改成功");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(400).body(e.getMessage());
         }
     }
 }

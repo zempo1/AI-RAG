@@ -28,7 +28,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from "vue";
+import { ref, onMounted, onBeforeUnmount, computed, nextTick } from "vue";
 import Sidebar from "./components/Sidebar.vue";
 import Chat from "./components/Chat.vue";
 import MindMapEditor from "./components/MindMapEditor.vue";
@@ -46,11 +46,13 @@ const isLoggedIn = computed(() => !!authToken.value);
 const mindMapEditorVisible = ref(false);
 const currentMindMap = ref<MindMap | null>(null);
 
-const onAuthSuccess = (name: string) => {
+const onAuthSuccess = async (name: string) => {
   authToken.value = localStorage.getItem("token");
   username.value = name;
-  sidebarRef.value?.loadChats();
-  sidebarRef.value?.loadMindMaps();
+  setTimeout(() => {
+    sidebarRef.value?.loadChats();
+    sidebarRef.value?.loadMindMaps();
+  }, 100);
 };
 
 const handleAuthExpired = () => {
@@ -110,9 +112,10 @@ const logout = () => {
   startNewChat();
 };
 
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener("auth-expired", handleAuthExpired);
   if (isLoggedIn.value) {
+    await nextTick();
     sidebarRef.value?.loadChats();
     sidebarRef.value?.loadMindMaps();
   }

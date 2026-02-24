@@ -8,8 +8,12 @@
         <div class="brand" v-show="!isCollapsed">
           <h2>RAG 问答</h2>
         </div>
-        <div class="new-chat-icon" v-show="!isCollapsed" @click="handleNewChat">
-          <el-icon><EditPen /></el-icon>
+        <div v-if="!isCollapsed" class="settings-icon-wrapper">
+          <el-tooltip content="API Key 设置" placement="bottom">
+            <div class="settings-icon" @click="handleOpenSettings">
+              <el-icon><Key /></el-icon>
+            </div>
+          </el-tooltip>
         </div>
       </div>
 
@@ -110,26 +114,32 @@
           <span class="name">{{ username }}</span>
           <span class="status">专业版</span>
         </div>
-        <el-tooltip content="退出登录" placement="top" v-if="!isCollapsed">
-          <el-icon class="logout-icon" @click.stop="handleLogout">
-            <SwitchButton />
-          </el-icon>
-        </el-tooltip>
-      </div>
-      <div
-        class="settings-trigger"
-        @click="handleOpenSettings"
-        v-show="!isCollapsed"
-      >
-        <el-icon><Setting /></el-icon>
+        <div class="user-actions" v-if="!isCollapsed">
+          <el-tooltip content="修改密码" placement="top">
+            <el-icon class="action-icon" @click.stop="handleChangePassword">
+              <Setting />
+            </el-icon>
+          </el-tooltip>
+          <el-tooltip content="退出登录" placement="top">
+            <el-icon class="action-icon logout" @click.stop="handleLogout">
+              <SwitchButton />
+            </el-icon>
+          </el-tooltip>
+        </div>
       </div>
     </div>
+
+    <ChangePasswordDialog
+      v-model="changePasswordVisible"
+      @success="handlePasswordChanged"
+    />
   </aside>
 </template>
 
 <script setup lang="ts">
 import { ref } from "vue";
 import Upload from "./Upload.vue";
+import ChangePasswordDialog from "./ChangePasswordDialog.vue";
 import {
   Plus,
   UserFilled,
@@ -141,6 +151,7 @@ import {
   Setting,
   Connection,
   SwitchButton,
+  Key,
 } from "@element-plus/icons-vue";
 import { useConfirm } from "../composables/useConfirm";
 import { useToast } from "../composables/useToast";
@@ -171,6 +182,7 @@ const toast = useToast();
 const isCollapsed = ref(false);
 const chats = ref<ChatItem[]>([]);
 const mindMaps = ref<MindMap[]>([]);
+const changePasswordVisible = ref(false);
 
 const toggleSidebar = () => {
   isCollapsed.value = !isCollapsed.value;
@@ -194,13 +206,22 @@ const handleDeleteChat = async (id: number) => {
   toast.success("对话已删除");
 };
 
-const handleLogout = () => {
+const handleLogout = async () => {
+  const confirmed = await confirm.warning("确定要退出登录吗？", "退出确认");
+  if (!confirmed) return;
   emit("logout");
+  toast.success("退出成功");
 };
 
 const handleOpenSettings = () => {
   emit("open-settings");
 };
+
+const handleChangePassword = () => {
+  changePasswordVisible.value = true;
+};
+
+const handlePasswordChanged = () => {};
 
 const handleOpenMindMap = (map: MindMap) => {
   emit("open-mind-map", map);
@@ -345,7 +366,7 @@ defineExpose({
       }
     }
 
-    .new-chat-icon {
+    .settings-icon {
       width: 40px;
       height: 40px;
       display: flex;
@@ -571,30 +592,28 @@ defineExpose({
         }
       }
 
-      .logout-icon {
-        color: var(--text-secondary);
-        font-size: 18px;
-        padding: 4px;
-        border-radius: 4px;
-        transition: all 0.2s;
+      .user-actions {
+        display: flex;
+        gap: 4px;
+        margin-left: auto;
 
-        &:hover {
-          background: rgba(255, 255, 255, 0.1);
-          color: #ef4444;
+        .action-icon {
+          color: var(--text-secondary);
+          font-size: 16px;
+          padding: 6px;
+          border-radius: 6px;
+          transition: all 0.2s;
+          cursor: pointer;
+
+          &:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+          }
+
+          &.logout:hover {
+            color: #ef4444;
+          }
         }
-      }
-    }
-
-    .settings-trigger {
-      padding: 12px;
-      cursor: pointer;
-      color: var(--text-secondary);
-      border-radius: 12px;
-      transition: all 0.2s;
-
-      &:hover {
-        background-color: var(--bg-hover);
-        color: var(--text-primary);
       }
     }
   }

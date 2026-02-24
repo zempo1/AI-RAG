@@ -18,8 +18,9 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        // Skip auth for auth endpoints
-        if (request.getRequestURI().startsWith("/api/auth")) {
+        // Skip auth for login and register endpoints only
+        String uri = request.getRequestURI();
+        if (uri.equals("/api/auth/login") || uri.equals("/api/auth/register")) {
             return true;
         }
 
