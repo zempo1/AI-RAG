@@ -50,10 +50,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { UploadFilled, CircleCheckFilled, Close, Connection } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 import type { UploadProps } from 'element-plus'
 import MindMapEditor from './MindMapEditor.vue'
 import { generateMindMap, type MindMap } from '../api/mindmap'
+import { useToast } from '../composables/useToast'
 
 const isUploaded = ref(false)
 const uploadedFileName = ref('')
@@ -62,6 +62,7 @@ const editorVisible = ref(false)
 const currentMindMap = ref<MindMap | null>(null)
 
 const emit = defineEmits(['generated'])
+const toast = useToast()
 
 const uploadHeaders = computed(() => ({
   Authorization: `Bearer ${localStorage.getItem('token')}`
@@ -73,29 +74,28 @@ const handleGenerateMindMap = async () => {
         const map = await generateMindMap()
         currentMindMap.value = map
         editorVisible.value = true
-        ElMessage.success('思维导图生成成功！')
+        toast.success('思维导图生成成功！')
         emit('generated')
     } catch (e) {
         console.error(e)
-        ElMessage.error('生成思维导图失败')
+        toast.error('生成思维导图失败')
     } finally {
         generating.value = false
     }
 }
 
 const handleSaved = () => {
-    // maybe refresh history if we have one visible
 }
 
 
 const handleSuccess: UploadProps['onSuccess'] = (response, uploadFile) => {
-  ElMessage.success('文件处理成功！')
+  toast.success('文件处理成功！')
   isUploaded.value = true
   uploadedFileName.value = uploadFile.name
 }
 
 const handleError: UploadProps['onError'] = (error) => {
-  ElMessage.error('上传失败，请重试。')
+  toast.error('上传失败，请重试。')
   console.error(error)
 }
 
@@ -104,11 +104,11 @@ const beforeUpload: UploadProps['beforeUpload'] = (rawFile) => {
   const isLt10M = rawFile.size / 1024 / 1024 < 10
 
   if (!isValidType) {
-    ElMessage.error('文件必须是 PDF 或 Markdown 格式！')
+    toast.error('文件必须是 PDF 或 Markdown 格式！')
     return false
   }
   if (!isLt10M) {
-    ElMessage.error('文件大小不能超过 10MB！')
+    toast.error('文件大小不能超过 10MB！')
     return false
   }
   return true

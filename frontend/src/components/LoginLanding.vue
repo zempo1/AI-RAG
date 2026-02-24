@@ -117,7 +117,7 @@
 import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { ArrowRight, Document, Connection, Lock, User, Close } from '@element-plus/icons-vue'
 import request from '../utils/request'
-import { ElMessage } from 'element-plus'
+import { useToast } from '../composables/useToast'
 
 const showAuth = ref(false)
 const isLogin = ref(true)
@@ -131,6 +131,7 @@ const form = reactive({
 })
 
 const emit = defineEmits(['success'])
+const toast = useToast()
 
 let streamInterval: any = null
 
@@ -153,7 +154,7 @@ const startStreaming = () => {
 
 const handleAuth = async () => {
   if (!form.username || !form.password) {
-    ElMessage.warning('请输入用户名和密码')
+    toast.warning('请输入用户名和密码')
     return
   }
 
@@ -164,12 +165,10 @@ const handleAuth = async () => {
     const res: any = await request.post(endpoint, form)
     localStorage.setItem('token', res.token)
     localStorage.setItem('username', res.username)
-    ElMessage.success(isLogin.value ? '登录成功' : '注册成功')
+    toast.success(isLogin.value ? '登录成功' : '注册成功')
     emit('success', res.username)
   } catch (e: any) {
-    // Handled by request interceptor
-    //弹窗错误提示
-    ElMessage.error(e?.message || '操作失败')
+    toast.error(e?.message || '操作失败')
   } finally {
     loading.value = false
   }

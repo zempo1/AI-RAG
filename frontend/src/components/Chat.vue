@@ -97,10 +97,10 @@
 
 <script setup lang="ts">
 import { ref, nextTick, watch, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
 import { UserFilled, Promotion, Key, Lock } from '@element-plus/icons-vue'
 import { renderMarkdown } from '../utils/markdown'
 import { getChatHistory, sendStreamChat } from '../api/chat'
+import { useToast } from '../composables/useToast'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -110,6 +110,8 @@ interface Message {
 
 const emit = defineEmits(['chat-created'])
 
+const toast = useToast()
+
 const messages = ref<Message[]>([])
 const input = ref('')
 const loading = ref(false)
@@ -117,7 +119,6 @@ const chatId = ref<number | null>(null)
 const messagesContainer = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
-// API Key Logic
 const apiKeyDialogVisible = ref(false)
 const apiKeyInput = ref('')
 const userApiKey = ref('')
@@ -137,13 +138,13 @@ const openApiKeyDialog = () => {
 
 const saveApiKey = () => {
     if (!apiKeyInput.value.trim()) {
-        ElMessage.warning('请输入有效的 API Key')
+        toast.warning('请输入有效的 API Key')
         return
     }
     userApiKey.value = apiKeyInput.value.trim()
     localStorage.setItem('user_api_key', userApiKey.value)
     apiKeyDialogVisible.value = false
-    ElMessage.success('API Key 已保存')
+    toast.success('API Key 已保存')
 }
 
 const scrollToBottom = async () => {
@@ -169,7 +170,7 @@ const loadHistory = async (id: number) => {
         messages.value = data.messages || []
     } catch (e) {
         console.error(e)
-        ElMessage.error('加载聊天记录失败')
+        toast.error('加载聊天记录失败')
     } finally {
         loading.value = false
         scrollToBottom()
@@ -199,7 +200,7 @@ const sendMessage = async () => {
   if (!input.value.trim() || loading.value) return
   
   if (!userApiKey.value) {
-      ElMessage.warning('请先设置 API Key')
+      toast.warning('请先设置 API Key')
       openApiKeyDialog()
       return
   }
@@ -227,7 +228,7 @@ const sendMessage = async () => {
       },
       onError: (err) => {
         console.error(err)
-        ElMessage.error('获取响应失败')
+        toast.error('获取响应失败')
         messages.value[aiMsgIndex].content += "\n[生成响应时出错]"
       },
       onFinish: async () => {
