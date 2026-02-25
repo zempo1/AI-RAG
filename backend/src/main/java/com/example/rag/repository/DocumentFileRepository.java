@@ -11,4 +11,6 @@ import java.util.Optional;
 public interface DocumentFileRepository extends JpaRepository<DocumentFile, Long> {
     // Get the latest uploaded file for a specific user
     Optional<DocumentFile> findTopByUserOrderByUploadTimeDesc(User user);
+    // Get all files for a user, newest first
+    java.util.List<DocumentFile> findAllByUserOrderByUploadTimeDesc(User user);
 }

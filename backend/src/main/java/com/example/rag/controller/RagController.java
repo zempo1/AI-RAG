@@ -67,6 +67,44 @@ public class RagController {
         }
     }
 
+    /**
+     * 获取当前用户的所有历史上传文件（不含 content，避免响应过大）
+     */
+    @GetMapping("/documents")
+    public ResponseEntity<?> listDocuments() {
+        try {
+            return ResponseEntity.ok(documentService.listDocuments());
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 激活历史文件：重新将其内容写入向量 store，使 RAG 检索生效
+     */
+    @PostMapping("/documents/{id}/activate")
+    public ResponseEntity<?> activateDocument(@PathVariable Long id) {
+        try {
+            documentService.activateDocument(id);
+            return ResponseEntity.ok(Map.of("message", "Document activated successfully."));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 删除历史文件记录（仅删除 DB 记录，不影响向量 store）
+     */
+    @DeleteMapping("/documents/{id}")
+    public ResponseEntity<?> deleteDocument(@PathVariable Long id) {
+        try {
+            documentService.deleteDocument(id);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @PostMapping("/chat")
     public ResponseEntity<String> chat(@RequestBody Map<String, String> payload) {
         String question = payload.get("question");
