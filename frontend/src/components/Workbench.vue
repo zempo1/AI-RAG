@@ -165,9 +165,57 @@
           </div>
         </div>
       </template>
+
+      <!-- ===== 学习卡片 ===== -->
+      <template v-else-if="activeTab === 'flashcard'">
+        <div class="wb-section generate-section">
+          <div v-if="uploadedFileName" class="active-file">
+            <el-icon class="file-icon"><Document /></el-icon>
+            <el-tooltip :content="uploadedFileName" placement="right" :show-after="400" :hide-after="0">
+              <span class="file-name">{{ uploadedFileName }}</span>
+            </el-tooltip>
+          </div>
+          <div v-else class="no-file">
+            <el-icon><InfoFilled /></el-icon>
+            <span>请先在左侧上传或激活文件</span>
+          </div>
+          <el-button class="generate-btn" type="primary"
+            :disabled="!uploadedFileName || !props.uploadedDocumentId"
+            :loading="flashcardGenerating" @click="handleGenerate('FLASHCARD')">
+            <el-icon class="el-icon--left"><Memo /></el-icon>
+            生成学习卡片
+          </el-button>
+        </div>
+        <div class="wb-divider" />
+        <div class="history-scroll">
+          <div class="section-label">历史记录</div>
+          <div v-if="flashcardLoading" class="list-empty">加载中…</div>
+          <div v-else-if="flashcards.length === 0" class="list-empty">暂无学习卡片</div>
+          <div v-for="item in flashcards" :key="item.id" class="map-item"
+            @click="currentFlashcard = item; flashcardViewerVisible = true">
+            <div class="map-item-content">
+              <el-icon class="map-icon"><Memo /></el-icon>
+              <div class="map-info">
+                <el-tooltip :content="item.documentName" placement="right" :show-after="400" :hide-after="0">
+                  <span class="map-title">{{ item.documentName }}</span>
+                </el-tooltip>
+                <span class="map-time">卡片集 &middot; {{ formatTime(item.createdAt) }}</span>
+              </div>
+            </div>
+            <div class="map-actions">
+              <el-icon class="delete-icon" @click.stop="handleDeleteAnalysis(item.id)"><Delete /></el-icon>
+            </div>
+          </div>
+        </div>
+      </template>
     </template>
 
     <MindMapEditor v-model="editorVisible" :mind-map-data="currentMindMap" @saved="onMindMapSaved" />
+    <FlashcardViewer
+      v-model="flashcardViewerVisible"
+      :content="currentFlashcard?.content ?? ''"
+      :doc-name="currentFlashcard?.documentName ?? ''"
+    />
   </aside>
 </template>
 
@@ -178,6 +226,7 @@ import {
   InfoFilled, Delete, List, Memo, Download,
 } from '@element-plus/icons-vue'
 import MindMapEditor from './MindMapEditor.vue'
+import FlashcardViewer from './FlashcardViewer.vue'
 import { generateMindMap, getMindMaps, deleteMindMap as apiDeleteMindMap, type MindMap } from '../api/mindmap'
 import { generateAnalysis, getAnalyses, deleteAnalysis as apiDeleteAnalysis, type DocumentAnalysis } from '../api/analysis'
 import { useToast } from '../composables/useToast'
@@ -191,12 +240,13 @@ const props = defineProps<{
 const toast = useToast()
 const confirm = useConfirm()
 
-const tabs: { key: 'mindmap' | 'summary' | 'outline'; label: string }[] = [
+const tabs: { key: 'mindmap' | 'summary' | 'outline' | 'flashcard'; label: string }[] = [
   { key: 'mindmap', label: '思维导图' },
   { key: 'summary', label: 'AI 摘要' },
   { key: 'outline', label: '文档大纲' },
+  { key: 'flashcard', label: '学习卡片' },
 ]
-const activeTab = ref<'mindmap' | 'summary' | 'outline'>('mindmap')
+const activeTab = ref<'mindmap' | 'summary' | 'outline' | 'flashcard'>('mindmap')
 const isCollapsed = ref(false)
 
 // 思维导图
@@ -215,6 +265,13 @@ const summaries = ref<DocumentAnalysis[]>([])
 const outlineGenerating = ref(false)
 const outlineLoading = ref(false)
 const outlines = ref<DocumentAnalysis[]>([])
+
+// 学习卡片
+const flashcardGenerating = ref(false)
+const flashcardLoading = ref(false)
+const flashcards = ref<DocumentAnalysis[]>([])
+const flashcardViewerVisible = ref(false)
+const currentFlashcard = ref<DocumentAnalysis | null>(null)
 
 // 展开
 const expandedId = ref<number | null>(null)
@@ -236,8 +293,13 @@ const loadOutlines = async () => {
   try { outlines.value = await getAnalyses('OUTLINE') } catch (e) { console.error(e) }
   finally { outlineLoading.value = false }
 }
+const loadFlashcards = async () => {
+  flashcardLoading.value = true
+  try { flashcards.value = await getAnalyses('FLASHCARD') } catch (e) { console.error(e) }
+  finally { flashcardLoading.value = false }
+}
 
-onMounted(() => { loadMindMaps(); loadSummaries(); loadOutlines() })
+onMounted(() => { loadMindMaps(); loadSummaries(); loadOutlines(); loadFlashcards() })
 
 // 思维导图操作
 const handleGenerateMindMap = async () => {
@@ -261,19 +323,21 @@ const handleDeleteMindMap = async (id: number) => {
 const onMindMapSaved = () => { loadMindMaps() }
 
 // 摘要/大纲操作
-const handleGenerate = async (type: 'SUMMARY' | 'OUTLINE') => {
+const handleGenerate = async (type: 'SUMMARY' | 'OUTLINE' | 'FLASHCARD') => {
   if (!props.uploadedDocumentId) { toast.error('请先选择文件'); return }
   if (type === 'SUMMARY') summaryGenerating.value = true
-  else outlineGenerating.value = true
+  else if (type === 'OUTLINE') outlineGenerating.value = true
+  else flashcardGenerating.value = true
   try {
-    await generateAnalysis(props.uploadedDocumentId, type)
-    toast.success(type === 'SUMMARY' ? 'AI 摘要生成成功！' : '文档大纲生成成功！')
-    if (type === 'SUMMARY') await loadSummaries()
-    else await loadOutlines()
-  } catch (e) { console.error(e); toast.error(type === 'SUMMARY' ? '生成摘要失败' : '生成大纲失败') }
+    const result = await generateAnalysis(props.uploadedDocumentId, type)
+    if (type === 'SUMMARY') { toast.success('AI 摘要生成成功！'); await loadSummaries() }
+    else if (type === 'OUTLINE') { toast.success('文档大纲生成成功！'); await loadOutlines() }
+    else { toast.success('学习卡片生成成功！'); await loadFlashcards(); currentFlashcard.value = result; flashcardViewerVisible.value = true }
+  } catch (e) { console.error(e); toast.error('生成失败，请重试') }
   finally {
     if (type === 'SUMMARY') summaryGenerating.value = false
-    else outlineGenerating.value = false
+    else if (type === 'OUTLINE') outlineGenerating.value = false
+    else flashcardGenerating.value = false
   }
 }
 const handleDeleteAnalysis = async (id: number) => {
@@ -283,6 +347,7 @@ const handleDeleteAnalysis = async (id: number) => {
     await apiDeleteAnalysis(id)
     summaries.value = summaries.value.filter(s => s.id !== id)
     outlines.value = outlines.value.filter(o => o.id !== id)
+    flashcards.value = flashcards.value.filter(f => f.id !== id)
     if (expandedId.value === id) expandedId.value = null
     toast.success('已删除')
   } catch (e) { console.error(e); toast.error('删除失败') }

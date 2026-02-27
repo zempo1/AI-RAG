@@ -9,7 +9,7 @@ export interface DocumentAnalysis {
     createdAt: string
 }
 
-export const generateAnalysis = (documentId: number, type: 'SUMMARY' | 'OUTLINE') => {
+export const generateAnalysis = (documentId: number, type: 'SUMMARY' | 'OUTLINE' | 'FLASHCARD') => {
     return request.post<any, DocumentAnalysis>(
         '/api/analysis/generate',
         { documentId, type },
@@ -17,7 +17,7 @@ export const generateAnalysis = (documentId: number, type: 'SUMMARY' | 'OUTLINE'
     )
 }
 
-export const getAnalyses = (type: 'SUMMARY' | 'OUTLINE') => {
+export const getAnalyses = (type: 'SUMMARY' | 'OUTLINE' | 'FLASHCARD') => {
     return request.get<any, DocumentAnalysis[]>('/api/analysis', { params: { type } })
 }
 
