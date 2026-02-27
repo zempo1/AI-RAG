@@ -7,8 +7,8 @@ export interface MindMap {
   createdAt: string
 }
 
-export const generateMindMap = () => {
-  return request.post<any, MindMap>('/api/mindmaps/generate', null, { timeout: 120000 })
+export const generateMindMap = (documentId: number) => {
+  return request.post<any, MindMap>('/api/mindmaps/generate', { documentId }, { timeout: 120000 })
 }
 
 export const getMindMaps = () => {

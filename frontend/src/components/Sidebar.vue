@@ -44,7 +44,9 @@
         >
           <div class="chat-title-wrapper">
             <el-icon><ChatLineRound /></el-icon>
-            <span class="chat-title-text">{{ chat.title }}</span>
+            <el-tooltip :content="chat.title" placement="right" :show-after="400" :hide-after="0">
+              <span class="chat-title-text">{{ chat.title }}</span>
+            </el-tooltip>
           </div>
           <div class="chat-actions">
             <el-icon
@@ -61,7 +63,7 @@
         文档
       </div>
       <div class="upload-wrapper" v-show="!isCollapsed">
-        <Upload @generated="handleMindMapGenerated" />
+        <Upload @activated="handleFileActivated" />
       </div>
       <div class="upload-collapsed" v-show="isCollapsed">
         <el-tooltip content="上传文档" placement="right">
@@ -71,40 +73,6 @@
         </el-tooltip>
       </div>
 
-      <div class="section-title" v-show="!isCollapsed" style="margin-top: 24px">
-        思维导图
-      </div>
-      <div class="chat-list" v-show="!isCollapsed">
-        <div
-          v-for="map in mindMaps"
-          :key="map.id"
-          class="chat-item"
-          @click="handleOpenMindMap(map)"
-        >
-          <div class="chat-title-wrapper">
-            <el-icon><Connection /></el-icon>
-            <span class="chat-title-text">{{ map.title }}</span>
-          </div>
-          <div class="chat-actions">
-            <el-icon
-              class="delete-icon"
-              @click.stop="handleDeleteMindMap(map.id)"
-            >
-              <Delete />
-            </el-icon>
-          </div>
-        </div>
-        <div
-          v-if="mindMaps.length === 0"
-          style="
-            padding: 0 12px;
-            color: var(--text-secondary);
-            font-size: 0.8rem;
-          "
-        >
-          暂无思维导图
-        </div>
-      </div>
     </div>
 
     <div class="sidebar-footer">
@@ -151,18 +119,12 @@ import {
   ChatLineRound,
   Delete,
   Setting,
-  Connection,
   SwitchButton,
   Key,
 } from "@element-plus/icons-vue";
 import { useConfirm } from "../composables/useConfirm";
 import { useToast } from "../composables/useToast";
 import type { ChatItem } from "../types";
-import {
-  getMindMaps,
-  deleteMindMap as apiDeleteMindMap,
-  type MindMap,
-} from "../api/mindmap";
 
 const props = defineProps<{
   username: string;
@@ -175,7 +137,7 @@ const emit = defineEmits<{
   (e: "delete-chat", id: number): void;
   (e: "logout"): void;
   (e: "open-settings"): void;
-  (e: "open-mind-map", map: MindMap): void;
+  (e: "file-activated", filename: string, id: number | null): void;
   (e: "username-changed", username: string): void;
 }>();
 
@@ -184,7 +146,6 @@ const toast = useToast();
 
 const isCollapsed = ref(false);
 const chats = ref<ChatItem[]>([]);
-const mindMaps = ref<MindMap[]>([]);
 const changePasswordVisible = ref(false);
 
 const toggleSidebar = () => {
@@ -230,29 +191,8 @@ const handleUsernameChanged = (newUsername: string) => {
   emit("username-changed", newUsername);
 };
 
-const handleOpenMindMap = (map: MindMap) => {
-  emit("open-mind-map", map);
-};
-
-const handleDeleteMindMap = async (id: number) => {
-  const confirmed = await confirm.danger(
-    "确定要删除这个思维导图吗？删除后无法恢复。",
-    "删除确认",
-  );
-  if (!confirmed) return;
-
-  try {
-    await apiDeleteMindMap(id);
-    await loadMindMaps();
-    toast.success("思维导图已删除");
-  } catch (e) {
-    console.error(e);
-    toast.error("删除失败");
-  }
-};
-
-const handleMindMapGenerated = () => {
-  loadMindMaps();
+const handleFileActivated = (filename: string, id: number | null) => {
+  emit("file-activated", filename, id);
 };
 
 const loadChats = async () => {
@@ -270,24 +210,14 @@ const loadChats = async () => {
   }
 };
 
-const loadMindMaps = async () => {
-  try {
-    const res: any = await getMindMaps();
-    mindMaps.value = res;
-  } catch (e) {
-    console.error(e);
-  }
-};
-
 defineExpose({
   loadChats,
-  loadMindMaps,
 });
 </script>
 
 <style lang="scss" scoped>
 .sidebar {
-  width: 320px;
+  width: 310px;
   background-color: var(--bg-sidebar);
   display: flex;
   flex-direction: column;

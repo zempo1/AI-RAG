@@ -12,7 +12,7 @@
       @delete-chat="deleteChat"
       @logout="logout"
       @open-settings="openSettings"
-      @open-mind-map="openMindMap"
+      @file-activated="onFileActivated"
       @username-changed="handleUsernameChanged"
     />
 
@@ -20,10 +20,10 @@
       <Chat ref="chatRef" @chat-created="onChatCreated" />
     </main>
 
-    <MindMapEditor
-      v-model="mindMapEditorVisible"
-      :mind-map-data="currentMindMap"
-      @saved="onMindMapSaved"
+    <Workbench
+      ref="workbenchRef"
+      :uploaded-file-name="uploadedFileName"
+      :uploaded-document-id="uploadedDocumentId"
     />
   </div>
 </template>
@@ -32,27 +32,26 @@
 import { ref, onMounted, onBeforeUnmount, computed, nextTick } from "vue";
 import Sidebar from "./components/Sidebar.vue";
 import Chat from "./components/Chat.vue";
-import MindMapEditor from "./components/MindMapEditor.vue";
+import Workbench from "./components/Workbench.vue";
 import LoginLanding from "./components/LoginLanding.vue";
-import type { MindMap } from "./api/mindmap";
 
 const chatRef = ref<any>(null);
 const sidebarRef = ref<any>(null);
+const workbenchRef = ref<any>(null);
 const currentChatId = ref<number | null>(null);
 const username = ref(localStorage.getItem("username") || "用户");
 const authToken = ref(localStorage.getItem("token"));
+const uploadedFileName = ref("");
+const uploadedDocumentId = ref<number | null>(null);
 
 const isLoggedIn = computed(() => !!authToken.value);
-
-const mindMapEditorVisible = ref(false);
-const currentMindMap = ref<MindMap | null>(null);
 
 const onAuthSuccess = async (name: string) => {
   authToken.value = localStorage.getItem("token");
   username.value = name;
   setTimeout(() => {
     sidebarRef.value?.loadChats();
-    sidebarRef.value?.loadMindMaps();
+    workbenchRef.value?.loadMindMaps();
   }, 100);
 };
 
@@ -60,13 +59,9 @@ const handleAuthExpired = () => {
   logout();
 };
 
-const openMindMap = (map: MindMap) => {
-  currentMindMap.value = map;
-  mindMapEditorVisible.value = true;
-};
-
-const onMindMapSaved = () => {
-  sidebarRef.value?.loadMindMaps();
+const onFileActivated = (filename: string, id: number | null) => {
+  uploadedFileName.value = filename;
+  uploadedDocumentId.value = id;
 };
 
 const openSettings = () => {
@@ -122,7 +117,7 @@ onMounted(async () => {
   if (isLoggedIn.value) {
     await nextTick();
     sidebarRef.value?.loadChats();
-    sidebarRef.value?.loadMindMaps();
+    workbenchRef.value?.loadMindMaps();
   }
 });
 

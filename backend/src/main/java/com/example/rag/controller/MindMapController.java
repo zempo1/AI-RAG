@@ -18,9 +18,19 @@ public class MindMapController {
     private final MindMapService mindMapService;
 
     @PostMapping("/generate")
-    public ResponseEntity<MindMap> generateMindMap(
-            @RequestHeader(value = "X-Api-Key", required = false) String apiKey) {
-        return ResponseEntity.ok(mindMapService.generateMindMap(apiKey));
+    public ResponseEntity<?> generateMindMap(
+            @RequestHeader(value = "X-Api-Key", required = false) String apiKey,
+            @RequestBody(required = false) Map<String, Object> body) {
+        try {
+            Long documentId = body != null && body.get("documentId") != null
+                    ? Long.valueOf(body.get("documentId").toString())
+                    : null;
+            return ResponseEntity.ok(mindMapService.generateMindMap(apiKey, documentId));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage(), "cause",
+                    e.getCause() != null ? e.getCause().getMessage() : "null"));
+        }
     }
 
     @GetMapping

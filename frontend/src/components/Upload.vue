@@ -59,9 +59,6 @@
         <span class="filename">{{ uploadedFileName }}</span>
       </div>
       <div class="actions">
-        <el-button type="primary" size="small" @click="handleGenerateMindMap" :loading="generating">
-          <el-icon class="el-icon--left"><Connection /></el-icon>生成思维导图
-        </el-button>
         <el-button type="danger" circle size="small" @click="resetUpload">
           <el-icon><Close /></el-icon>
         </el-button>
@@ -93,7 +90,9 @@
           >
             <el-icon class="doc-icon"><Document /></el-icon>
             <div class="doc-info">
-              <span class="doc-name">{{ doc.filename }}</span>
+              <el-tooltip :content="doc.filename" placement="right" :show-after="400" :hide-after="0">
+                <span class="doc-name">{{ doc.filename }}</span>
+              </el-tooltip>
               <span class="doc-time">{{ formatTime(doc.uploadTime) }}</span>
             </div>
             <div class="doc-actions">
@@ -124,11 +123,6 @@
     </div>
   </div>
 
-  <MindMapEditor
-    v-model="editorVisible"
-    :mind-map-data="currentMindMap"
-    @saved="handleSaved"
-  />
 </template>
 
 <script setup lang="ts">
@@ -137,7 +131,6 @@ import {
   UploadFilled,
   CircleCheckFilled,
   Close,
-  Connection,
   Loading,
   VideoPause,
   VideoPlay,
@@ -149,8 +142,6 @@ import {
 } from '@element-plus/icons-vue'
 import type { UploadFile } from 'element-plus'
 import SparkMD5 from 'spark-md5'
-import MindMapEditor from './MindMapEditor.vue'
-import { generateMindMap, type MindMap } from '../api/mindmap'
 import { useToast } from '../composables/useToast'
 import { checkUpload, uploadChunk, mergeChunks } from '../api/upload'
 import {
@@ -168,9 +159,6 @@ const CONCURRENCY = 3
 const isUploaded = ref(false)
 const isUploading = ref(false)
 const uploadedFileName = ref('')
-const generating = ref(false)
-const editorVisible = ref(false)
-const currentMindMap = ref<MindMap | null>(null)
 const pendingFile = ref<File | null>(null)
 const isPaused = ref(false)
 const totalProgress = ref(0)
@@ -185,7 +173,9 @@ const activatingId = ref<number | null>(null)
 let abortFlag = false
 let uploadedChunkSet = new Set<number>()
 
-const emit = defineEmits(['generated'])
+const emit = defineEmits<{
+  (e: 'activated', filename: string, id: number | null): void
+}>()
 const toast = useToast()
 
 const progressStatus = computed(() => {
@@ -227,6 +217,7 @@ const handleActivate = async (doc: DocumentSummary) => {
     await activateDocument(doc.id)
     isUploaded.value = true
     uploadedFileName.value = doc.filename
+    emit('activated', doc.filename, doc.id)
     toast.success(`已切换到「${doc.filename}」`)
   } catch (e) {
     console.error(e)
@@ -339,8 +330,10 @@ async function startChunkUpload(file: File) {
     toast.success('文件处理成功！')
     await sleep(600)
     finishUpload(file.name)
-    // 刷新历史列表
+    // 上传完成后重新加载历史以获取新文件 ID
     await loadHistory()
+    const latest = docHistory.value[0]
+    emit('activated', file.name, latest?.id ?? null)
   } catch (e: any) {
     if (!abortFlag) {
       console.error(e)
@@ -370,24 +363,6 @@ const resetUpload = () => {
   isUploaded.value = false
   uploadedFileName.value = ''
 }
-
-// ——— Mind Map ———
-const handleGenerateMindMap = async () => {
-  generating.value = true
-  try {
-    const map = await generateMindMap()
-    currentMindMap.value = map
-    editorVisible.value = true
-    toast.success('思维导图生成成功！')
-    emit('generated')
-  } catch (e) {
-    console.error(e)
-    toast.error('生成思维导图失败')
-  } finally {
-    generating.value = false
-  }
-}
-const handleSaved = () => {}
 
 // ——— 工具 ———
 function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)) }

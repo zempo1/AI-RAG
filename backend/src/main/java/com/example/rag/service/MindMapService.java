@@ -28,10 +28,17 @@ public class MindMapService {
     @Value("${openai.model-name}")
     private String defaultModelName;
 
-    public MindMap generateMindMap(String apiKey) {
-        DocumentFile latestFile = documentFileRepository
-                .findTopByUserOrderByUploadTimeDesc(UserContext.getCurrentUser())
-                .orElseThrow(() -> new RuntimeException("No uploaded file found to generate mind map"));
+    public MindMap generateMindMap(String apiKey, Long documentId) {
+        DocumentFile latestFile;
+        if (documentId != null) {
+            latestFile = documentFileRepository.findById(documentId)
+                    .filter(f -> f.getUser().getId().equals(UserContext.getCurrentUser().getId()))
+                    .orElseThrow(() -> new RuntimeException("Document not found: " + documentId));
+        } else {
+            latestFile = documentFileRepository
+                    .findTopByUserOrderByUploadTimeDesc(UserContext.getCurrentUser())
+                    .orElseThrow(() -> new RuntimeException("No uploaded file found to generate mind map"));
+        }
 
         String content = latestFile.getContent();
         // Truncate if too long (simple protection, though better to use LLM context
