@@ -35,6 +35,18 @@
         </div>
       </div>
       <div class="actions">
+        <el-dropdown @command="handleExport" trigger="click">
+          <el-button class="btn-export">
+            <el-icon class="el-icon--left"><Download /></el-icon>
+            导出
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="png">导出为 PNG 图片</el-dropdown-item>
+              <el-dropdown-item command="svg">导出为 SVG 矢量图</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button class="btn-close" @click="handleClose">关闭</el-button>
         <el-button type="primary" class="btn-save" @click="saveMap"
           >保存更改</el-button
@@ -48,10 +60,14 @@
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount, nextTick } from "vue";
 import MindMap from "simple-mind-map";
+// @ts-ignore
+import ExportPlugin from "simple-mind-map/src/plugins/Export.js";
 import "simple-mind-map/dist/simpleMindMap.esm.css";
 import { updateMindMap, type MindMap as MindMapType } from "../api/mindmap";
 import { useToast } from "../composables/useToast";
-import { RefreshLeft, RefreshRight, FullScreen } from "@element-plus/icons-vue";
+import { RefreshLeft, RefreshRight, FullScreen, Download } from "@element-plus/icons-vue";
+
+MindMap.usePlugin(ExportPlugin);
 
 const props = defineProps<{
   modelValue: boolean;
@@ -175,6 +191,7 @@ const initMindMap = () => {
         themeConfig: customTheme,
         layout: currentLayout.value,
         readonly: false,
+        // @ts-ignore
         supportNodeDrag: true,
         dragMinimizeDiff: 5,
       });
@@ -231,6 +248,31 @@ const saveMap = async () => {
 const handleClose = () => {
   visible.value = false;
 };
+
+const handleExport = async (type: 'png' | 'svg') => {
+  if (!mindMap) return;
+  try {
+    const title = currentMap.value?.title || '思维导图';
+    if (type === 'png') {
+      const data: string = await mindMap.export('png', true, title);
+      downloadDataUrl(data, `${title}.png`);
+    } else {
+      const data: string = await mindMap.export('svg', true, title);
+      downloadDataUrl(data, `${title}.svg`);
+    }
+    toast.success(`已导出为 ${type.toUpperCase()}`);
+  } catch (e) {
+    console.error(e);
+    toast.error('导出失败');
+  }
+};
+
+function downloadDataUrl(dataUrl: string, filename: string) {
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = filename;
+  a.click();
+}
 
 onBeforeUnmount(() => {
   if (mindMap) {
@@ -302,6 +344,12 @@ onBeforeUnmount(() => {
 .actions {
   display: flex;
   gap: 12px;
+}
+
+.btn-export {
+  padding: 0 24px;
+  height: 40px;
+  border-radius: 10px;
 }
 
 .btn-save {

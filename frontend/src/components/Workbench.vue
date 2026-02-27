@@ -109,6 +109,9 @@
               </div>
               <div class="analysis-header-right">
                 <el-icon class="toggle-chevron" :class="{ expanded: expandedId === item.id }"><ArrowRight /></el-icon>
+                <el-tooltip content="导出 Markdown" placement="left" :hide-after="0">
+                  <el-icon class="export-icon" @click.stop="exportMarkdown(item)"><Download /></el-icon>
+                </el-tooltip>
                 <el-icon class="delete-icon" @click.stop="handleDeleteAnalysis(item.id)"><Delete /></el-icon>
               </div>
             </div>
@@ -152,6 +155,9 @@
               </div>
               <div class="analysis-header-right">
                 <el-icon class="toggle-chevron" :class="{ expanded: expandedId === item.id }"><ArrowRight /></el-icon>
+                <el-tooltip content="导出 Markdown" placement="left" :hide-after="0">
+                  <el-icon class="export-icon" @click.stop="exportMarkdown(item)"><Download /></el-icon>
+                </el-tooltip>
                 <el-icon class="delete-icon" @click.stop="handleDeleteAnalysis(item.id)"><Delete /></el-icon>
               </div>
             </div>
@@ -169,7 +175,7 @@
 import { ref, onMounted } from 'vue'
 import {
   ArrowLeft, ArrowRight, Grid, Connection, Document,
-  InfoFilled, Delete, List, Memo,
+  InfoFilled, Delete, List, Memo, Download,
 } from '@element-plus/icons-vue'
 import MindMapEditor from './MindMapEditor.vue'
 import { generateMindMap, getMindMaps, deleteMindMap as apiDeleteMindMap, type MindMap } from '../api/mindmap'
@@ -185,7 +191,7 @@ const props = defineProps<{
 const toast = useToast()
 const confirm = useConfirm()
 
-const tabs = [
+const tabs: { key: 'mindmap' | 'summary' | 'outline'; label: string }[] = [
   { key: 'mindmap', label: '思维导图' },
   { key: 'summary', label: 'AI 摘要' },
   { key: 'outline', label: '文档大纲' },
@@ -282,6 +288,19 @@ const handleDeleteAnalysis = async (id: number) => {
   } catch (e) { console.error(e); toast.error('删除失败') }
 }
 
+function exportMarkdown(item: DocumentAnalysis) {
+  const typeLabel = item.type === 'SUMMARY' ? 'AI摘要' : '文档大纲'
+  const header = `# ${typeLabel} — ${item.documentName}\n\n> 生成时间：${new Date(item.createdAt).toLocaleString('zh-CN')}\n\n---\n\n`
+  const blob = new Blob([header + item.content], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${item.documentName}_${typeLabel}_${item.id}.md`
+  a.click()
+  URL.revokeObjectURL(url)
+  toast.success('已导出为 Markdown 文件')
+}
+
 function formatTime(iso: string): string {
   const d = new Date(iso)
   const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000)
@@ -309,7 +328,7 @@ defineExpose({ loadMindMaps, loadSummaries, loadOutlines })
 
 <style lang="scss" scoped>
 .workbench {
-  width: 290px;
+  width: 300px;
   background-color: var(--bg-sidebar);
   border-left: 1px solid var(--border-color);
   display: flex; flex-direction: column;
@@ -438,7 +457,7 @@ defineExpose({ loadMindMaps, loadSummaries, loadOutlines })
   .analysis-header {
     display: flex; align-items: center; justify-content: space-between;
     padding: 8px 10px; cursor: pointer; transition: background 0.15s;
-    &:hover { background: var(--bg-hover); .delete-icon { opacity: 1 !important; } }
+    &:hover { background: var(--bg-hover); .delete-icon { opacity: 1 !important; } .export-icon { opacity: 1 !important; } }
     .analysis-meta {
       display: flex; flex-direction: column; gap: 2px; overflow: hidden; flex: 1; min-width: 0;
       .analysis-doc { font-size: 0.82rem; color: var(--text-primary); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -447,6 +466,11 @@ defineExpose({ loadMindMaps, loadSummaries, loadOutlines })
     .analysis-header-right {
       display: flex; align-items: center; gap: 5px; flex-shrink: 0; margin-left: 6px;
       .toggle-chevron { font-size: 12px; color: var(--text-secondary); transition: transform 0.2s; &.expanded { transform: rotate(90deg); } }
+      .export-icon {
+        font-size: 13px; color: var(--text-secondary); padding: 3px; border-radius: 4px;
+        cursor: pointer; opacity: 0; transition: all 0.15s;
+        &:hover { background: rgba(59,130,246,0.15); color: #3b82f6; }
+      }
       .delete-icon {
         font-size: 13px; color: var(--text-secondary); padding: 3px; border-radius: 4px;
         cursor: pointer; opacity: 0; transition: all 0.15s;
