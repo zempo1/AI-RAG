@@ -141,7 +141,6 @@ import {
   Delete,
 } from '@element-plus/icons-vue'
 import type { UploadFile } from 'element-plus'
-import SparkMD5 from 'spark-md5'
 import { useToast } from '../composables/useToast'
 import { checkUpload, uploadChunk, mergeChunks } from '../api/upload'
 import {
@@ -172,6 +171,8 @@ const activatingId = ref<number | null>(null)
 
 let abortFlag = false
 let uploadedChunkSet = new Set<number>()
+/** 当前 MD5 Worker 实例，abort 时需要 terminate */
+let md5Worker: Worker | null = null
 
 const emit = defineEmits<{
   (e: 'activated', filename: string, id: number | null): void
@@ -253,29 +254,44 @@ const handleFileChange = async (uploadFile: UploadFile) => {
   await startChunkUpload(file)
 }
 
-function calcMD5(file: File): Promise<string> {
+/**
+ * 在 Web Worker 中计算文件 MD5，避免阻塞主线程。
+ * 进度（0-100%）通过 onProgress 回调返回，映射到整体进度条 0~20% 区间。
+ */
+function calcMD5Worker(
+  file: File,
+  onProgress: (p: number) => void,
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    const spark = new SparkMD5.ArrayBuffer()
-    const reader = new FileReader()
-    const chunkCount = Math.ceil(file.size / CHUNK_SIZE)
-    let currentChunk = 0
-    const loadNext = () => {
-      const start = currentChunk * CHUNK_SIZE
-      reader.readAsArrayBuffer(file.slice(start, Math.min(start + CHUNK_SIZE, file.size)))
-    }
-    reader.onload = (e) => {
-      spark.append(e.target!.result as ArrayBuffer)
-      currentChunk++
-      if (currentChunk < chunkCount) {
-        totalProgress.value = Math.round((currentChunk / chunkCount) * 20)
-        statusText.value = `计算文件指纹… ${totalProgress.value}%`
-        loadNext()
-      } else {
-        resolve(spark.end())
+    // Vite 专用语法：将 worker 文件内联为模块
+    const worker = new Worker(
+      new URL('../workers/md5.worker.ts', import.meta.url),
+      { type: 'module' },
+    )
+    md5Worker = worker
+
+    worker.onmessage = (e: MessageEvent) => {
+      const { type, percent, md5, message } = e.data
+      if (type === 'progress') {
+        onProgress(percent)
+      } else if (type === 'done') {
+        worker.terminate()
+        md5Worker = null
+        resolve(md5)
+      } else if (type === 'error') {
+        worker.terminate()
+        md5Worker = null
+        reject(new Error(message))
       }
     }
-    reader.onerror = reject
-    loadNext()
+
+    worker.onerror = (err) => {
+      worker.terminate()
+      md5Worker = null
+      reject(err)
+    }
+
+    worker.postMessage({ file, chunkSize: CHUNK_SIZE })
   })
 }
 
@@ -288,7 +304,11 @@ async function startChunkUpload(file: File) {
 
   try {
     statusText.value = '计算文件指纹…'
-    const md5 = await calcMD5(file)
+    const md5 = await calcMD5Worker(file, (p) => {
+      // Worker 进度 0~100% 映射到整体进度条 0~20%
+      totalProgress.value = Math.round(p * 0.2)
+      statusText.value = `计算文件指纹… ${Math.round(p * 0.2)}%`
+    })
 
     statusText.value = '检查文件状态…'
     const { uploaded, uploadedChunks = [] } = await checkUpload(md5, file.name)
@@ -353,6 +373,11 @@ const cancelUpload = () => {
   totalProgress.value = 0
   statusText.value = ''
   uploadedChunkSet = new Set()
+  // 终止还在计算的 MD5 Worker
+  if (md5Worker) {
+    md5Worker.terminate()
+    md5Worker = null
+  }
 }
 const finishUpload = (name: string) => {
   isUploading.value = false
