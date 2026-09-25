@@ -141,14 +141,14 @@ import {
   Delete,
 } from '@element-plus/icons-vue'
 import type { UploadFile } from 'element-plus'
-import { useToast } from '../composables/useToast'
-import { checkUpload, uploadChunk, mergeChunks } from '../api/upload'
+import { useToast } from '../../composables/useToast'
+import { checkUpload, uploadChunk, mergeChunks } from '../../api/upload'
 import {
   listDocuments,
   activateDocument,
   deleteDocument,
   type DocumentSummary,
-} from '../api/documents'
+} from '../../api/documents'
 
 // ——— 常量 ———
 const CHUNK_SIZE = 5 * 1024 * 1024
@@ -265,7 +265,7 @@ function calcMD5Worker(
   return new Promise((resolve, reject) => {
     // Vite 专用语法：将 worker 文件内联为模块
     const worker = new Worker(
-      new URL('../workers/md5.worker.ts', import.meta.url),
+      new URL('../../workers/md5.worker.ts', import.meta.url),
       { type: 'module' },
     )
     md5Worker = worker
@@ -402,232 +402,4 @@ async function asyncPool<T>(concurrency: number, items: T[], fn: (item: T) => Pr
 }
 </script>
 
-<style scoped lang="scss">
-.upload-container {
-  padding: 0 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-
-  :deep(.el-upload) { width: 100%; }
-  :deep(.el-upload-dragger) {
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px dashed var(--border-color);
-    padding: 28px 16px;
-    height: auto;
-    border-radius: 12px;
-    transition: all 0.2s;
-    &:hover { border-color: var(--accent-color); background-color: var(--bg-hover); }
-    &.is-dragover { background-color: rgba(139, 92, 246, 0.1); border-color: var(--accent-color); }
-  }
-  :deep(.el-icon--upload) {
-    font-size: 40px;
-    color: var(--text-secondary);
-    margin-bottom: 12px;
-    transition: color 0.2s;
-  }
-  :deep(.el-upload-dragger:hover .el-icon--upload) { color: var(--accent-color); }
-  :deep(.el-upload__text) {
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    em { color: var(--accent-color); font-style: normal; font-weight: 600; }
-  }
-  :deep(.el-upload__tip) {
-    color: var(--text-secondary);
-    font-size: 0.75rem;
-    margin-top: 8px;
-    text-align: center;
-  }
-
-  // ——— 上传中 ———
-  .uploading-state {
-    background: rgba(139, 92, 246, 0.06);
-    border: 1px solid rgba(139, 92, 246, 0.2);
-    border-radius: 12px;
-    padding: 14px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-
-    .upload-info {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      overflow: hidden;
-      .uploading-icon {
-        font-size: 18px;
-        color: var(--accent-color);
-        flex-shrink: 0;
-        animation: spin 1.2s linear infinite;
-        &.is-paused { animation: none; color: #f59e0b; }
-      }
-      .filename {
-        color: var(--text-primary);
-        font-size: 0.85rem;
-        font-weight: 500;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-    }
-    .progress-wrap {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      .progress-label { font-size: 0.75rem; color: var(--text-secondary); text-align: right; }
-    }
-    .upload-actions { display: flex; gap: 8px; justify-content: flex-end; }
-  }
-
-  // ——— 已上传 ———
-  .uploaded-state {
-    background: rgba(16, 185, 129, 0.1);
-    border: 1px solid rgba(16, 185, 129, 0.2);
-    border-radius: 12px;
-    padding: 12px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-
-    .file-info {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      overflow: hidden;
-      flex: 1;
-      .success-icon { color: #10b981; font-size: 20px; flex-shrink: 0; }
-      .filename {
-        color: var(--text-primary);
-        font-size: 0.875rem;
-        font-weight: 500;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-    }
-    .actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-    :deep(.el-button--danger) {
-      background: transparent;
-      border: 1px solid rgba(239, 68, 68, 0.2);
-      color: #ef4444;
-      &:hover { background: #ef4444; color: white; border-color: #ef4444; }
-    }
-  }
-
-  // ——— 历史文件 ———
-  .history-section {
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    overflow: hidden;
-    background: rgba(255, 255, 255, 0.02);
-
-    .history-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 9px 12px;
-      cursor: pointer;
-      user-select: none;
-      transition: background 0.15s;
-      &:hover { background: var(--bg-hover); }
-
-      .history-title {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 0.78rem;
-        font-weight: 600;
-        color: var(--text-secondary);
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        .el-icon { font-size: 14px; }
-        .history-count {
-          background: var(--accent-color);
-          color: white;
-          font-size: 0.65rem;
-          padding: 1px 5px;
-          border-radius: 10px;
-          font-weight: 700;
-          line-height: 1.4;
-        }
-      }
-
-      .toggle-icon {
-        font-size: 12px;
-        color: var(--text-secondary);
-        transition: transform 0.2s;
-        &.rotated { transform: rotate(90deg); }
-      }
-    }
-
-    .history-list {
-      border-top: 1px solid var(--border-color);
-      max-height: 260px;
-      overflow-y: auto;
-
-      .history-empty {
-        padding: 16px 12px;
-        font-size: 0.8rem;
-        color: var(--text-secondary);
-        text-align: center;
-      }
-
-      .history-item {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 12px;
-        transition: background 0.15s;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-        cursor: default;
-
-        &:last-child { border-bottom: none; }
-        &:hover { background: var(--bg-hover); }
-        &.active { background: rgba(16, 185, 129, 0.08); }
-
-        .doc-icon { font-size: 16px; color: var(--text-secondary); flex-shrink: 0; }
-
-        .doc-info {
-          flex: 1;
-          min-width: 0;
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-          .doc-name {
-            font-size: 0.82rem;
-            color: var(--text-primary);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-          }
-          .doc-time { font-size: 0.7rem; color: var(--text-secondary); }
-        }
-
-        .doc-actions {
-          display: flex;
-          gap: 4px;
-          flex-shrink: 0;
-          opacity: 0;
-          transition: opacity 0.15s;
-          :deep(.el-button) {
-            padding: 4px;
-            width: 26px;
-            height: 26px;
-            font-size: 12px;
-          }
-        }
-        &:hover .doc-actions { opacity: 1; }
-      }
-    }
-  }
-}
-
-// 展开动画
-.slide-enter-active, .slide-leave-active { transition: all 0.2s ease; max-height: 300px; }
-.slide-enter-from, .slide-leave-to { max-height: 0; opacity: 0; }
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-</style>
+<style lang="scss" src="./Upload.scss" scoped></style>

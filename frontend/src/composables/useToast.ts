@@ -1,5 +1,5 @@
 import { createApp, h, ref } from 'vue'
-import Toast from '../components/Toast.vue'
+import Toast from '../components/Toast/Toast.vue'
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info'
 

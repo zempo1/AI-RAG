@@ -30,10 +30,10 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, nextTick } from "vue";
-import Sidebar from "./components/Sidebar.vue";
-import Chat from "./components/Chat.vue";
-import Workbench from "./components/Workbench.vue";
-import LoginLanding from "./components/LoginLanding.vue";
+import Sidebar from "../features/sidebar/Sidebar.vue";
+import Chat from "../features/chat/Chat.vue";
+import Workbench from "../features/workbench/Workbench.vue";
+import LoginLanding from "../features/landing/LoginLanding.vue";
 
 const chatRef = ref<any>(null);
 const sidebarRef = ref<any>(null);
@@ -126,76 +126,4 @@ onBeforeUnmount(() => {
 });
 </script>
 
-<style lang="scss">
-:root {
-  --bg-app: #09090b;
-  --bg-sidebar: #121214;
-  --bg-card: #1c1c1f;
-  --bg-hover: #27272a;
-  --text-primary: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --border-color: #27272a;
-  --primary-gradient: linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%);
-  --accent-color: #8b5cf6;
-}
-
-body {
-  margin: 0;
-  padding: 0;
-  background-color: var(--bg-app);
-  color: var(--text-primary);
-  font-family:
-    "Inter",
-    system-ui,
-    -apple-system,
-    sans-serif;
-}
-
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--bg-hover);
-  border-radius: 3px;
-
-  &:hover {
-    background: var(--text-secondary);
-  }
-}
-
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-.app-layout {
-  display: flex;
-  height: 100vh;
-  width: 100vw;
-  overflow: hidden;
-}
-
-.main-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--bg-app);
-  position: relative;
-  background-image:
-    radial-gradient(
-      circle at 50% 0%,
-      rgba(124, 58, 237, 0.05) 0%,
-      transparent 50%
-    ),
-    radial-gradient(
-      circle at 100% 100%,
-      rgba(6, 182, 212, 0.05) 0%,
-      transparent 50%
-    );
-}
-</style>
+<style lang="scss" src="./App.scss"></style>
