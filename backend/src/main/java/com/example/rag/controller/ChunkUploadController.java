@@ -1,9 +1,9 @@
 package com.example.rag.controller;
 
+import com.example.rag.common.ApiException;
 import com.example.rag.service.DocumentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -38,7 +38,7 @@ public class ChunkUploadController {
      *   { "uploaded": false, "uploadedChunks": [0,1,2] }  — 返回已上传分片
      */
     @GetMapping("/check")
-    public ResponseEntity<Map<String, Object>> checkUpload(
+    public Map<String, Object> checkUpload(
             @RequestParam String md5,
             @RequestParam String filename) {
 
@@ -48,7 +48,7 @@ public class ChunkUploadController {
         Path mergedFile = getMergedFilePath(md5, filename);
         if (Files.exists(mergedFile)) {
             result.put("uploaded", true);
-            return ResponseEntity.ok(result);
+            return result;
         }
 
         // 返回已上传的分片列表
@@ -75,7 +75,7 @@ public class ChunkUploadController {
 
         result.put("uploaded", false);
         result.put("uploadedChunks", uploadedChunks);
-        return ResponseEntity.ok(result);
+        return result;
     }
 
     /**
@@ -89,7 +89,7 @@ public class ChunkUploadController {
      *   filename     — 原始文件名
      */
     @PostMapping("/chunk")
-    public ResponseEntity<Map<String, Object>> uploadChunk(
+    public Map<String, Object> uploadChunk(
             @RequestParam("file") MultipartFile file,
             @RequestParam String md5,
             @RequestParam int chunkIndex,
@@ -108,10 +108,10 @@ public class ChunkUploadController {
             Map<String, Object> result = new HashMap<>();
             result.put("chunkIndex", chunkIndex);
             result.put("received", true);
-            return ResponseEntity.ok(result);
+            return result;
         } catch (IOException e) {
             log.error("Failed to save chunk {} for md5={}", chunkIndex, md5, e);
-            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+            throw new ApiException(500, e.getMessage());
         }
     }
 
@@ -122,7 +122,7 @@ public class ChunkUploadController {
      *   { "md5": "xxx", "filename": "doc.pdf", "totalChunks": 10 }
      */
     @PostMapping("/merge")
-    public ResponseEntity<Map<String, Object>> mergeChunks(@RequestBody Map<String, Object> payload) {
+    public Map<String, Object> mergeChunks(@RequestBody Map<String, Object> payload) {
         String md5 = (String) payload.get("md5");
         String filename = (String) payload.get("filename");
         int totalChunks = Integer.parseInt(payload.get("totalChunks").toString());
@@ -134,8 +134,7 @@ public class ChunkUploadController {
         for (int i = 0; i < totalChunks; i++) {
             Path chunkPath = chunkDir.resolve("chunk_" + i);
             if (!Files.exists(chunkPath)) {
-                return ResponseEntity.status(400).body(
-                        Map.of("error", "Missing chunk: " + i));
+                throw new ApiException(400, "Missing chunk: " + i);
             }
         }
 
@@ -152,7 +151,7 @@ public class ChunkUploadController {
             log.info("Merged {} chunks into {}", totalChunks, mergedFile);
         } catch (IOException e) {
             log.error("Failed to merge chunks for md5={}", md5, e);
-            return ResponseEntity.status(500).body(Map.of("error", "Merge failed: " + e.getMessage()));
+            throw new ApiException(500, "Merge failed: " + e.getMessage());
         }
 
         // 触发 RAG ingest
@@ -163,14 +162,16 @@ public class ChunkUploadController {
             log.error("Ingest failed for file={}", filename, e);
             // 清理合并文件，让用户可以重试
             try { Files.deleteIfExists(mergedFile); } catch (IOException ignored) {}
-            return ResponseEntity.status(500).body(
-                    Map.of("error", "Ingest failed: " + e.getMessage()));
+            throw new ApiException(500, "Ingest failed: " + e.getMessage());
         }
 
         // 清理临时分片（异步，不阻塞响应）
         cleanupChunks(chunkDir);
 
-        return ResponseEntity.ok(Map.of("message", "File uploaded and ingested successfully.", "filename", filename));
+        Map<String, Object> result = new HashMap<>();
+        result.put("message", "File uploaded and ingested successfully.");
+        result.put("filename", filename);
+        return result;
     }
 
     // ——— 工具方法 ———

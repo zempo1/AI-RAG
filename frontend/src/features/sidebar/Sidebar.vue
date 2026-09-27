@@ -125,6 +125,7 @@ import {
 import { useConfirm } from "../../composables/useConfirm";
 import { useToast } from "../../composables/useToast";
 import type { ChatItem } from "../../types";
+import request from "../../utils/request";
 
 const props = defineProps<{
   username: string;
@@ -197,14 +198,8 @@ const handleFileActivated = (filename: string, id: number | null) => {
 
 const loadChats = async () => {
   try {
-    const res = await fetch("/api/chats", {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      },
-    });
-    if (res.ok) {
-      chats.value = await res.json();
-    }
+    const res = await request.get<any, ChatItem[]>("/api/chats");
+    chats.value = res;
   } catch (e) {
     console.error(e);
   }

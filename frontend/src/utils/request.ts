@@ -31,13 +31,19 @@ service.interceptors.request.use(
 
 service.interceptors.response.use(
   (response) => {
-    return response.data
+    // 后端统一返回 {code, data, message}，此处解包出 data 供业务直接使用
+    const body = response.data as { code?: number; data?: unknown }
+    return (body?.data ?? response.data) as any
   },
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token')
       localStorage.removeItem('username')
-      if (!error.config.url.includes('/api/auth/')) {
+      // 仅登录/注册失败（自身就是认证过程）不提示"已过期"，其余 401 一律视为登录过期
+      const isAuthFlow =
+        error.config.url.endsWith('/api/auth/login') ||
+        error.config.url.endsWith('/api/auth/register')
+      if (!isAuthFlow) {
         // 同一轮并发请求导致的多个 401 只提示一次
         if (!authExpiredNotified) {
           authExpiredNotified = true

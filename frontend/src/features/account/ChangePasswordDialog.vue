@@ -213,7 +213,7 @@ const handleUsernameSubmit = async () => {
     emit('success')
     handleClose()
   } catch (e: any) {
-    toast.error(e.message || '用户名修改失败')
+    toast.error(e?.response?.data?.message || e.message || '用户名修改失败')
   } finally {
     loading.value = false
   }
@@ -243,7 +243,7 @@ const handlePasswordSubmit = async () => {
     emit('success')
     handleClose()
   } catch (e: any) {
-    toast.error(e.message || '密码修改失败')
+    toast.error(e?.response?.data?.message || e.message || '密码修改失败')
   } finally {
     loading.value = false
   }

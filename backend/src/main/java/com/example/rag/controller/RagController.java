@@ -1,11 +1,11 @@
 package com.example.rag.controller;
 
+import com.example.rag.common.ApiException;
 import com.example.rag.entity.Chat;
 import com.example.rag.service.ChatService;
 import com.example.rag.service.DocumentService;
 import com.example.rag.service.HistoryService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -29,41 +29,39 @@ public class RagController {
     private final HistoryService historyService;
 
     @GetMapping("/chats")
-    public ResponseEntity<?> getChats() {
+    public List<Chat> getChats() {
         try {
-            return ResponseEntity.ok(historyService.getAllChats());
+            return historyService.getAllChats();
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.status(500).body("Error fetching chats: " + e.getMessage());
+            throw new ApiException(500, "Error fetching chats: " + e.getMessage());
         }
     }
 
     @GetMapping("/chats/{id}")
-    public ResponseEntity<Chat> getChat(@PathVariable Long id) {
+    public Chat getChat(@PathVariable Long id) {
         return historyService.getChat(id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+                .orElseThrow(() -> new ApiException(404, "Chat not found"));
     }
 
     @PostMapping("/chats")
-    public ResponseEntity<Chat> createChat(@RequestBody Map<String, String> payload) {
+    public Chat createChat(@RequestBody Map<String, String> payload) {
         String title = payload.getOrDefault("title", "New Chat");
-        return ResponseEntity.ok(historyService.createChat(title));
+        return historyService.createChat(title);
     }
 
     @DeleteMapping("/chats/{id}")
-    public ResponseEntity<Void> deleteChat(@PathVariable Long id) {
+    public void deleteChat(@PathVariable Long id) {
         historyService.deleteChat(id);
-        return ResponseEntity.ok().build();
     }
 
     @PostMapping("/upload")
-    public ResponseEntity<String> upload(@RequestParam("file") MultipartFile file) {
+    public String upload(@RequestParam("file") MultipartFile file) {
         try {
             documentService.ingest(file);
-            return ResponseEntity.ok("File uploaded and ingested successfully.");
+            return "File uploaded and ingested successfully.";
         } catch (Exception e) {
-            return ResponseEntity.status(500).body("Error processing file: " + e.getMessage());
+            throw new ApiException(500, "Error processing file: " + e.getMessage());
         }
     }
 
@@ -71,11 +69,11 @@ public class RagController {
      * 获取当前用户的所有历史上传文件（不含 content，避免响应过大）
      */
     @GetMapping("/documents")
-    public ResponseEntity<?> listDocuments() {
+    public List<?> listDocuments() {
         try {
-            return ResponseEntity.ok(documentService.listDocuments());
+            return documentService.listDocuments();
         } catch (Exception e) {
-            return ResponseEntity.status(500).body("Error: " + e.getMessage());
+            throw new ApiException(500, "Error: " + e.getMessage());
         }
     }
 
@@ -83,12 +81,11 @@ public class RagController {
      * 激活历史文件：重新将其内容写入向量 store，使 RAG 检索生效
      */
     @PostMapping("/documents/{id}/activate")
-    public ResponseEntity<?> activateDocument(@PathVariable Long id) {
+    public void activateDocument(@PathVariable Long id) {
         try {
             documentService.activateDocument(id);
-            return ResponseEntity.ok(Map.of("message", "Document activated successfully."));
         } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+            throw new ApiException(500, e.getMessage());
         }
     }
 
@@ -96,27 +93,26 @@ public class RagController {
      * 删除历史文件记录（仅删除 DB 记录，不影响向量 store）
      */
     @DeleteMapping("/documents/{id}")
-    public ResponseEntity<?> deleteDocument(@PathVariable Long id) {
+    public void deleteDocument(@PathVariable Long id) {
         try {
             documentService.deleteDocument(id);
-            return ResponseEntity.ok().build();
         } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+            throw new ApiException(500, e.getMessage());
         }
     }
 
     @PostMapping("/chat")
-    public ResponseEntity<String> chat(@RequestBody Map<String, String> payload) {
+    public String chat(@RequestBody Map<String, String> payload) {
         String question = payload.get("question");
         if (question == null || question.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body("Question is required.");
+            throw new ApiException(400, "Question is required.");
         }
-        String answer = chatService.chat(question);
-        return ResponseEntity.ok(answer);
+        return chatService.chat(question);
     }
 
     @PostMapping("/stream-chat")
-    public SseEmitter streamChat(@RequestBody Map<String, Object> payload, @RequestHeader(value = "X-Api-Key", required = false) String apiKey) {
+    public SseEmitter streamChat(@RequestBody Map<String, Object> payload,
+            @RequestHeader(value = "X-Api-Key", required = false) String apiKey) {
         String question = (String) payload.get("question");
         Object chatIdObj = payload.get("chatId");
         Long chatId = chatIdObj != null ? Long.valueOf(chatIdObj.toString()) : null;
@@ -134,7 +130,8 @@ public class RagController {
             return emitter;
         }
 
-        // Handle Chat Creation / Retrieval — must be done in main thread while UserContext is valid
+        // Handle Chat Creation / Retrieval — must be done in main thread while
+        // UserContext is valid
         final Chat finalChat;
         if (chatId == null) {
             String title = question.length() > 30 ? question.substring(0, 30) + "..." : question;
@@ -172,7 +169,8 @@ public class RagController {
                 public void onNext(String token) {
                     fullResponse.append(token);
                     try {
-                        String jsonToken = "\"" + token.replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r") + "\"";
+                        String jsonToken = "\"" + token.replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
+                                + "\"";
                         emitter.send(SseEmitter.event().data(jsonToken));
                     } catch (Exception e) {
                         emitter.completeWithError(e);
@@ -198,8 +196,8 @@ public class RagController {
                     try {
                         // Save whatever was accumulated before the error
                         String savedContent = fullResponse.length() > 0
-                            ? fullResponse.toString() + "\n[生成中断]"
-                            : "[生成失败: " + error.getMessage() + "]";
+                                ? fullResponse.toString() + "\n[生成中断]"
+                                : "[生成失败: " + error.getMessage() + "]";
                         historyService.addMessageToChat(finalChat, "assistant", savedContent);
                     } catch (Exception e) {
                         System.err.println("Failed to save error message: " + e.getMessage());

@@ -71,7 +71,6 @@
         <span class="history-title">
           <el-icon><FolderOpened /></el-icon>
           历史文件
-          <span class="history-count" v-if="docHistory.length > 0">{{ docHistory.length }}</span>
         </span>
         <el-icon class="toggle-icon" :class="{ rotated: historyExpanded }">
           <ArrowRight />
@@ -357,7 +356,7 @@ async function startChunkUpload(file: File) {
   } catch (e: any) {
     if (!abortFlag) {
       console.error(e)
-      toast.error('上传失败：' + (e?.response?.data?.error ?? e?.message ?? '未知错误'))
+      toast.error('上传失败：' + (e?.response?.data?.message ?? e?.message ?? '未知错误'))
       cancelUpload()
     }
   }

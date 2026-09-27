@@ -1,11 +1,6 @@
-import axios from 'axios'
+import request from '../utils/request'
 
 const BASE = '/api/upload'
-
-// 统一注入 Authorization header（所有上传接口都需要登录态）
-const authHeader = () => ({
-    Authorization: `Bearer ${localStorage.getItem('token')}`,
-})
 
 export interface CheckResult {
     uploaded: boolean
@@ -14,12 +9,9 @@ export interface CheckResult {
 
 /** 秒传检测 + 查询已上传分片 */
 export function checkUpload(md5: string, filename: string): Promise<CheckResult> {
-    return axios
-        .get(`${BASE}/check`, {
-            params: { md5, filename },
-            headers: authHeader(),
-        })
-        .then((r) => r.data)
+    return request.get<any, CheckResult>(`${BASE}/check`, {
+        params: { md5, filename },
+    })
 }
 
 /** 上传单个分片 */
@@ -38,10 +30,9 @@ export function uploadChunk(
     form.append('totalChunks', String(totalChunks))
     form.append('filename', filename)
 
-    return axios
+    return request
         .post(`${BASE}/chunk`, form, {
             headers: {
-                ...authHeader(),
                 'Content-Type': 'multipart/form-data',
             },
             onUploadProgress: (e) => {
@@ -59,11 +50,9 @@ export function mergeChunks(
     filename: string,
     totalChunks: number,
 ): Promise<{ message: string; filename: string }> {
-    return axios
-        .post(
-            `${BASE}/merge`,
-            { md5, filename, totalChunks },
-            { headers: authHeader() },
-        )
-        .then((r) => r.data)
+    return request.post<any, { message: string; filename: string }>(`${BASE}/merge`, {
+        md5,
+        filename,
+        totalChunks,
+    })
 }

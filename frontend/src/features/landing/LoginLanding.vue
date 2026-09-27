@@ -218,7 +218,7 @@ const handleAuth = async () => {
     toast.success(isLogin.value ? "登录成功" : "注册成功");
     emit("success", res.username);
   } catch (e: any) {
-    toast.error(e?.message || "操作失败");
+    toast.error(e?.response?.data?.message || e?.message || "操作失败");
   } finally {
     loading.value = false;
   }

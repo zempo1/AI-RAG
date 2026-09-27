@@ -20,6 +20,7 @@
 
   .el-dialog__headerbtn .el-dialog__close {
     color: var(--text-secondary);
+
     &:hover {
       color: var(--text-primary);
     }
@@ -176,16 +177,18 @@
 .messages-container {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 0 140px;
+  padding: 20px 0;
   scroll-behavior: smooth;
 
   &::-webkit-scrollbar {
     width: 6px;
   }
+
   &::-webkit-scrollbar-thumb {
     background-color: var(--bg-hover);
     border-radius: 3px;
   }
+
   &::-webkit-scrollbar-track {
     background-color: transparent;
   }
@@ -199,7 +202,6 @@
   height: 100%;
   color: var(--text-primary);
   text-align: center;
-  padding-bottom: 100px;
 
   .logo-container {
     margin-bottom: 32px;
@@ -267,10 +269,10 @@
     margin: 0 auto;
     display: flex;
     gap: 24px;
-    padding: 0 24px;
+    padding: 0 16px;
 
     @media (max-width: 768px) {
-      padding: 0 16px;
+      padding: 0 12px;
       gap: 16px;
     }
   }
@@ -333,6 +335,7 @@
 
       p {
         margin-bottom: 16px;
+
         &:last-child {
           margin-bottom: 0;
         }
@@ -341,6 +344,7 @@
       a {
         color: #38bdf8;
         text-decoration: none;
+
         &:hover {
           text-decoration: underline;
         }
@@ -401,21 +405,17 @@
 }
 
 .input-container {
-  position: absolute;
-  bottom: 0;
-  left: 0;
+  flex-shrink: 0;
   width: 100%;
-  background: linear-gradient(180deg, transparent 0%, var(--bg-app) 40%);
-  padding: 40px 0 30px;
-  z-index: 10;
+  background: var(--bg-app);
+  padding: 10px 0;
 
   .input-wrapper {
-    max-width: 800px;
     margin: 0 auto;
-    padding: 0 24px;
+    padding: 0 16px;
 
     @media (max-width: 768px) {
-      padding: 0 16px;
+      padding: 0 12px;
     }
   }
 
@@ -492,10 +492,12 @@
 }
 
 @keyframes blink {
+
   0%,
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0;
   }
