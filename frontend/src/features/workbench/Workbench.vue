@@ -33,180 +33,86 @@
 
       <!-- ===== 思维导图 ===== -->
       <template v-if="activeTab === 'mindmap'">
-        <div class="wb-section generate-section">
-          <!-- 激活文件 -->
-          <div v-if="uploadedFileName" class="active-file">
-            <el-icon class="file-icon"><Document /></el-icon>
-            <el-tooltip :content="uploadedFileName" placement="right" :show-after="400" :hide-after="0">
-              <span class="file-name">{{ uploadedFileName }}</span>
-            </el-tooltip>
-          </div>
-          <div v-else class="no-file">
-            <el-icon><InfoFilled /></el-icon>
-            <span>请先在左侧上传或激活文件</span>
-          </div>
-          <el-button class="generate-btn" type="primary"
-            :disabled="!uploadedFileName || !props.uploadedDocumentId"
-            :loading="mindmapGenerating" @click="handleGenerateMindMap">
-            <el-icon class="el-icon--left"><Connection /></el-icon>
-            生成思维导图
-          </el-button>
-        </div>
+        <GenerateSection
+          :file-name="uploadedFileName"
+          :icon="Connection"
+          button-text="生成思维导图"
+          :loading="mindmapGenerating"
+          :disabled="!uploadedFileName || !props.uploadedDocumentId"
+          @generate="handleGenerateMindMap"
+        />
         <div class="wb-divider" />
-        <div class="history-scroll">
-          <div class="section-label">历史记录</div>
-          <div v-if="mindmapLoading" class="list-empty">加载中…</div>
-          <div v-else-if="mindMaps.length === 0" class="list-empty">暂无思维导图</div>
-          <div v-for="map in mindMaps" :key="map.id" class="map-item" @click="handleOpenMindMap(map)">
-            <div class="map-item-content">
-              <el-icon class="map-icon"><Connection /></el-icon>
-              <div class="map-info">
-                <el-tooltip :content="map.title" placement="right" :show-after="400" :hide-after="0">
-                  <span class="map-title">{{ map.title }}</span>
-                </el-tooltip>
-                <span class="map-time">{{ formatTime(map.createdAt) }}</span>
-              </div>
-            </div>
-            <div class="map-actions">
-              <el-icon class="delete-icon" @click.stop="handleDeleteMindMap(map.id)"><Delete /></el-icon>
-            </div>
-          </div>
-        </div>
+        <HistoryList
+          :items="mindMaps" :icon="Connection"
+          :loading="mindmapLoading"
+          empty-text="暂无思维导图"
+          :get-title="(m: any) => m.title"
+          :get-subtitle="(m: any) => formatTime(m.createdAt)"
+          @open="handleOpenMindMap"
+          @delete="handleDeleteMindMap"
+        />
       </template>
 
       <!-- ===== AI 摘要 ===== -->
       <template v-else-if="activeTab === 'summary'">
-        <div class="wb-section generate-section">
-          <div v-if="uploadedFileName" class="active-file">
-            <el-icon class="file-icon"><Document /></el-icon>
-            <el-tooltip :content="uploadedFileName" placement="right" :show-after="400" :hide-after="0">
-              <span class="file-name">{{ uploadedFileName }}</span>
-            </el-tooltip>
-          </div>
-          <div v-else class="no-file">
-            <el-icon><InfoFilled /></el-icon>
-            <span>请先在左侧上传或激活文件</span>
-          </div>
-          <el-button class="generate-btn" type="primary"
-            :disabled="!uploadedFileName || !props.uploadedDocumentId"
-            :loading="summaryGenerating" @click="handleGenerate('SUMMARY')">
-            <el-icon class="el-icon--left"><Memo /></el-icon>
-            生成 AI 摘要
-          </el-button>
-        </div>
+        <GenerateSection
+          :file-name="uploadedFileName"
+          :icon="Memo"
+          button-text="生成 AI 摘要"
+          :loading="summaryGenerating"
+          :disabled="!uploadedFileName || !props.uploadedDocumentId"
+          @generate="handleGenerate('SUMMARY')"
+        />
         <div class="wb-divider" />
-        <div class="history-scroll">
-          <div class="section-label">历史记录</div>
-          <div v-if="summaryLoading" class="list-empty">加载中…</div>
-          <div v-else-if="summaries.length === 0" class="list-empty">暂无摘要记录</div>
-          <div v-for="item in summaries" :key="item.id" class="analysis-item">
-            <div class="analysis-header" @click="toggleExpand(item.id)">
-              <div class="analysis-meta">
-                <el-tooltip :content="item.documentName" placement="right" :show-after="400" :hide-after="0">
-                  <span class="analysis-doc">{{ item.documentName }}</span>
-                </el-tooltip>
-                <span class="analysis-time">{{ formatTime(item.createdAt) }}</span>
-              </div>
-              <div class="analysis-header-right">
-                <el-icon class="toggle-chevron" :class="{ expanded: expandedId === item.id }"><ArrowRight /></el-icon>
-                <el-tooltip content="导出 Markdown" placement="left" :hide-after="0">
-                  <el-icon class="export-icon" @click.stop="exportMarkdown(item)"><Download /></el-icon>
-                </el-tooltip>
-                <el-icon class="delete-icon" @click.stop="handleDeleteAnalysis(item.id)"><Delete /></el-icon>
-              </div>
-            </div>
-            <div v-if="expandedId === item.id" class="analysis-content" v-html="renderMarkdown(item.content)" />
-          </div>
-        </div>
+        <AnalysisList
+          :items="summaries"
+          :loading="summaryLoading"
+          empty-text="暂无摘要记录"
+          @export="exportMarkdown"
+          @delete="handleDeleteAnalysis"
+        />
       </template>
 
       <!-- ===== 文档大纲 ===== -->
       <template v-else-if="activeTab === 'outline'">
-        <div class="wb-section generate-section">
-          <div v-if="uploadedFileName" class="active-file">
-            <el-icon class="file-icon"><Document /></el-icon>
-            <el-tooltip :content="uploadedFileName" placement="right" :show-after="400" :hide-after="0">
-              <span class="file-name">{{ uploadedFileName }}</span>
-            </el-tooltip>
-          </div>
-          <div v-else class="no-file">
-            <el-icon><InfoFilled /></el-icon>
-            <span>请先在左侧上传或激活文件</span>
-          </div>
-          <el-button class="generate-btn" type="primary"
-            :disabled="!uploadedFileName || !props.uploadedDocumentId"
-            :loading="outlineGenerating" @click="handleGenerate('OUTLINE')">
-            <el-icon class="el-icon--left"><List /></el-icon>
-            生成文档大纲
-          </el-button>
-        </div>
+        <GenerateSection
+          :file-name="uploadedFileName"
+          :icon="List"
+          button-text="生成文档大纲"
+          :loading="outlineGenerating"
+          :disabled="!uploadedFileName || !props.uploadedDocumentId"
+          @generate="handleGenerate('OUTLINE')"
+        />
         <div class="wb-divider" />
-        <div class="history-scroll">
-          <div class="section-label">历史记录</div>
-          <div v-if="outlineLoading" class="list-empty">加载中…</div>
-          <div v-else-if="outlines.length === 0" class="list-empty">暂无大纲记录</div>
-          <div v-for="item in outlines" :key="item.id" class="analysis-item">
-            <div class="analysis-header" @click="toggleExpand(item.id)">
-              <div class="analysis-meta">
-                <el-tooltip :content="item.documentName" placement="right" :show-after="400" :hide-after="0">
-                  <span class="analysis-doc">{{ item.documentName }}</span>
-                </el-tooltip>
-                <span class="analysis-time">{{ formatTime(item.createdAt) }}</span>
-              </div>
-              <div class="analysis-header-right">
-                <el-icon class="toggle-chevron" :class="{ expanded: expandedId === item.id }"><ArrowRight /></el-icon>
-                <el-tooltip content="导出 Markdown" placement="left" :hide-after="0">
-                  <el-icon class="export-icon" @click.stop="exportMarkdown(item)"><Download /></el-icon>
-                </el-tooltip>
-                <el-icon class="delete-icon" @click.stop="handleDeleteAnalysis(item.id)"><Delete /></el-icon>
-              </div>
-            </div>
-            <div v-if="expandedId === item.id" class="analysis-content" v-html="renderMarkdown(item.content)" />
-          </div>
-        </div>
+        <AnalysisList
+          :items="outlines"
+          :loading="outlineLoading"
+          empty-text="暂无大纲记录"
+          @export="exportMarkdown"
+          @delete="handleDeleteAnalysis"
+        />
       </template>
 
       <!-- ===== 学习卡片 ===== -->
       <template v-else-if="activeTab === 'flashcard'">
-        <div class="wb-section generate-section">
-          <div v-if="uploadedFileName" class="active-file">
-            <el-icon class="file-icon"><Document /></el-icon>
-            <el-tooltip :content="uploadedFileName" placement="right" :show-after="400" :hide-after="0">
-              <span class="file-name">{{ uploadedFileName }}</span>
-            </el-tooltip>
-          </div>
-          <div v-else class="no-file">
-            <el-icon><InfoFilled /></el-icon>
-            <span>请先在左侧上传或激活文件</span>
-          </div>
-          <el-button class="generate-btn" type="primary"
-            :disabled="!uploadedFileName || !props.uploadedDocumentId"
-            :loading="flashcardGenerating" @click="handleGenerate('FLASHCARD')">
-            <el-icon class="el-icon--left"><Memo /></el-icon>
-            生成学习卡片
-          </el-button>
-        </div>
+        <GenerateSection
+          :file-name="uploadedFileName"
+          :icon="Memo"
+          button-text="生成学习卡片"
+          :loading="flashcardGenerating"
+          :disabled="!uploadedFileName || !props.uploadedDocumentId"
+          @generate="handleGenerate('FLASHCARD')"
+        />
         <div class="wb-divider" />
-        <div class="history-scroll">
-          <div class="section-label">历史记录</div>
-          <div v-if="flashcardLoading" class="list-empty">加载中…</div>
-          <div v-else-if="flashcards.length === 0" class="list-empty">暂无学习卡片</div>
-          <div v-for="item in flashcards" :key="item.id" class="map-item"
-            @click="currentFlashcard = item; flashcardViewerVisible = true">
-            <div class="map-item-content">
-              <el-icon class="map-icon"><Memo /></el-icon>
-              <div class="map-info">
-                <el-tooltip :content="item.documentName" placement="right" :show-after="400" :hide-after="0">
-                  <span class="map-title">{{ item.documentName }}</span>
-                </el-tooltip>
-                <span class="map-time">卡片集 &middot; {{ formatTime(item.createdAt) }}</span>
-              </div>
-            </div>
-            <div class="map-actions">
-              <el-icon class="delete-icon" @click.stop="handleDeleteAnalysis(item.id)"><Delete /></el-icon>
-            </div>
-          </div>
-        </div>
+        <HistoryList
+          :items="flashcards" :icon="Memo"
+          :loading="flashcardLoading"
+          empty-text="暂无学习卡片"
+          :get-title="(it: any) => it.documentName"
+          :get-subtitle="(it: any) => '卡片集 · ' + formatTime(it.createdAt)"
+          @open="openFlashcard"
+          @delete="handleDeleteAnalysis"
+        />
       </template>
     </template>
 
@@ -220,13 +126,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, watch } from 'vue'
 import {
-  ArrowLeft, ArrowRight, Grid, Connection, Document,
-  InfoFilled, Delete, List, Memo, Download,
+  ArrowLeft, ArrowRight, Grid, Connection,
+  List, Memo,
 } from '@element-plus/icons-vue'
 import MindMapEditor from '../mindmap/MindMapEditor.vue'
 import FlashcardViewer from '../flashcard/FlashcardViewer.vue'
+import GenerateSection from './components/GenerateSection.vue'
+import HistoryList from './components/HistoryList.vue'
+import AnalysisList from './components/AnalysisList.vue'
 import { generateMindMap, getMindMaps, deleteMindMap as apiDeleteMindMap, type MindMap } from '../../api/mindmap'
 import { generateAnalysis, getAnalyses, deleteAnalysis as apiDeleteAnalysis, type DocumentAnalysis } from '../../api/analysis'
 import { useToast } from '../../composables/useToast'
@@ -273,10 +182,6 @@ const flashcards = ref<DocumentAnalysis[]>([])
 const flashcardViewerVisible = ref(false)
 const currentFlashcard = ref<DocumentAnalysis | null>(null)
 
-// 展开
-const expandedId = ref<number | null>(null)
-const toggleExpand = (id: number) => { expandedId.value = expandedId.value === id ? null : id }
-
 // 加载
 const loadMindMaps = async () => {
   mindmapLoading.value = true
@@ -299,7 +204,23 @@ const loadFlashcards = async () => {
   finally { flashcardLoading.value = false }
 }
 
-onMounted(() => { loadMindMaps(); loadSummaries(); loadOutlines(); loadFlashcards() })
+// 懒加载：仅在首次切换到该 tab 时获取数据
+const loaders: Record<'mindmap' | 'summary' | 'outline' | 'flashcard', () => Promise<void>> = {
+  mindmap: loadMindMaps,
+  summary: loadSummaries,
+  outline: loadOutlines,
+  flashcard: loadFlashcards,
+}
+const loadedTabs = new Set<string>()
+watch(
+  activeTab,
+  (tab) => {
+    if (loadedTabs.has(tab)) return
+    loadedTabs.add(tab)
+    loaders[tab]()
+  },
+  { immediate: true },
+)
 
 // 思维导图操作
 const handleGenerateMindMap = async () => {
@@ -314,10 +235,10 @@ const handleGenerateMindMap = async () => {
   finally { mindmapGenerating.value = false }
 }
 const handleOpenMindMap = (map: MindMap) => { currentMindMap.value = map; editorVisible.value = true }
-const handleDeleteMindMap = async (id: number) => {
+const handleDeleteMindMap = async (map: MindMap) => {
   const ok = await confirm.danger('确定要删除这个思维导图吗？删除后无法恢复。', '删除确认')
   if (!ok) return
-  try { await apiDeleteMindMap(id); mindMaps.value = mindMaps.value.filter(m => m.id !== id); toast.success('已删除') }
+  try { await apiDeleteMindMap(map.id); mindMaps.value = mindMaps.value.filter(m => m.id !== map.id); toast.success('已删除') }
   catch (e) { console.error(e); toast.error('删除失败') }
 }
 const onMindMapSaved = () => { loadMindMaps() }
@@ -340,15 +261,14 @@ const handleGenerate = async (type: 'SUMMARY' | 'OUTLINE' | 'FLASHCARD') => {
     else flashcardGenerating.value = false
   }
 }
-const handleDeleteAnalysis = async (id: number) => {
+const handleDeleteAnalysis = async (item: DocumentAnalysis) => {
   const ok = await confirm.danger('确定要删除这条记录吗？', '删除确认')
   if (!ok) return
   try {
-    await apiDeleteAnalysis(id)
-    summaries.value = summaries.value.filter(s => s.id !== id)
-    outlines.value = outlines.value.filter(o => o.id !== id)
-    flashcards.value = flashcards.value.filter(f => f.id !== id)
-    if (expandedId.value === id) expandedId.value = null
+    await apiDeleteAnalysis(item.id)
+    summaries.value = summaries.value.filter(s => s.id !== item.id)
+    outlines.value = outlines.value.filter(o => o.id !== item.id)
+    flashcards.value = flashcards.value.filter(f => f.id !== item.id)
     toast.success('已删除')
   } catch (e) { console.error(e); toast.error('删除失败') }
 }
@@ -375,17 +295,9 @@ function formatTime(iso: string): string {
   return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
 
-function renderMarkdown(md: string): string {
-  return md
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>\n?)+/g, s => `<ul>${s}</ul>`)
-    .replace(/\n\n+/g, '</p><p>')
-    .replace(/^(?!<[hul])(.+)$/gm, (_, p) => p.trim() ? `<p>${p}</p>` : '')
+const openFlashcard = (item: DocumentAnalysis) => {
+  currentFlashcard.value = item
+  flashcardViewerVisible.value = true
 }
 
 defineExpose({ loadMindMaps, loadSummaries, loadOutlines })

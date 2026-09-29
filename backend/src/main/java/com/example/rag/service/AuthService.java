@@ -29,27 +29,27 @@ public class AuthService {
 
     public String login(String username, String password) {
         User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-        
+                .orElseThrow(() -> new RuntimeException("用户名不存在"));
+
         if (!BCrypt.checkpw(password, user.getPassword())) {
-            throw new RuntimeException("Invalid password");
+            throw new RuntimeException("密码错误");
         }
-        
+
         return jwtUtils.generateToken(user.getId(), user.getUsername());
     }
 
     public void changePassword(Long userId, String oldPassword, String newPassword) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        
+
         if (!BCrypt.checkpw(oldPassword, user.getPassword())) {
             throw new RuntimeException("原密码错误");
         }
-        
+
         if (newPassword == null || newPassword.length() < 6) {
             throw new RuntimeException("新密码长度不能少于6位");
         }
-        
+
         user.setPassword(BCrypt.hashpw(newPassword, BCrypt.gensalt()));
         userRepository.save(user);
     }
@@ -57,15 +57,15 @@ public class AuthService {
     public void changeUsername(Long userId, String newUsername) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        
+
         if (newUsername == null || newUsername.trim().isEmpty()) {
             throw new RuntimeException("用户名不能为空");
         }
-        
+
         if (newUsername.length() < 2 || newUsername.length() > 20) {
             throw new RuntimeException("用户名长度需要在2-20个字符之间");
         }
-        
+
         if (!user.getUsername().equals(newUsername)) {
             if (userRepository.findByUsername(newUsername).isPresent()) {
                 throw new RuntimeException("用户名已被使用");
