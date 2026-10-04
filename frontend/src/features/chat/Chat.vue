@@ -168,10 +168,14 @@ const saveApiKey = () => {
   toast.success("API Key 已保存");
 };
 
-const scrollToBottom = async () => {
+const scrollToBottom = async (instant = false) => {
   await nextTick();
-  if (messagesContainer.value) {
-    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+  const el = messagesContainer.value;
+  if (el) {
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: instant ? ("instant" as ScrollBehavior) : "smooth",
+    });
   }
 };
 
@@ -195,7 +199,7 @@ const loadHistory = async (id: number) => {
     toast.error("加载聊天记录失败");
   } finally {
     loading.value = false;
-    scrollToBottom();
+    scrollToBottom(true);
   }
 };
 

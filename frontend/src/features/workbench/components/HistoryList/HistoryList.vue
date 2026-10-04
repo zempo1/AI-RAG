@@ -17,7 +17,7 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
 import type { ListItem as ListItemType } from './ListItem.vue'
-import ListItem from './ListItem.vue'
+import ListItem from '../ListItem/ListItem.vue'
 
 withDefaults(defineProps<{
   items: ListItemType[]
@@ -37,27 +37,6 @@ const emit = defineEmits<{
 }>()
 </script>
 
-<style scoped>
-.history-scroll {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px 6px 6px;
-
-  .section-label {
-    font-size: 0.68rem;
-    font-weight: 700;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    margin-bottom: 6px;
-    padding: 0 6px;
-  }
-
-  .list-empty {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    text-align: center;
-    padding: 20px 0;
-  }
-}
+<style scoped lang="scss">
+ @use './HistoryList.scss';
 </style>
