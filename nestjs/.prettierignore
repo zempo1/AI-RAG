@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.cache/
+.tmp/
+coverage/
+.env
+.env.*
+package-lock.json
+test/original-files.sha256.json

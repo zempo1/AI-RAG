@@ -1,0 +1,90 @@
+{
+  "name": "ai-rag-nestjs",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.21.1"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start:dev": "node scripts/dev.cjs",
+    "start:prod": "node dist/main.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
+    "test:e2e": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config test/jest-e2e.json --runInBand",
+    "migration:run": "npm run build && typeorm migration:run -d dist/persistence/data-source.js",
+    "test:embedding": "npm run build && node test/embedding-smoke.cjs",
+    "verify:originals": "node test/verify-originals.cjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@huggingface/transformers": "4.3.2",
+    "@langchain/core": "1.3.1",
+    "@langchain/openai": "1.8.0",
+    "@nestjs/common": "12.3.2",
+    "@nestjs/config": "12.0.1",
+    "@nestjs/core": "12.3.2",
+    "@nestjs/jwt": "12.0.3",
+    "@nestjs/platform-express": "12.3.2",
+    "@nestjs/typeorm": "12.0.2",
+    "bcryptjs": "3.0.3",
+    "class-transformer": "0.5.1",
+    "class-validator": "0.15.1",
+    "dotenv": "18.0.9",
+    "mysql2": "3.24.6",
+    "pdfjs-dist": "6.4.299",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "typeorm": "0.3.31"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "12.3.2",
+    "@types/express": "5.0.6",
+    "@types/jest": "30.0.0",
+    "@types/multer": "2.3.0",
+    "@types/node": "22.20.5",
+    "@types/pdfkit": "0.17.7",
+    "@types/supertest": "7.2.1",
+    "jest": "30.5.2",
+    "pdfkit": "0.20.2",
+    "prettier": "3.9.10",
+    "supertest": "7.3.1",
+    "ts-jest": "29.4.15",
+    "typescript": "5.9.3"
+  },
+  "jest": {
+    "testRegex": "test/.*\\.spec\\.ts$",
+    "testEnvironment": "node",
+    "transform": {
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "useESM": true,
+          "tsconfig": {
+            "module": "ES2022",
+            "target": "ES2022",
+            "moduleResolution": "node",
+            "experimentalDecorators": true,
+            "emitDecoratorMetadata": true,
+            "esModuleInterop": true,
+            "strict": true,
+            "strictPropertyInitialization": false,
+            "skipLibCheck": true,
+            "outDir": "./dist",
+            "sourceMap": true,
+            "declaration": true,
+            "resolveJsonModule": true,
+            "isolatedModules": true
+          }
+        }
+      ]
+    },
+    "modulePathIgnorePatterns": [
+      "<rootDir>/dist/"
+    ],
+    "testTimeout": 30000,
+    "extensionsToTreatAsEsm": [
+      ".ts"
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+.env
+.cache/
+.tmp/
+test/original-files.sha256.json
