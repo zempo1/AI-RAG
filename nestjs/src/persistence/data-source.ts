@@ -1,8 +1,23 @@
 import 'reflect-metadata';
 import 'dotenv/config';
 import { DataSource, DataSourceOptions } from 'typeorm';
-import { schemas } from './entities';
+import { User } from '../modules/auth/entities/user.entity';
+import { DocumentFile } from '../modules/documents/entities/document.entity';
+import { Chat } from '../modules/history/entities/chat.entity';
+import { Message } from '../modules/history/entities/message.entity';
+import { DocumentAnalysis } from '../modules/analysis/entities/document-analysis.entity';
+import { MindMap } from '../modules/mindmaps/entities/mindmap.entity';
+
+export const entityTargets = {
+  users: User,
+  documents: DocumentFile,
+  chats: Chat,
+  messages: Message,
+  analyses: DocumentAnalysis,
+  mindmaps: MindMap,
+};
 import { InitialSchema1793203200000 } from './migrations/1793203200000-initial-schema';
+import { DocumentCascade1793376000000 } from './migrations/1793376000000-document-cascade';
 
 export function mysqlOptions(env: Record<string, any>): DataSourceOptions {
   return {
@@ -17,8 +32,8 @@ export function mysqlOptions(env: Record<string, any>): DataSourceOptions {
     dateStrings: true,
     supportBigNumbers: true,
     bigNumberStrings: true,
-    entities: Object.values(schemas),
-    migrations: [InitialSchema1793203200000],
+    entities: Object.values(entityTargets),
+    migrations: [InitialSchema1793203200000, DocumentCascade1793376000000],
     synchronize: false,
     migrationsRun: false,
     connectTimeout: 5000,

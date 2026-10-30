@@ -1,7 +1,7 @@
 import { createServer, Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { ConfigService } from '@nestjs/config';
-import { LlmService } from '../src/llm/llm.service';
+import { LlmService } from '../src/modules/llm/llm.service';
 
 describe('real LangChain HTTP adapter against a local OpenAI-compatible server', () => {
   let server: Server;

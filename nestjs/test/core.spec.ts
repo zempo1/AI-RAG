@@ -1,7 +1,7 @@
 import { validateConfig } from '../src/config/configuration';
-import { RecursiveChunker } from '../src/documents/chunkers/recursive.chunker';
-import { InMemoryVectorStore } from '../src/vector-store/in-memory-vector-store.service';
-import { RagService } from '../src/rag/rag.service';
+import { RecursiveChunker } from '../src/modules/documents/chunkers/recursive.chunker';
+import { InMemoryVectorStore } from '../src/modules/vector-store/in-memory-vector-store.service';
+import { RagService } from '../src/modules/rag/rag.service';
 
 describe('configuration', () => {
   it('defaults to mysql and rejects missing database secrets', () => {

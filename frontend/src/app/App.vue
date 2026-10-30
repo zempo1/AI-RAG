@@ -13,6 +13,7 @@
       @logout="logout"
       @open-settings="openSettings"
       @file-activated="onFileActivated"
+      @file-deleted="onFileDeleted"
       @username-changed="handleUsernameChanged"
     />
 
@@ -62,6 +63,11 @@ const handleAuthExpired = () => {
 const onFileActivated = (filename: string, id: number | null) => {
   uploadedFileName.value = filename;
   uploadedDocumentId.value = id;
+};
+
+const onFileDeleted = (id: number) => {
+  if (uploadedDocumentId.value === id) onFileActivated('', null);
+  workbenchRef.value?.onSourceDeleted(id);
 };
 
 const openSettings = () => {

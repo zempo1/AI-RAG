@@ -7,8 +7,9 @@ import { randomBytes } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { configureApp } from '../src/bootstrap';
-import { EmbeddingsService } from '../src/embeddings/embeddings.service';
-import { LlmService } from '../src/llm/llm.service';
+import { EmbeddingsService } from '../src/modules/embeddings/embeddings.service';
+import { LlmService } from '../src/modules/llm/llm.service';
+import { DocumentCascade1793376000000 } from '../src/persistence/migrations/1793376000000-document-cascade';
 
 const enabled = process.env.MYSQL_INTEGRATION === '1';
 
@@ -104,6 +105,49 @@ const enabled = process.env.MYSQL_INTEGRATION === '1';
     await expect(verifySchema(source)).rejects.toThrow('缺少表');
     await source.query('RENAME TABLE saved_mind_maps TO mind_maps');
   });
+  it('cascades a raw document deletion to all associated results without deleting legacy maps', async () => {
+    const doc = await store.save('documents', {
+      userId: 1,
+      filename: 'cascade.md',
+      content: 'test',
+    });
+    for (const type of ['SUMMARY', 'OUTLINE', 'FLASHCARD']) {
+      await store.save('analyses', { userId: 1, documentId: doc.id, type, content: 'result' });
+    }
+    await store.save('mindmaps', { userId: 1, documentId: doc.id, title: 'linked', data: '{}' });
+    const legacy = await store.save('mindmaps', { userId: 1, title: 'legacy', data: '{}' });
+    await source.query('DELETE FROM document_files WHERE id = ?', [doc.id]);
+    expect(await store.list('analyses', { documentId: doc.id })).toEqual([]);
+    expect(await store.list('mindmaps', { documentId: doc.id })).toEqual([]);
+    expect(await store.get('mindmaps', legacy.id)).toBeDefined();
+  });
+
+  it('preserves historical orphan results and their original IDs when upgrading', async () => {
+    const runner = source.createQueryRunner();
+    try {
+      const table = (await runner.getTable('document_analyses'))!;
+      for (const key of table.foreignKeys.filter((k) => k.columnNames.includes('document_id')))
+        await runner.dropForeignKey(table, key);
+      const row = await store.save('analyses', {
+        userId: 1,
+        documentId: 999999,
+        type: 'SUMMARY',
+        content: '保留旧结果',
+      });
+      await new DocumentCascade1793376000000().up(runner);
+      await new DocumentCascade1793376000000().up(runner);
+      const [saved] = await runner.query(
+        'SELECT document_id, legacy_document_id, content FROM document_analyses WHERE id=?',
+        [row.id],
+      );
+      expect(saved.document_id).toBeNull();
+      expect(Number(saved.legacy_document_id)).toBe(999999);
+      expect(saved.content).toBe('保留旧结果');
+    } finally {
+      await runner.release();
+    }
+  });
+
   it('boots the complete MySQL-backed app and persists the upload/chat API flow', async () => {
     process.env.STORAGE_DRIVER = 'mysql';
     process.env.DB_NAME = name;
@@ -132,6 +176,18 @@ const enabled = process.env.MYSQL_INTEGRATION === '1';
         .send({ username: 'api-user', password: 'secret123' })
         .expect(200);
       const auth = { Authorization: `Bearer ${registration.body.data.token}` };
+      const userBefore = (await store.list('users', { username: 'api-user' }))[0];
+      expect(userBefore.createdAt).toBeTruthy();
+      const zone = process.env.DB_TIMEZONE || '+08:00';
+      expect(Math.abs(new Date(userBefore.createdAt + zone).getTime() - Date.now())).toBeLessThan(
+        10000,
+      );
+      await request(app.getHttpServer())
+        .post('/api/auth/change-username')
+        .set(auth)
+        .send({ newUsername: 'renamed-api-user' })
+        .expect(200);
+      expect((await store.get('users', userBefore.id))!.createdAt).toBe(userBefore.createdAt);
       await request(app.getHttpServer())
         .post('/api/upload')
         .set(auth)

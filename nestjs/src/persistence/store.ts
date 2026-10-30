@@ -3,7 +3,16 @@ export interface Row {
   [key: string]: any;
 }
 
-export type Table = 'users' | 'documents' | 'chats' | 'messages' | 'analyses' | 'mindmaps';
+export interface EntityMap {
+  users: import('../modules/auth/entities/user.entity').User;
+  documents: import('../modules/documents/entities/document.entity').DocumentFile;
+  chats: import('../modules/history/entities/chat.entity').Chat;
+  messages: import('../modules/history/entities/message.entity').Message;
+  analyses: import('../modules/analysis/entities/document-analysis.entity').DocumentAnalysis;
+  mindmaps: import('../modules/mindmaps/entities/mindmap.entity').MindMap;
+}
+
+export type Table = keyof EntityMap;
 
 export abstract class Store {
   abstract list(table: Table, where?: Record<string, unknown>): Promise<Row[]>;

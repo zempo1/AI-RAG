@@ -45,6 +45,12 @@ npm run migration:run
 
 初始 migration 创建六张业务表。检测到任一已有业务表会拒绝执行；**已有 Java 数据库不要执行初始 migration**，直接启动进行兼容检查。MySQL DDL 不支持完整事务回滚；初始化失败时先检查报错和已创建的表，不要在业务库中尝试清表。为保护数据不提供自动删表回滚命令。
 
+### 已有数据库升级：来源关联与级联删除
+
+升级旧版 NestJS 数据库请显式执行 `npm run schema:upgrade`，不需要运行空库初始化。此命令为 `mind_maps` 添加可为空的 `document_id`，并为思维导图、分析结果设置指向文档的 `ON DELETE CASCADE` 外键；可重复执行。不根据标题自动回填旧思维导图，避免同名来源误关联。旧思维导图来源为空时继续保留，需人工确认来源后回填 `document_id` 才参与级联删除。来源已丢失的旧结果保留内容，原来源 ID 归档到 legacy_document_id，并将失效的 document_id 置空后建立外键，不删除这些旧结果。MySQL DDL 不保证事务回滚，请在维护窗口执行并保留数据库备份。
+
+删除来源接口会在事务内删除关联的摘要、大纲、闪卡、思维导图和文档，提交成功后清理该来源的内存向量与激活缓存；前端同步刷新工作台。新生成的结果以文档 ID 关联，不使用文件名匹配。
+
 ### 临时内存模式
 
 将 `.env` 中 `STORAGE_DRIVER=memory`，保留有效 `JWT_SECRET`，即可不依赖 MySQL 启动；所有用户、文档和历史在重启后丢失。切换存储驱动不会迁移数据。
@@ -73,6 +79,10 @@ npm run migration:run
 原前端设置的 `X-Api-Key` 仅覆盖当前流式聊天、分析或思维导图请求的 Chat 密钥，不写数据库、日志或向量。普通 `/api/chat` 沿用服务端密钥行为。`.env` 已忽略，勿提交真实密钥。
 
 ## 功能及模块
+
+业务功能统一放在 `src/modules/`：`auth`、`documents`、`history`、`chat`、`analysis`、`mindmaps`、`embeddings`、`llm`、`rag` 和 `vector-store`。各模块内部维护自己的 Controller、Service、DTO 和实体；入口 `main.ts`、`app.module.ts`、`bootstrap.ts`，以及跨模块的 `common/`、`config/`、`persistence/` 保留在 `src/` 根目录。
+
+实体使用 TypeORM `@Entity()`、`@Column()` 等装饰器，按业务归属放在各模块的 `entities/`。HTTP 请求校验类放在各模块的 `dto/`，由 Controller 配合全局 ValidationPipe 使用；没有 HTTP 请求参数的模块不额外创建 DTO。`persistence/` 只保留连接配置、模块装配、公共存储接口、MySQL/内存实现和数据库迁移；实体统一在 data-source.ts 注册，数据库适配器读取 TypeORM 元数据获取表列映射。此次结构调整不修改表结构，无需执行迁移。
 
 使用 NestJS 12、TypeScript、TypeORM/mysql2、LangChain.js、Transformers.js、PDF.js 和 Jest，依赖版本已固定并提供锁文件。
 
@@ -130,7 +140,7 @@ SSE 新会话先发 `event: chatId` 和数字 data；答案逐 token 发 JSON �
 - 原 Java 对非 PDF 默认按文本读取；新实现按前端约定只接受 `.pdf` 和 `.md`，空文件、乱码、损坏 PDF、无效分片参数返回明确错误。
 - 单次 multipart 请求限制 10 MiB；合并文件支持超过 10 MiB，新增可配置的 128 MiB 解析资源上限，避免一次耗尽内存。分片采用磁盘流式合并，不在内存保留全部分片副本。
 - 上传解析和 Embedding 成功后才写文档记录；秒传标记仅在本进程完成入库后有效，避免重启后误报已向量化。分片按用户隔离；失败保留分片用于重试。MD5 用作客户端上传标识，不作为安全校验或防篡改机制。
-- 业务数据默认保存在原 MySQL 六张表，向量仍只在内存中。重启后需从历史文件点击“使用此文件”重新向量化；删除文档历史仍不移除已有内存向量，以保留原行为。
+- 业务数据默认保存在原 MySQL 六张表，向量仍只在内存中。上传完成或首次激活后，本进程缓存文档已索引状态；后续激活复用已有向量，不重复计算或追加。并发激活同一文档共用一次处理，失败可重试。重启后首次选择历史文件仍需重新向量化，前端显示“正在准备文档…”；删除文档时同时清理该来源的关联结果、内存向量和索引缓存。
 - 数据库日期保持原无时区 ISO 风格输出，SQL 绑定不依赖宿主时区自动转换；MySQL 每条连接设置配置的 session time_zone，兼容原库的 DATETIME/TIMESTAMP 混用。
 - 思维图生成返回无效 JSON 时明确失败，不沿用原来的硬编码错误节点成功响应。未新增登录以外的权限业务，仅补齐已有资源归属检查。
 - 默认不自动复制 Java LangChain4j 隐式重试/生成参数；LangChain 调用不额外设置温度，模型服务采用自身默认值，失败直接上报。

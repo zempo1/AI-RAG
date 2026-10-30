@@ -1,8 +1,9 @@
 import 'reflect-metadata';
 import { MemoryStore } from '../src/persistence/memory.store';
-import { AuthService } from '../src/auth/auth.service';
+import { AuthService } from '../src/modules/auth/auth.service';
 import { JwtService } from '@nestjs/jwt';
 import { hash } from 'bcryptjs';
+import { memoryUserRepository } from '../src/modules/auth/user-repository';
 
 describe('memory repository and existing password compatibility', () => {
   it('does not commit failed transactions', async () => {
@@ -40,7 +41,7 @@ describe('memory repository and existing password compatibility', () => {
     const password = (await hash('old-password', 10)).replace('$2b$', '$2a$');
     await store.save('users', { username: 'legacy', password });
     const auth = new AuthService(
-      store,
+      memoryUserRepository(store),
       new JwtService({ secret: 'x'.repeat(32), signOptions: { expiresIn: '24h' } }),
     );
     const result = await auth.login('legacy', 'old-password');

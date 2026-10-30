@@ -2,8 +2,8 @@ import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigService } from '@nestjs/config';
-import { ChunkUploadService } from '../src/documents/chunk-upload.service';
-import { DocumentParser } from '../src/documents/parsers/document.parser';
+import { ChunkUploadService } from '../src/modules/documents/chunk-upload.service';
+import { DocumentParser } from '../src/modules/documents/parsers/document.parser';
 
 describe('chunk ingestion resource boundaries and retry', () => {
   let dir: string;

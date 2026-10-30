@@ -3,8 +3,8 @@ import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { configureApp } from '../src/bootstrap';
-import { EmbeddingsService } from '../src/embeddings/embeddings.service';
-import { LlmService } from '../src/llm/llm.service';
+import { EmbeddingsService } from '../src/modules/embeddings/embeddings.service';
+import { LlmService } from '../src/modules/llm/llm.service';
 import { request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 

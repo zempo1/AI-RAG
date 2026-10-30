@@ -1,6 +1,6 @@
 import { DataSource, EntityManager } from 'typeorm';
 import { Store, Table, Row, now } from './store';
-import { schemas } from './entities';
+import { entityTargets } from './data-source';
 import { ApiError } from '../common/api-error';
 
 export class MysqlStore extends Store {
@@ -9,13 +9,15 @@ export class MysqlStore extends Store {
   }
 
   private name(table: Table) {
-    return '`' + schemas[table].options.tableName + '`';
+    return '`' + this.manager.connection.getMetadata(entityTargets[table]).tableName + '`';
   }
 
   private column(table: Table, property: string): string {
-    const definition = schemas[table].options.columns[property];
+    const definition = this.manager.connection
+      .getMetadata(entityTargets[table])
+      .findColumnWithPropertyName(property);
     if (!definition) throw new Error('Unknown database column: ' + property);
-    return '`' + (definition.name || property) + '`';
+    return '`' + definition.databaseName + '`';
   }
 
   private async query(sql: string, values: unknown[] = []): Promise<any> {
@@ -49,7 +51,9 @@ export class MysqlStore extends Store {
   }
 
   async list(table: Table, where: Record<string, unknown> = {}): Promise<Row[]> {
-    const select = Object.keys(schemas[table].options.columns)
+    const select = this.manager.connection
+      .getMetadata(entityTargets[table])
+      .columns.map((column) => column.propertyName)
       .map((k) => `${this.column(table, k)} AS \`${k}\``)
       .join(', ');
     const conditions = Object.keys(where)
@@ -107,14 +111,19 @@ export class MysqlStore extends Store {
 export async function verifySchema(source: DataSource): Promise<void> {
   const runner = source.createQueryRunner();
   try {
-    for (const schema of Object.values(schemas)) {
-      const name = schema.options.tableName!;
+    for (const target of Object.values(entityTargets)) {
+      const metadata = source.getMetadata(target);
+      const name = metadata.tableName;
       const actual = await runner.getTable(name);
       if (!actual) throw new Error(`MySQL 缺少表 ${name}；空库请显式运行 npm run migration:run`);
-      for (const [property, expected] of Object.entries(schema.options.columns)) {
+      for (const expected of metadata.columns) {
+        const property = expected.propertyName;
         if (!expected) continue;
-        const col = actual.findColumnByName(expected.name || property);
-        if (!col) throw new Error(`MySQL 表结构不兼容: ${name}.${expected.name || property} 缺失`);
+        const col = actual.findColumnByName(expected.databaseName);
+        if (!col)
+          throw new Error(
+            `MySQL 表结构不兼容: ${name}.${expected.databaseName} 缺失；已有数据库请执行 npm run schema:upgrade`,
+          );
         const compatible =
           col.type === expected.type ||
           (expected.type === 'bigint' && col.type === 'int') ||

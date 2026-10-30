@@ -85,36 +85,58 @@
             v-for="doc in docHistory"
             :key="doc.id"
             class="history-item"
-            :class="{ active: uploadedFileName === doc.filename && isUploaded }"
+            :class="{ active: selectedDocumentId === doc.id && isUploaded }"
           >
             <el-icon class="doc-icon"><Document /></el-icon>
             <div class="doc-info">
               <el-tooltip :content="doc.filename" placement="right" :show-after="400" :hide-after="0">
                 <span class="doc-name">{{ doc.filename }}</span>
               </el-tooltip>
-              <span class="doc-time">{{ formatTime(doc.uploadTime) }}</span>
+              <span v-if="activatingId === doc.id" class="doc-preparing" role="status">
+                <el-icon class="is-loading"><Loading /></el-icon>
+                正在准备文档…
+              </span>
+              <span v-else class="doc-time">{{ formatTime(doc.uploadTime) }}</span>
             </div>
             <div class="doc-actions">
-              <el-tooltip content="使用此文件" placement="top">
-                <el-button
-                  size="small"
-                  circle
-                  :loading="activatingId === doc.id"
-                  @click.stop="handleActivate(doc)"
+              <el-tooltip
+                content="更多"
+                placement="bottom"
+                :show-after="300"
+                :disabled="openMenuId === doc.id"
+              >
+                <el-dropdown
+                  trigger="click"
+                  placement="bottom-start"
+                  popper-class="source-actions-menu"
+                  @visible-change="(visible: boolean) => openMenuId = visible ? doc.id : null"
+                  @command="handleDeleteDoc(doc)"
                 >
-                  <el-icon><Check /></el-icon>
-                </el-button>
+                  <button
+                    type="button"
+                    class="source-more-button"
+                    :aria-label="`更多：${doc.filename}`"
+                  >
+                    <el-icon><MoreFilled /></el-icon>
+                  </button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="delete" :icon="Delete">
+                        删除来源
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </el-tooltip>
-              <el-tooltip content="删除记录" placement="top">
-                <el-button
-                  size="small"
-                  circle
-                  type="danger"
-                  @click.stop="handleDeleteDoc(doc)"
-                >
-                  <el-icon><Delete /></el-icon>
-                </el-button>
-              </el-tooltip>
+              <el-checkbox
+                class="source-checkbox"
+                :model-value="selectedDocumentId === doc.id && isUploaded"
+                :disabled="activatingId !== null"
+                :aria-busy="activatingId === doc.id"
+                :aria-label="`选择来源：${doc.filename}`"
+                @click.stop
+                @change="handleSelection(doc, $event)"
+              />
             </div>
           </div>
         </div>
@@ -136,11 +158,12 @@ import {
   FolderOpened,
   ArrowRight,
   Document,
-  Check,
+  MoreFilled,
   Delete,
 } from '@element-plus/icons-vue'
 import type { UploadFile } from 'element-plus'
 import { useToast } from '../../composables/useToast'
+import { useConfirm } from '../../composables/useConfirm'
 import { checkUpload, uploadChunk, mergeChunks } from '../../api/upload'
 import {
   listDocuments,
@@ -167,6 +190,8 @@ const docHistory = ref<DocumentSummary[]>([])
 const historyExpanded = ref(true)
 const historyLoading = ref(false)
 const activatingId = ref<number | null>(null)
+const selectedDocumentId = ref<number | null>(null)
+const openMenuId = ref<number | null>(null)
 
 let abortFlag = false
 let uploadedChunkSet = new Set<number>()
@@ -175,8 +200,10 @@ let md5Worker: Worker | null = null
 
 const emit = defineEmits<{
   (e: 'activated', filename: string, id: number | null): void
+  (e: 'deleted', id: number): void
 }>()
 const toast = useToast()
+const confirm = useConfirm()
 
 const progressStatus = computed(() => {
   if (totalProgress.value === 100) return 'success'
@@ -212,10 +239,12 @@ onMounted(() => loadHistory())
 
 // ——— 激活历史文件 ———
 const handleActivate = async (doc: DocumentSummary) => {
+  if (activatingId.value !== null) return
   activatingId.value = doc.id
   try {
     await activateDocument(doc.id)
     isUploaded.value = true
+    selectedDocumentId.value = doc.id
     uploadedFileName.value = doc.filename
     emit('activated', doc.filename, doc.id)
     toast.success(`已切换到「${doc.filename}」`)
@@ -227,12 +256,32 @@ const handleActivate = async (doc: DocumentSummary) => {
   }
 }
 
+const handleSelection = (doc: DocumentSummary, checked: string | number | boolean) => {
+  if (activatingId.value !== null) return
+  if (checked) {
+    void handleActivate(doc)
+    return
+  }
+
+  resetUpload()
+  emit('activated', '', null)
+}
+
 // ——— 删除历史记录 ———
 const handleDeleteDoc = async (doc: DocumentSummary) => {
+  const confirmed = await confirm.danger(
+    `删除「${doc.filename}」后，其关联的思维导图、AI 摘要、文档大纲和学习卡片也将一并删除，且无法恢复。`,
+    '删除来源',
+  )
+  if (!confirmed) return
   try {
     await deleteDocument(doc.id)
+    emit('deleted', doc.id)
     docHistory.value = docHistory.value.filter((d) => d.id !== doc.id)
-    if (uploadedFileName.value === doc.filename) resetUpload()
+    if (selectedDocumentId.value === doc.id) {
+      resetUpload()
+      emit('activated', '', null)
+    }
     toast.success('已删除记录')
   } catch (e) {
     console.error(e)
@@ -315,6 +364,9 @@ async function startChunkUpload(file: File) {
     if (uploaded) {
       toast.success('⚡ 秒传成功！')
       finishUpload(file.name)
+      await loadHistory()
+      selectedDocumentId.value = docHistory.value.find((doc) => doc.filename === file.name)?.id ?? null
+      emit('activated', file.name, selectedDocumentId.value)
       return
     }
 
@@ -352,6 +404,7 @@ async function startChunkUpload(file: File) {
     // 上传完成后重新加载历史以获取新文件 ID
     await loadHistory()
     const latest = docHistory.value[0]
+    selectedDocumentId.value = latest?.id ?? null
     emit('activated', file.name, latest?.id ?? null)
   } catch (e: any) {
     if (!abortFlag) {
@@ -386,6 +439,7 @@ const finishUpload = (name: string) => {
 const resetUpload = () => {
   isUploaded.value = false
   uploadedFileName.value = ''
+  selectedDocumentId.value = null
 }
 
 // ——— 工具 ———

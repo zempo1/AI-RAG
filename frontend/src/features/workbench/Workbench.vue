@@ -300,7 +300,23 @@ const openFlashcard = (item: DocumentAnalysis) => {
   flashcardViewerVisible.value = true
 }
 
-defineExpose({ loadMindMaps, loadSummaries, loadOutlines })
+const onSourceDeleted = async (documentId: number) => {
+  mindMaps.value = mindMaps.value.filter(item => item.documentId !== documentId)
+  summaries.value = summaries.value.filter(item => item.documentId !== documentId)
+  outlines.value = outlines.value.filter(item => item.documentId !== documentId)
+  flashcards.value = flashcards.value.filter(item => item.documentId !== documentId)
+  if (currentMindMap.value?.documentId === documentId) {
+    editorVisible.value = false
+    currentMindMap.value = null
+  }
+  if (currentFlashcard.value?.documentId === documentId) {
+    flashcardViewerVisible.value = false
+    currentFlashcard.value = null
+  }
+  await Promise.all([loadMindMaps(), loadSummaries(), loadOutlines(), loadFlashcards()])
+}
+
+defineExpose({ loadMindMaps, loadSummaries, loadOutlines, onSourceDeleted })
 </script>
 
 <style lang="scss" src="./Workbench.scss" scoped></style>

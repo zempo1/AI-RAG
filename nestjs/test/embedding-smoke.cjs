@@ -4,7 +4,7 @@ const { ConfigService } = require('@nestjs/config');
 
 const { validateConfig } = require('../dist/config/configuration');
 
-const { EmbeddingsService } = require('../dist/embeddings/embeddings.service');
+const { EmbeddingsService } = require('../dist/modules/embeddings/embeddings.service');
 
 (async () => {
   const config = new ConfigService(

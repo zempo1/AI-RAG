@@ -1,6 +1,7 @@
 import request from '../utils/request'
 
 export interface MindMap {
+  documentId?: number | null
   id: number
   title: string
   data: string // JSON string

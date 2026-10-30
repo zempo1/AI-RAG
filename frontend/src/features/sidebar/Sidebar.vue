@@ -63,7 +63,7 @@
         文档
       </div>
       <div class="upload-wrapper" v-show="!isCollapsed">
-        <Upload @activated="handleFileActivated" />
+        <Upload @activated="handleFileActivated" @deleted="(id) => emit('file-deleted', id)" />
       </div>
       <div class="upload-collapsed" v-show="isCollapsed">
         <el-tooltip content="上传文档" placement="right">
@@ -139,6 +139,7 @@ const emit = defineEmits<{
   (e: "logout"): void;
   (e: "open-settings"): void;
   (e: "file-activated", filename: string, id: number | null): void;
+  (e: "file-deleted", id: number): void;
   (e: "username-changed", username: string): void;
 }>();
 

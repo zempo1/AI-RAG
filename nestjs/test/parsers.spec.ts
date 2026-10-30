@@ -1,4 +1,4 @@
-import { DocumentParser } from '../src/documents/parsers/document.parser';
+import { DocumentParser } from '../src/modules/documents/parsers/document.parser';
 import PDFDocument from 'pdfkit';
 import { existsSync } from 'node:fs';
 
