@@ -7,8 +7,24 @@ import { Chat } from '../modules/history/entities/chat.entity';
 import { Message } from '../modules/history/entities/message.entity';
 import { DocumentAnalysis } from '../modules/analysis/entities/document-analysis.entity';
 import { MindMap } from '../modules/mindmaps/entities/mindmap.entity';
+import {
+  KnowledgeBase,
+  DocumentCategory,
+} from '../modules/knowledge-bases/entities/knowledge-base.entity';
+import {
+  DocumentVersion,
+  DocumentIndexRevision,
+  DocumentChunk,
+} from '../modules/documents/entities/document-version.entity';
+import { ProcessingTask } from '../modules/tasks/entities/processing-task.entity';
 
 export const entityTargets = {
+  knowledgeBases: KnowledgeBase,
+  categories: DocumentCategory,
+  versions: DocumentVersion,
+  indexRevisions: DocumentIndexRevision,
+  chunks: DocumentChunk,
+  tasks: ProcessingTask,
   users: User,
   documents: DocumentFile,
   chats: Chat,
@@ -18,6 +34,7 @@ export const entityTargets = {
 };
 import { InitialSchema1793203200000 } from './migrations/1793203200000-initial-schema';
 import { DocumentCascade1793376000000 } from './migrations/1793376000000-document-cascade';
+import { KnowledgeBases1793404800000 } from './migrations/1793404800000-knowledge-bases';
 
 export function mysqlOptions(env: Record<string, any>): DataSourceOptions {
   return {
@@ -33,7 +50,11 @@ export function mysqlOptions(env: Record<string, any>): DataSourceOptions {
     supportBigNumbers: true,
     bigNumberStrings: true,
     entities: Object.values(entityTargets),
-    migrations: [InitialSchema1793203200000, DocumentCascade1793376000000],
+    migrations: [
+      InitialSchema1793203200000,
+      DocumentCascade1793376000000,
+      KnowledgeBases1793404800000,
+    ],
     synchronize: false,
     migrationsRun: false,
     connectTimeout: 5000,

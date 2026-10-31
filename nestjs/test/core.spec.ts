@@ -2,6 +2,9 @@ import { validateConfig } from '../src/config/configuration';
 import { RecursiveChunker } from '../src/modules/documents/chunkers/recursive.chunker';
 import { InMemoryVectorStore } from '../src/modules/vector-store/in-memory-vector-store.service';
 import { RagService } from '../src/modules/rag/rag.service';
+import { ChatService } from '../src/modules/chat/chat.service';
+import { NO_CONTEXT_ANSWER } from '../src/modules/rag/citations';
+import { pipeline } from './helpers/pipeline';
 
 describe('configuration', () => {
   it('defaults to mysql and rejects missing database secrets', () => {
@@ -29,12 +32,12 @@ describe('recursive chunking', () => {
 });
 
 describe('vector storage and RAG', () => {
-  const segment = (text: string, userId: number) => ({
+  const segment = (text: string, userId: number, chunkIndex = 0) => ({
     text,
     userId,
     documentId: 1,
     filename: 'a.md',
-    chunkIndex: 0,
+    chunkIndex,
   });
   it('normalizes cosine scores, ranks and rejects dimension mismatches atomically', () => {
     const store = new InMemoryVectorStore();
@@ -44,7 +47,7 @@ describe('vector storage and RAG', () => {
         [0, 1],
         [-1, 0],
       ],
-      [segment('a', 1), segment('b', 1), segment('c', 2)],
+      [segment('a', 1), segment('b', 1, 1), segment('c', 2)],
     );
     expect(store.search([1, 0], 10, 0.5).map((x) => [x.segment.text, x.score])).toEqual([
       ['a', 1],
@@ -53,13 +56,18 @@ describe('vector storage and RAG', () => {
     expect(() => store.addAll([[1, 0], [1]], [segment('d', 1), segment('e', 1)])).toThrow();
     expect(store.search([1, 0], 10, 0).length).toBe(3);
   });
-  it('builds the original context prompt and falls back to the question', async () => {
-    const store = new InMemoryVectorStore();
-    store.addAll([[1, 0]], [segment('知识内容', 1)]);
-    const rag = new RagService({ embedQuery: async () => [1, 0] } as any, store);
-    expect(await rag.prompt('问题', 1)).toBe(
-      "You are a helpful assistant. Answer the user's question based strictly on the context provided below.\nIf the answer is not in the context, say you don't know.\n\nContext:\n知识内容\n\nQuestion: 问题",
-    );
-    expect(await rag.prompt('问题', 2)).toBe('问题');
+  it('does not call the model or fall back to an ungrounded answer for an empty library', async () => {
+    const p = await pipeline();
+    try {
+      const rag = new RagService(p.embeddings as any, p.vectors, p.store, p.libraries);
+      const chat = new ChatService(rag, {
+        complete: async () => {
+          throw new Error('must not call');
+        },
+      } as any);
+      expect(await chat.chat('问题', 1)).toEqual({ answer: NO_CONTEXT_ANSWER, citations: [] });
+    } finally {
+      await p.cleanup();
+    }
   });
 });

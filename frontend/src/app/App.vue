@@ -7,6 +7,10 @@
       ref="sidebarRef"
       :username="username"
       :current-chat-id="currentChatId"
+      :knowledge-base-id="knowledgeBaseId"
+      :document-id="uploadedDocumentId"
+      @knowledge-base-change="changeKnowledgeBase"
+      @version-changed="refreshWorkbench"
       @new-chat="startNewChat"
       @select-chat="selectChat"
       @delete-chat="deleteChat"
@@ -18,7 +22,12 @@
     />
 
     <main class="main-content">
-      <Chat ref="chatRef" @chat-created="onChatCreated" />
+      <Chat
+        ref="chatRef"
+        :knowledge-base-id="knowledgeBaseId"
+        @chat-created="onChatCreated"
+        @history-loaded="onHistoryLoaded"
+      />
     </main>
 
     <Workbench
@@ -40,6 +49,7 @@ const chatRef = ref<any>(null);
 const sidebarRef = ref<any>(null);
 const workbenchRef = ref<any>(null);
 const currentChatId = ref<number | null>(null);
+const knowledgeBaseId = ref<number | null>(null);
 const username = ref(localStorage.getItem("username") || "用户");
 const authToken = ref(localStorage.getItem("token"));
 const uploadedFileName = ref("");
@@ -66,8 +76,20 @@ const onFileActivated = (filename: string, id: number | null) => {
 };
 
 const onFileDeleted = (id: number) => {
-  if (uploadedDocumentId.value === id) onFileActivated('', null);
+  if (uploadedDocumentId.value === id) onFileActivated("", null);
   workbenchRef.value?.onSourceDeleted(id);
+};
+
+const refreshWorkbench = () => workbenchRef.value?.refresh();
+const changeKnowledgeBase = (id: number) => {
+  if (knowledgeBaseId.value === id) return;
+  knowledgeBaseId.value = id;
+  startNewChat();
+  onFileActivated("", null);
+};
+const onHistoryLoaded = (id: number) => {
+  if (knowledgeBaseId.value !== id) onFileActivated("", null);
+  knowledgeBaseId.value = id;
 };
 
 const openSettings = () => {
@@ -110,6 +132,7 @@ const logout = () => {
   localStorage.removeItem("token");
   localStorage.removeItem("username");
   authToken.value = null;
+  knowledgeBaseId.value = null;
   username.value = "用户";
   startNewChat();
 };

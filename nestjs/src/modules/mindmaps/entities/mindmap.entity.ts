@@ -2,6 +2,8 @@ import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('mind_maps')
 export class MindMap {
+  @Column({ type: 'bigint', nullable: true, name: 'version_id' })
+  versionId: number | null;
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: number;
 

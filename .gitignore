@@ -5,3 +5,5 @@ frontend/dist/
 .shared/
 .trae/
 .agent/
+frontend/test-results/
+frontend/playwright-report/

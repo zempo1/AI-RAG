@@ -7,22 +7,36 @@ import { EmbeddingsService } from '../src/modules/embeddings/embeddings.service'
 import { LlmService } from '../src/modules/llm/llm.service';
 import { request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { createHash } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { IndexingService } from '../src/modules/documents/indexing.service';
+import { TaskQueueRuntime } from '../src/modules/tasks/task-queue.runtime';
 
 describe('existing Vue API contract', () => {
   let app: INestApplication;
   let token: string;
   let other: string;
   let doc: number;
+  let directory: string;
   let failLlm = false;
   let slowStream = false;
   let observeAbort: () => void = () => undefined;
   const auth = () => ({ Authorization: `Bearer ${token}` });
   beforeAll(async () => {
     process.env.STORAGE_DRIVER = 'memory';
+    process.env.VECTOR_DRIVER = 'memory';
+    process.env.QUEUE_DRIVER = 'memory';
+    process.env.INDEX_RETENTION_MS = '0';
     process.env.JWT_SECRET = 'test-secret-32-characters-or-longer';
-    process.env.UPLOAD_TEMP_DIR = '.tmp/e2e';
+    directory = await mkdtemp(join(tmpdir(), 'rag-api-e2e-'));
+    process.env.UPLOAD_TEMP_DIR = join(directory, 'chunks');
+    process.env.ORIGINALS_DIR = join(directory, 'originals');
     const { AppModule } = await import('../src/app.module');
     const module = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(TaskQueueRuntime)
+      .useValue({})
       .overrideProvider(EmbeddingsService)
       .useValue({
         embedDocuments: async (texts: string[]) => texts.map(() => [1, 0]),
@@ -38,7 +52,7 @@ describe('existing Vue API contract', () => {
           return '根据文档回答';
         },
         stream: async function* (_prompt: string, _key: string, signal: AbortSignal) {
-          yield '中文\\路径\n"';
+          yield '中文\\路径\n"[1][99]';
           if (slowStream)
             await new Promise<void>((_resolve, reject) => {
               signal.addEventListener(
@@ -61,6 +75,7 @@ describe('existing Vue API contract', () => {
   });
   afterAll(async () => {
     await app?.close();
+    if (directory) await rm(directory, { recursive: true, force: true });
   });
   it('requires authentication and preserves the error envelope', async () => {
     const res = await request(app.getHttpServer()).get('/api/documents').expect(401);
@@ -94,21 +109,26 @@ describe('existing Vue API contract', () => {
       .post('/api/upload')
       .set(auth())
       .attach('file', Buffer.from('# 知识\n\n中文文档内容'), '知识文档.md')
-      .expect(200);
-    expect(upload.body.data).toBe('File uploaded and ingested successfully.');
+      .expect(202);
+    expect(upload.body.data).toMatchObject({
+      documentId: expect.any(Number),
+      taskId: expect.any(Number),
+    });
+    await app.get(IndexingService).process(upload.body.data.taskId);
     const list = await request(app.getHttpServer()).get('/api/documents').set(auth()).expect(200);
-    expect(list.body.data[0]).toEqual({
+    expect(list.body.data[0]).toMatchObject({
       id: expect.any(Number),
       filename: '知识文档.md',
       uploadTime: expect.any(String),
     });
+    expect(list.body.data[0].content).toBeUndefined();
     doc = list.body.data[0].id;
     const answer = await request(app.getHttpServer())
       .post('/api/chat')
       .set(auth())
       .send({ question: '内容是什么' })
       .expect(200);
-    expect(answer.body.data).toBe('根据文档回答');
+    expect(answer.body.data).toEqual({ answer: '根据文档回答', citations: [] });
     await request(app.getHttpServer())
       .post('/api/documents/' + doc + '/activate')
       .set(auth())
@@ -125,11 +145,17 @@ describe('existing Vue API contract', () => {
       .set(auth())
       .attach('file', Buffer.alloc(0), 'empty.md')
       .expect(400);
-    await request(app.getHttpServer())
+    const corrupt = await request(app.getHttpServer())
       .post('/api/upload')
       .set(auth())
       .attach('file', Buffer.from('%PDF-invalid'), 'bad.pdf')
-      .expect(400);
+      .expect(202);
+    await expect(app.get(IndexingService).process(corrupt.body.data.taskId, 3)).rejects.toThrow();
+    const failed = await request(app.getHttpServer())
+      .get('/api/tasks/' + corrupt.body.data.taskId)
+      .set(auth())
+      .expect(200);
+    expect(failed.body.data).toMatchObject({ status: 'failed', retryable: 0 });
     await request(app.getHttpServer())
       .post('/api/upload')
       .set(auth())
@@ -142,7 +168,7 @@ describe('existing Vue API contract', () => {
       .expect(400);
   });
   it('supports resumable chunks, merge, quick upload and user isolation', async () => {
-    const md5 = '1234567890abcdef1234567890abcdef';
+    const md5 = createHash('md5').update('hello 中文').digest('hex');
     const filename = 'chunks.md';
     const check = () =>
       request(app.getHttpServer()).get('/api/upload/check').query({ md5, filename }).set(auth());
@@ -169,9 +195,13 @@ describe('existing Vue API contract', () => {
       .post('/api/upload/merge')
       .set(auth())
       .send({ md5, filename, totalChunks: 2 })
-      .expect(200);
+      .expect(202);
     expect(result.body.data.filename).toBe(filename);
-    expect((await check().expect(200)).body.data).toEqual({ uploaded: true });
+    expect((await check().expect(200)).body.data).toMatchObject({
+      uploaded: true,
+      documentId: result.body.data.documentId,
+    });
+    await app.get(IndexingService).process(result.body.data.taskId);
     const alien = await request(app.getHttpServer())
       .get('/api/upload/check')
       .query({ md5, filename })
@@ -188,11 +218,15 @@ describe('existing Vue API contract', () => {
     expect(res.headers['content-type']).toContain('text/event-stream');
     expect(res.text).toMatch(/event: chatId\ndata: \d+\n\n/);
     const frames = res.text.split('\n\n').filter((s: string) => s.startsWith('data:'));
-    expect(frames.map((s: string) => JSON.parse(s.slice(5)))).toEqual(['中文\\路径\n"', '答案']);
+    expect(frames.map((s: string) => JSON.parse(s.slice(5)))).toEqual([
+      '中文\\路径\n"[1][99]',
+      '答案',
+    ]);
     const id = Number(res.text.match(/event: chatId\ndata: (\d+)/)![1]);
     const chat = await request(app.getHttpServer()).get(`/api/chats/${id}`).set(auth()).expect(200);
     expect(chat.body.data.messages.map((m: any) => m.role)).toEqual(['user', 'assistant']);
-    expect(chat.body.data.messages[1].content).toBe('中文\\路径\n"答案');
+    expect(chat.body.data.messages[1].content).toBe('中文\\路径\n"[1]答案');
+    expect(chat.body.data.messages[1].citations).toHaveLength(1);
     await request(app.getHttpServer())
       .get(`/api/chats/${id}`)
       .set('Authorization', `Bearer ${other}`)
@@ -246,7 +280,15 @@ describe('existing Vue API contract', () => {
       .set(auth())
       .send({ question: '失败' })
       .expect(200);
-    expect(stream.text).toContain('[Error: upstream unavailable]');
+    expect(stream.text).toContain('event: error');
+    expect(stream.text).toContain('upstream unavailable');
+    const errorFrame = stream.text
+      .split('\n\n')
+      .find((frame: string) => frame.startsWith('event: error'))!;
+    const interrupted = JSON.parse(errorFrame.split('\ndata: ')[1]);
+    expect(interrupted.answer).toBe('中文\\路径\n"[1]');
+    expect(interrupted.citations).toHaveLength(1);
+    expect(interrupted.generationStatus).toBe('interrupted');
     failLlm = false;
   });
   it('cancels the upstream generation when the browser disconnects', async () => {
@@ -284,4 +326,113 @@ describe('existing Vue API contract', () => {
     ]);
     slowStream = false;
   });
+  it('manages scoped categories and metadata and keeps a deleted-library chat read-only', async () => {
+    const kb = (
+      await request(app.getHttpServer())
+        .post('/api/knowledge-bases')
+        .set(auth())
+        .send({ name: '私有新库' })
+        .expect(200)
+    ).body.data;
+    const category = (
+      await request(app.getHttpServer())
+        .post('/api/knowledge-bases/' + kb.id + '/categories')
+        .set(auth())
+        .send({ name: '课程' })
+        .expect(200)
+    ).body.data;
+    const accepted = (
+      await request(app.getHttpServer())
+        .post('/api/upload')
+        .set(auth())
+        .field('knowledgeBaseId', String(kb.id))
+        .field('categoryId', String(category.id))
+        .attach('file', Buffer.from('分类正文'), 'course.md')
+        .expect(202)
+    ).body.data;
+    await app.get(IndexingService).process(accepted.taskId);
+    const before = (
+      await request(app.getHttpServer())
+        .get('/api/documents/' + accepted.documentId)
+        .set(auth())
+        .expect(200)
+    ).body.data;
+    await request(app.getHttpServer())
+      .put('/api/documents/' + accepted.documentId)
+      .set(auth())
+      .send({ filename: 'renamed.md' })
+      .expect(200);
+    const after = (
+      await request(app.getHttpServer())
+        .get('/api/documents/' + accepted.documentId)
+        .set(auth())
+        .expect(200)
+    ).body.data;
+    expect(after.activeIndexRevisionId).toBe(before.activeIndexRevisionId);
+    await request(app.getHttpServer())
+      .get('/api/knowledge-bases/' + kb.id + '/documents')
+      .set('Authorization', 'Bearer ' + other)
+      .expect(404);
+    await request(app.getHttpServer())
+      .get('/api/tasks/' + accepted.taskId)
+      .set('Authorization', 'Bearer ' + other)
+      .expect(404);
+    await request(app.getHttpServer())
+      .delete('/api/knowledge-bases/' + kb.id + '/categories/' + category.id)
+      .set(auth())
+      .expect(200);
+    const docs = (
+      await request(app.getHttpServer())
+        .get('/api/knowledge-bases/' + kb.id + '/documents')
+        .query({ categoryId: 0 })
+        .set(auth())
+        .expect(200)
+    ).body.data;
+    expect(docs.items[0]).toMatchObject({ filename: 'renamed.md', categoryId: null });
+    const chat = (
+      await request(app.getHttpServer())
+        .post('/api/chats')
+        .set(auth())
+        .send({ knowledgeBaseId: kb.id, title: '绑定库' })
+        .expect(200)
+    ).body.data;
+    const otherKb = (
+      await request(app.getHttpServer()).get('/api/knowledge-bases').set(auth()).expect(200)
+    ).body.data.find((row: any) => row.id !== kb.id);
+    await request(app.getHttpServer())
+      .post('/api/stream-chat')
+      .set(auth())
+      .send({ chatId: chat.id, knowledgeBaseId: otherKb.id, question: '问题' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .delete('/api/knowledge-bases/' + kb.id)
+      .set(auth())
+      .expect(202);
+    expect(
+      (
+        await request(app.getHttpServer())
+          .get('/api/chats/' + chat.id)
+          .set(auth())
+          .expect(200)
+      ).body.data.readOnly,
+    ).toBe(true);
+    await request(app.getHttpServer())
+      .post('/api/stream-chat')
+      .set(auth())
+      .send({ chatId: chat.id, question: '问题' })
+      .expect(409);
+  });
+  it('protects task history endpoints and retains internal records', async () => {
+    const uploaded = (await request(app.getHttpServer()).post('/api/upload').set(auth()).attach('file', Buffer.from('任务历史'), 'history.md').expect(202)).body.data;
+    await request(app.getHttpServer()).delete('/api/tasks/' + uploaded.taskId).set({ Authorization: 'Bearer ' + other }).expect(404);
+    await request(app.getHttpServer()).delete('/api/tasks/' + uploaded.taskId).set(auth()).expect(409);
+    await app.get(IndexingService).process(uploaded.taskId);
+    await request(app.getHttpServer()).delete('/api/tasks/' + uploaded.taskId).set(auth()).expect(200);
+    await request(app.getHttpServer()).get('/api/tasks/' + uploaded.taskId).set(auth()).expect(200);
+    const list = await request(app.getHttpServer()).get('/api/tasks').query({ knowledgeBaseId: uploaded.knowledgeBaseId }).set(auth()).expect(200);
+    expect(list.body.data.some((t: any) => t.id === uploaded.taskId)).toBe(false);
+    await request(app.getHttpServer()).delete('/api/tasks').query({ knowledgeBaseId: uploaded.knowledgeBaseId }).set({ Authorization: 'Bearer ' + other }).expect(404);
+    await request(app.getHttpServer()).delete('/api/tasks').query({ knowledgeBaseId: uploaded.knowledgeBaseId }).set(auth()).expect(200);
+  });
+
 });

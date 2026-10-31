@@ -1,0 +1,10 @@
+[
+  { "knowledgeBase": "实验室", "stage": "v1", "question": "实验数据保留多久？", "expected": "30 天", "source": "lab-v1.md" },
+  { "knowledgeBase": "实验室", "stage": "v1", "question": "实验室几点关门？", "expected": "18:00", "source": "lab-v1.md" },
+  { "knowledgeBase": "实验室", "stage": "v2", "question": "实验数据保留多久？", "expected": "60 天", "source": "lab-v2.md" },
+  { "knowledgeBase": "实验室", "stage": "v2", "question": "实验报告应包含哪些部分？", "expected": "实验目的、实验步骤、结果分析和风险说明", "source": "lab-v2.md" },
+  { "knowledgeBase": "图书馆", "stage": "v1", "question": "预约记录保留多久？", "expected": "7 天", "source": "library.md" },
+  { "knowledgeBase": "图书馆", "stage": "v1", "question": "图书馆几点关门？", "expected": "22:00", "source": "library.md" },
+  { "knowledgeBase": "图书馆", "stage": "v1", "question": "学生最多能借几本书？", "expected": "5 本", "source": "library.md" },
+  { "knowledgeBase": "空知识库", "stage": "empty", "question": "实验数据保留多久？", "expected": "资料不足，引用为空", "source": null }
+]

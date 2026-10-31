@@ -1,7 +1,21 @@
 import { Injectable } from '@nestjs/common';
+import { ParsedBlock, ParsedDocument } from '../parsers/parsed-document';
 
 @Injectable()
 export class RecursiveChunker {
+  splitStructured(document: ParsedDocument, size = 500, overlap = 50): ParsedBlock[] {
+    const result: ParsedBlock[] = [];
+    for (const block of document.blocks) {
+      let cursor = 0;
+      for (const text of this.split(block.text, size, overlap)) {
+        const index = block.text.indexOf(text, cursor);
+        const start = block.location.start + index;
+        result.push({ text, location: { ...block.location, start, end: start + text.length } });
+        cursor = Math.max(index + text.length - overlap, index + 1);
+      }
+    }
+    return result;
+  }
   split(text: string, size = 500, overlap = 50): string[] {
     if (size <= overlap || overlap < 0) throw new Error('Invalid chunk size/overlap');
     const result: string[] = [];

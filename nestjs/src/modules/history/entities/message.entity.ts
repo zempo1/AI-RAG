@@ -2,6 +2,10 @@ import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('messages')
 export class Message {
+  @Column({ type: 'json', nullable: true })
+  citations: unknown[] | null;
+  @Column({ type: 'varchar', length: 30, nullable: true, name: 'generation_status' })
+  generationStatus: string | null;
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: number;
 

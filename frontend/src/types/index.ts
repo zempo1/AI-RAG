@@ -1,12 +1,14 @@
 export interface ChatItem {
-  id: number
-  title: string
-  createdAt: string
+  knowledgeBaseId?: number;
+  readOnly?: boolean;
+  id: number;
+  title: string;
+  createdAt: string;
 }
 
 export interface MindMapItem {
-  id: number
-  title: string
-  data: string
-  createdAt: string
+  id: number;
+  title: string;
+  data: string;
+  createdAt: string;
 }

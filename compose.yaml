@@ -1,0 +1,42 @@
+name: ai-rag
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports: ["127.0.0.1:6379:6379"]
+    volumes: ["redis-data:/data"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  qdrant:
+    image: qdrant/qdrant:v1.20.0
+    ports: ["127.0.0.1:6333:6333"]
+    volumes: ["qdrant-data:/qdrant/storage"]
+    restart: unless-stopped
+  mysql-test:
+    image: mysql:8.4
+    profiles: ["test"]
+    environment:
+      MYSQL_ROOT_PASSWORD: rag-test-only
+    ports: ["127.0.0.1:13306:3306"]
+    tmpfs: ["/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-prag-test-only"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  redis-test:
+    image: redis:7.4-alpine
+    profiles: ["test"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports: ["127.0.0.1:16379:6379"]
+  qdrant-test:
+    image: qdrant/qdrant:v1.20.0
+    profiles: ["test"]
+    ports: ["127.0.0.1:16333:6333"]
+volumes:
+  redis-data:
+  qdrant-data:

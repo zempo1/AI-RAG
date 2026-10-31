@@ -2,6 +2,9 @@ import { Store, Table, Row, now } from './store';
 import { ApiError } from '../common/api-error';
 
 export class MemoryStore extends Store {
+  async lock(table: Table, id: number): Promise<Row | undefined> {
+    return this.get(table, id);
+  }
   private tables = new Map<Table, Map<number, Row>>();
 
   private counters = new Map<Table, number>();
@@ -35,7 +38,10 @@ export class MemoryStore extends Store {
       const id = row.id ?? (this.counters.get(table) || 0) + 1;
       this.counters.set(table, Math.max(id, this.counters.get(table) || 0));
       const timeKey = table === 'documents' ? 'uploadTime' : 'createdAt';
-      const result = { [timeKey]: now(), ...rows.get(id), ...row, id } as Row;
+      const defined = Object.fromEntries(
+        Object.entries(row).filter(([, value]) => value !== undefined),
+      );
+      const result = { [timeKey]: now(), ...rows.get(id), ...defined, id } as Row;
       rows.set(id, structuredClone(result));
       return structuredClone(result);
     };

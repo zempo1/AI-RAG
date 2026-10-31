@@ -21,7 +21,7 @@ export class HistoryController {
 
   @Post()
   create(@Body() body: CreateChatDto, @UserId() user: number) {
-    return this.history.create(body.title ?? 'New Chat', user);
+    return this.history.create(body.title ?? 'New Chat', user, body.knowledgeBaseId);
   }
 
   @Delete(':id')

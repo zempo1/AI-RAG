@@ -14,7 +14,7 @@ export class AnalysisService {
   ) {}
 
   async generate(documentId: number, type: string, userId: number, apiKey?: string) {
-    const doc = await this.documents.owned(documentId, userId);
+    const doc = await this.documents.ready(documentId, userId);
     const result = (
       await this.llm.complete(analysisPrompt(type, doc.content.slice(0, 20000)), apiKey)
     ).trim();
@@ -35,12 +35,14 @@ export class AnalysisService {
     }
     return publicRow(
       await this.store.transaction(async (tx) => {
-        const source = await tx.get('documents', documentId);
-        if (!source || source.userId !== userId)
+        const kb = await tx.lock('knowledgeBases', doc.knowledgeBaseId);
+        const source = await tx.lock('documents', documentId);
+        if (!kb || kb.deletedAt || !source || source.userId !== userId || source.deletedAt)
           throw new ApiError(500, 'Document not found: ' + documentId);
         return tx.save('analyses', {
           userId,
           documentId,
+          versionId: doc.activeVersionId,
           documentName: doc.filename,
           type,
           content: result,
@@ -50,9 +52,17 @@ export class AnalysisService {
   }
 
   async list(type: string, userId: number) {
-    return (await this.store.list('analyses', { type, userId }))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)
-      .map(publicRow);
+    return Promise.all(
+      (await this.store.list('analyses', { type, userId }))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)
+        .map(async (row) => {
+          const source = row.documentId ? await this.store.get('documents', row.documentId) : null;
+          return {
+            ...publicRow(row),
+            sourceOutdated: !!source && row.versionId !== source.activeVersionId,
+          };
+        }),
+    );
   }
 
   async delete(id: number, userId: number): Promise<void> {

@@ -1,10 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ApiError } from '../../../common/api-error';
-
-// Keep native import when compiling CommonJS: PDF.js is an ESM package.
-const nativeImport = new Function('specifier', 'return import(specifier)') as (
-  s: string,
-) => Promise<any>;
+import { ParsedDocument, paragraphBlocks } from './parsed-document';
 
 @Injectable()
 export class DocumentParser {
@@ -19,20 +15,29 @@ export class DocumentParser {
   }
 
   async parse(bytes: Buffer, filename: string): Promise<string> {
+    return (await this.parseStructured(bytes, filename)).text;
+  }
+
+  async parseStructured(
+    bytes: Buffer,
+    filename: string,
+    progress?: (done: number, total: number) => void | Promise<void>,
+  ): Promise<ParsedDocument> {
     this.validateFilename(filename);
     if (!bytes.length) throw new ApiError(400, '文件不能为空');
     let text: string;
+    const blocks: ParsedDocument['blocks'] = [];
     if (/\.pdf$/i.test(filename)) {
       if (!bytes.subarray(0, 1024).includes(Buffer.from('%PDF-')))
         throw new ApiError(400, 'PDF 文件格式无效');
       let task: any;
       let document: any;
+      let progressError: unknown;
       try {
-        const pdfjs = await nativeImport('pdfjs-dist/legacy/build/pdf.mjs');
+        const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
         task = pdfjs.getDocument({
           data: new Uint8Array(bytes),
           useSystemFonts: true,
-          isEvalSupported: false,
           verbosity: 0,
         });
         document = await task.promise;
@@ -40,16 +45,36 @@ export class DocumentParser {
         for (let i = 1; i <= document.numPages; i++) {
           const page = await document.getPage(i);
           const content = await page.getTextContent();
-          pages.push(
-            content.items
-              .map((item: any) => ('str' in item ? item.str + (item.hasEOL ? '\n' : '') : ''))
-              .join(''),
-          );
+          let previous: any;
+          let pageText = '';
+          for (const item of content.items as any[]) {
+            if (!('str' in item)) continue;
+            if (
+              previous &&
+              Math.abs(previous.transform[5] - item.transform[5]) >
+                Math.max(previous.height, item.height) * 1.6
+            )
+              pageText += '\n\n';
+            pageText += item.str + (item.hasEOL ? '\n' : '');
+            previous = item;
+          }
+          const offset = pages.reduce((sum, p) => sum + p.length + 1, 0);
+          blocks.push(...paragraphBlocks(pageText, i, offset));
+          pages.push(pageText);
           page.cleanup();
+          try {
+            await progress?.(i, document.numPages);
+          } catch (error) {
+            progressError = error;
+            throw error;
+          }
         }
         text = pages.join('\n');
-      } catch {
-        throw new ApiError(400, 'PDF 解析失败：文件损坏、加密或格式不受支持');
+      } catch (error) {
+        if (progressError) throw progressError;
+        throw Object.assign(new ApiError(400, 'PDF 解析失败：文件损坏、加密或格式不受支持'), {
+          cause: error,
+        });
       } finally {
         if (task) await task.destroy();
       }
@@ -57,12 +82,16 @@ export class DocumentParser {
         throw new ApiError(400, 'PDF 中未提取到文字；扫描件需要 OCR，本项目不提供 OCR');
     } else {
       try {
-        text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+        text = new TextDecoder('utf-8', { fatal: true }).decode(bytes).replace(/\r\n?/g, '\n');
       } catch {
         throw new ApiError(400, 'Markdown 必须使用 UTF-8 编码');
       }
     }
     if (!text.trim()) throw new ApiError(400, '文档内容不能为空');
-    return text;
+    if (!/\.pdf$/i.test(filename)) {
+      blocks.push(...paragraphBlocks(text, null));
+      await progress?.(1, 1);
+    }
+    return { text, blocks };
   }
 }

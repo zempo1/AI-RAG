@@ -8,7 +8,7 @@
     </div>
     <div v-else class="no-file">
       <el-icon><InfoFilled /></el-icon>
-      <span>请先在左侧上传或激活文件</span>
+      <span>请在文档管理中选择“用于工作台”</span>
     </div>
     <el-button class="generate-btn" type="primary"
       :disabled="disabled"

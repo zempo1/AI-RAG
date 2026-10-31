@@ -1,8 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { VectorStore, Segment, Match } from './vector-store.interface';
+import { VectorStore, Segment, Match, SearchScope } from './vector-store.interface';
+import { pointId } from './point-id';
 
 @Injectable()
 export class InMemoryVectorStore extends VectorStore {
+  removeRevision(indexRevisionId: number, userId: number): void {
+    this.entries = this.entries.filter(
+      (e) => e.segment.userId !== userId || e.segment.indexRevisionId !== indexRevisionId,
+    );
+    if (!this.entries.length) this.dimension = undefined;
+  }
   removeDocument(documentId: number, userId: number): void {
     this.entries = this.entries.filter(
       (entry) => entry.segment.documentId !== documentId || entry.segment.userId !== userId,
@@ -30,17 +37,27 @@ export class InMemoryVectorStore extends VectorStore {
     const dimension = this.dimension ?? vectors[0].length;
     vectors.forEach((v) => this.validate(v, dimension));
     this.dimension = dimension;
-    this.entries.push(
-      ...vectors.map((vector, i) => ({ vector: [...vector], segment: { ...segments[i] } })),
-    );
+    for (let i = 0; i < vectors.length; i++) {
+      const segment = segments[i];
+      const id = pointId(segment);
+      this.entries = this.entries.filter((e) => pointId(e.segment) !== id);
+      this.entries.push({ vector: [...vectors[i]], segment: structuredClone(segment) });
+    }
   }
 
-  search(vector: number[], topK: number, minScore: number): Match[] {
+  search(vector: number[], topK: number, minScore: number, scope?: SearchScope): Match[] {
     if (!this.entries.length) return [];
     this.validate(vector, this.dimension!);
     const norm = (v: number[]) => Math.sqrt(v.reduce((sum, x) => sum + x * x, 0));
     const queryNorm = norm(vector);
     return this.entries
+      .filter(
+        (e) =>
+          !scope ||
+          (e.segment.userId === scope.userId &&
+            e.segment.knowledgeBaseId === scope.knowledgeBaseId &&
+            scope.indexRevisionIds.includes(e.segment.indexRevisionId!)),
+      )
       .map((entry) => ({
         segment: { ...entry.segment },
         score:

@@ -8,6 +8,7 @@ import { HistoryModule } from './modules/history/history.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { AnalysisModule } from './modules/analysis/analysis.module';
 import { MindMapsModule } from './modules/mindmaps/mindmaps.module';
+import { PipelineModule } from './modules/tasks/pipeline.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { MindMapsModule } from './modules/mindmaps/mindmaps.module';
     ChatModule,
     AnalysisModule,
     MindMapsModule,
+    PipelineModule,
   ],
 })
 export class AppModule {}

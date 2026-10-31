@@ -2,8 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiError } from '../../common/api-error';
 
-const nativeImport = new Function('s', 'return import(s)') as (s: string) => Promise<any>;
-
 @Injectable()
 export class LlmService {
   constructor(private readonly config: ConfigService) {}
@@ -11,7 +9,7 @@ export class LlmService {
   private async model(apiKey?: string): Promise<any> {
     const key = apiKey?.trim() || this.config.get<string>('CHAT_API_KEY');
     if (!key) throw new ApiError(500, '请配置 CHAT_API_KEY 或提供 X-Api-Key');
-    const { ChatOpenAI } = await nativeImport('@langchain/openai');
+    const { ChatOpenAI } = await import('@langchain/openai');
     return new ChatOpenAI({
       apiKey: key,
       model: this.config.getOrThrow('CHAT_MODEL'),

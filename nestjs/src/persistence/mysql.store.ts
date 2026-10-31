@@ -8,6 +8,13 @@ export class MysqlStore extends Store {
     super();
   }
 
+  async lock(table: Table, id: number): Promise<Row | undefined> {
+    if (!this.manager.queryRunner?.isTransactionActive)
+      throw new Error('Row locks require a transaction');
+    await this.query(`SELECT id FROM ${this.name(table)} WHERE id = ? FOR UPDATE`, [id]);
+    return this.get(table, id);
+  }
+
   private name(table: Table) {
     return '`' + this.manager.connection.getMetadata(entityTargets[table]).tableName + '`';
   }
@@ -31,8 +38,9 @@ export class MysqlStore extends Store {
     }
   }
 
-  private normalize(row: any): Row {
-    for (const key of ['createdAt', 'uploadTime']) {
+  private normalize(row: any, table: Table): Row {
+    const columns = this.manager.connection.getMetadata(entityTargets[table]).columns;
+    for (const key of columns.filter((c) => c.type === 'datetime').map((c) => c.propertyName)) {
       const date = row[key];
       if (date instanceof Date) {
         const pad = (n: number, width = 2) => String(n).padStart(width, '0');
@@ -40,12 +48,15 @@ export class MysqlStore extends Store {
           `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`;
       } else if (typeof date === 'string') row[key] = date.replace(' ', 'T');
     }
-    for (const key of ['id', 'userId', 'documentId', 'chatId']) {
+    for (const key of columns.filter((c) => c.type === 'bigint').map((c) => c.propertyName)) {
       if (row[key] != null) {
         row[key] = Number(row[key]);
         if (!Number.isSafeInteger(row[key]))
           throw new Error('Database ID exceeds JavaScript safe integer range');
       }
+    }
+    for (const key of columns.filter((c) => c.type === 'json').map((c) => c.propertyName)) {
+      if (typeof row[key] === 'string') row[key] = JSON.parse(row[key]);
     }
     return row;
   }
@@ -64,7 +75,7 @@ export class MysqlStore extends Store {
         `SELECT ${select} FROM ${this.name(table)}${conditions ? ' WHERE ' + conditions : ''}`,
         Object.values(where),
       )
-    ).map((row: any) => this.normalize(row));
+    ).map((row: any) => this.normalize(row, table));
   }
 
   async get(table: Table, id: number): Promise<Row | undefined> {
@@ -77,7 +88,18 @@ export class MysqlStore extends Store {
       // Bind wall-time strings directly. TypeORM datetime hydration otherwise
       // applies the host timezone before mysql2 applies DB_TIMEZONE a second time.
       const input = row.id ? row : { [key]: now(), ...row };
-      const entries = Object.entries(input).filter(([k, v]) => k !== 'id' && v !== undefined);
+      const metadata = this.manager.connection.getMetadata(entityTargets[table]);
+      const entries = Object.entries(input)
+        .filter(([k, v]) => k !== 'id' && v !== undefined)
+        .map(
+          ([k, v]) =>
+            [
+              k,
+              metadata.findColumnWithPropertyName(k)?.type === 'json' && v != null
+                ? JSON.stringify(v)
+                : v,
+            ] as const,
+        );
       let id = row.id;
       if (id)
         await this.query(
@@ -93,7 +115,11 @@ export class MysqlStore extends Store {
       }
       return (await this.get(table, id!))!;
     } catch (e: any) {
-      if (e.code === 'ER_DUP_ENTRY') throw new ApiError(400, 'Username already exists');
+      if (e.code === 'ER_DUP_ENTRY')
+        throw new ApiError(
+          409,
+          table === 'users' ? 'Username already exists' : '记录重复，请刷新后重试',
+        );
       throw e;
     }
   }

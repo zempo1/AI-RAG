@@ -1,8 +1,6 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-const nativeImport = new Function('s', 'return import(s)') as (s: string) => Promise<any>;
-
 @Injectable()
 export class EmbeddingsService implements OnModuleDestroy {
   private extractor?: Promise<any>;
@@ -14,7 +12,7 @@ export class EmbeddingsService implements OnModuleDestroy {
   private load(): Promise<any> {
     if (!this.extractor)
       this.extractor = (async () => {
-        const { env, pipeline } = await nativeImport('@huggingface/transformers');
+        const { env, pipeline } = await import('@huggingface/transformers');
         env.cacheDir = this.config.getOrThrow('MODEL_CACHE_DIR');
         return pipeline('feature-extraction', this.config.getOrThrow('EMBEDDING_MODEL'), {
           revision: this.config.getOrThrow('EMBEDDING_REVISION'),

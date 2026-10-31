@@ -32,6 +32,27 @@ export function validateConfig(input: Record<string, unknown>): Record<string, a
   c.EMBEDDING_REVISION ||= '6fa4bf687ce79106377b66d10009c0e513715e24';
   c.MODEL_CACHE_DIR = resolve(c.MODEL_CACHE_DIR || '.cache/models');
   c.UPLOAD_TEMP_DIR = resolve(c.UPLOAD_TEMP_DIR || '.tmp/uploads');
+  c.ORIGINALS_DIR = resolve(c.ORIGINALS_DIR || '.data/originals');
+  c.VECTOR_DRIVER ||= c.STORAGE_DRIVER === 'memory' ? 'memory' : 'qdrant';
+  c.QUEUE_DRIVER ||= c.STORAGE_DRIVER === 'memory' ? 'memory' : 'bullmq';
+  if (!['memory', 'qdrant'].includes(c.VECTOR_DRIVER))
+    throw new Error('VECTOR_DRIVER must be memory or qdrant');
+  if (!['memory', 'bullmq'].includes(c.QUEUE_DRIVER))
+    throw new Error('QUEUE_DRIVER must be memory or bullmq');
+  if (c.STORAGE_DRIVER === 'memory' && c.QUEUE_DRIVER !== 'memory')
+    throw new Error('内存数据不能跨 API/Worker 共享，请使用 QUEUE_DRIVER=memory');
+  c.QDRANT_URL ||= 'http://127.0.0.1:6333';
+  c.QDRANT_COLLECTION ||= 'rag';
+  c.REDIS_URL ||= 'redis://127.0.0.1:6379';
+  c.QUEUE_PREFIX ||= 'ai-rag';
+  c.INDEX_RETENTION_MS = Number(c.INDEX_RETENTION_MS ?? 600000);
+  if (!Number.isSafeInteger(c.INDEX_RETENTION_MS) || c.INDEX_RETENTION_MS < 0)
+    throw new Error('INDEX_RETENTION_MS must be a nonnegative integer');
+  for (const key of ['QDRANT_URL', 'REDIS_URL']) {
+    const protocol = new URL(c[key]).protocol;
+    if (!(key === 'REDIS_URL' ? ['redis:', 'rediss:'] : ['http:', 'https:']).includes(protocol))
+      throw new Error(key + ' 协议无效');
+  }
   c.MAX_DOCUMENT_BYTES = Number(c.MAX_DOCUMENT_BYTES || 128 * 1024 * 1024);
   if (!Number.isSafeInteger(c.MAX_DOCUMENT_BYTES) || c.MAX_DOCUMENT_BYTES < 1)
     throw new Error('MAX_DOCUMENT_BYTES must be a positive integer');

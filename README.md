@@ -1,70 +1,41 @@
-# AI RAG System
+# 多知识库 RAG 系统
 
-## NestJS 后端
+毕业设计项目，使用 Vue 3、NestJS、MySQL、Qdrant 和 Redis/BullMQ，支持 PDF/Markdown 的上传、异步解析、检索问答与引用溯源。
 
-新增独立的 `nestjs/` 后端，默认连接原 MySQL 数据库，兼容现有前端接口。安装、环境变量和启动步骤见 [nestjs/README.md](nestjs/README.md)。原 Java 后端继续保留；两者默认都使用 8080 端口，请择一运行。
+- 用户私有知识库、一级文档分类、文档筛选和管理。
+- 分片续传、后台处理进度、失败重试和独立 Worker。
+- 文件级增量更新、新旧索引切换、文档删除、单文档及全库重建。
+- 按指定知识库问答，先过滤后 TopK；回答引用可查看原文、页码和段落。
+- 历史引用快照，以及摘要、大纲、学习卡片和思维导图。
 
-这是一个基于 **Vue 3 + TypeScript** 和 **Spring Boot + LangChain4j** 构建的 RAG (检索增强生成) 系统。
-用户可以上传 PDF 或 Markdown 文件，系统会自动解析并向量化，然后用户可以针对文件内容进行提问。
+## 本地运行
 
-## 项目结构
+要求 Node.js >=22.21.1、MySQL、Docker Compose。
 
-- `frontend/`: Vue 3 前端项目
-- `backend/`: Spring Boot 后端项目
+在项目根目录启动向量库和队列：
 
-## 快速开始
+    docker compose up -d redis qdrant
 
-### 1. 后端配置 (Backend)
+后端配置、现有数据库升级和详细测试说明见 [nestjs/README.md](nestjs/README.md)。现有数据库需要显式升级；应用启动不会自动改表。
 
-首先配置 API Key。本项目默认配置为使用 **阿里云百炼 (通义千问)**，也支持 OpenAI。
+    cd nestjs
+    npm install
+    Copy-Item .env.example .env
+    # 填写数据库连接、JWT_SECRET 和模型配置
+    npm run schema:upgrade
+    npm run start:dev
 
-打开 `backend/src/main/resources/application.properties` 文件：
+另开终端启动 Worker：
 
-```properties
-# 阿里云百炼配置 (默认)
-# 请将 sk-xxxxxxxxxxxxxxxxxxxxxxxxxx 替换为您在阿里云百炼控制台获取的 API Key
-openai.api.key=sk-xxxxxxxxxxxxxxxxxxxxxxxxxx
-openai.base-url=https://dashscope.aliyuncs.com/compatible-mode/v1
-openai.model-name=qwen-plus
+    cd nestjs
+    npm run start:worker:dev
 
-# 如果您想使用 OpenAI
-# openai.api.key=sk-your-openai-key
-# openai.base-url=https://api.openai.com/v1
-# openai.model-name=gpt-3.5-turbo
-```
+再开终端启动前端：
 
-### 2. 运行后端
+    cd frontend
+    npm install
+    npm run dev
 
-确保你安装了 Java 17+ 和 Maven。
+前端默认通过 /api 代理访问 localhost:8080。空数据库应使用 npm run migration:run 初始化；不要对已有数据库运行空库初始化。
 
-```bash
-cd backend
-mvn spring-boot:run
-```
-
-后端将在 `http://localhost:8080` 启动。
-
-### 3. 运行前端
-
-确保你安装了 Node.js。
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-前端将在 `http://localhost:5173` 启动。
-
-### 4. 使用
-
-1. 打开浏览器访问前端地址。
-2. 在上传区域拖入 PDF 或 Markdown 文件。
-3. 等待上传成功提示。
-4. 在下方聊天框输入问题，AI 将根据文档回答。
-
-## 技术栈
-
-- **前端**: Vue 3, TypeScript, Vite, Element Plus, SCSS
-- **后端**: Java 17, Spring Boot 3, LangChain4j
-- **RAG**: In-memory Embedding Store (HNSW), OpenAI Chat Model, PDFBox
+答辩用资料与评估流程见 [docs/evaluation](docs/evaluation/README.md)。

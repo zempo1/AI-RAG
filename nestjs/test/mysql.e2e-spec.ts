@@ -10,6 +10,8 @@ import { configureApp } from '../src/bootstrap';
 import { EmbeddingsService } from '../src/modules/embeddings/embeddings.service';
 import { LlmService } from '../src/modules/llm/llm.service';
 import { DocumentCascade1793376000000 } from '../src/persistence/migrations/1793376000000-document-cascade';
+import { IndexingService } from '../src/modules/documents/indexing.service';
+import { TaskQueueRuntime } from '../src/modules/tasks/task-queue.runtime';
 
 const enabled = process.env.MYSQL_INTEGRATION === '1';
 
@@ -150,10 +152,14 @@ const enabled = process.env.MYSQL_INTEGRATION === '1';
 
   it('boots the complete MySQL-backed app and persists the upload/chat API flow', async () => {
     process.env.STORAGE_DRIVER = 'mysql';
+    process.env.VECTOR_DRIVER = 'memory';
+    process.env.QUEUE_DRIVER = 'memory';
     process.env.DB_NAME = name;
     process.env.JWT_SECRET = 'mysql-integration-test-secret-long-enough';
     const { AppModule } = await import('../src/app.module');
     const module = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(TaskQueueRuntime)
+      .useValue({})
       .overrideProvider(EmbeddingsService)
       .useValue({
         embedDocuments: async (texts: string[]) => texts.map(() => [1, 0]),
@@ -188,11 +194,12 @@ const enabled = process.env.MYSQL_INTEGRATION === '1';
         .send({ newUsername: 'renamed-api-user' })
         .expect(200);
       expect((await store.get('users', userBefore.id))!.createdAt).toBe(userBefore.createdAt);
-      await request(app.getHttpServer())
+      const accepted = await request(app.getHttpServer())
         .post('/api/upload')
         .set(auth)
         .attach('file', Buffer.from('# MySQL 文档'), 'mysql.md')
-        .expect(200);
+        .expect(202);
+      await app.get(IndexingService).process(accepted.body.data.taskId);
       const docs = await request(app.getHttpServer()).get('/api/documents').set(auth).expect(200);
       expect(docs.body.data[0].uploadTime).toMatch(/^\d{4}-\d\d-\d\dT/);
       const response = await request(app.getHttpServer())

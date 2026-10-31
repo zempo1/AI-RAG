@@ -8,7 +8,11 @@ const {
   const runner = source.createQueryRunner();
   try {
     await new DocumentCascade1793376000000().up(runner);
-    console.log('来源关联与级联删除结构升级完成；未按标题推测旧思维导图归属。');
+    const {
+      KnowledgeBases1793404800000,
+    } = require('../dist/persistence/migrations/1793404800000-knowledge-bases');
+    await new KnowledgeBases1793404800000().up(runner);
+    console.log('知识库、版本、任务与引用结构升级完成；旧文档归入用户默认库，旧页码保持未知。');
   } finally {
     await runner.release();
     await source.destroy();

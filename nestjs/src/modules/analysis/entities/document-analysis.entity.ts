@@ -2,6 +2,8 @@ import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('document_analyses')
 export class DocumentAnalysis {
+  @Column({ type: 'bigint', nullable: true, name: 'version_id' })
+  versionId: number | null;
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: number;
 

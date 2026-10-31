@@ -1,5 +1,6 @@
 .sidebar {
   width: 310px;
+  flex-shrink: 0;
   background-color: var(--bg-sidebar);
   display: flex;
   flex-direction: column;

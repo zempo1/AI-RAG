@@ -4,6 +4,12 @@ export interface Row {
 }
 
 export interface EntityMap {
+  knowledgeBases: import('../modules/knowledge-bases/entities/knowledge-base.entity').KnowledgeBase;
+  categories: import('../modules/knowledge-bases/entities/knowledge-base.entity').DocumentCategory;
+  versions: import('../modules/documents/entities/document-version.entity').DocumentVersion;
+  indexRevisions: import('../modules/documents/entities/document-version.entity').DocumentIndexRevision;
+  chunks: import('../modules/documents/entities/document-version.entity').DocumentChunk;
+  tasks: import('../modules/tasks/entities/processing-task.entity').ProcessingTask;
   users: import('../modules/auth/entities/user.entity').User;
   documents: import('../modules/documents/entities/document.entity').DocumentFile;
   chats: import('../modules/history/entities/chat.entity').Chat;
@@ -15,6 +21,8 @@ export interface EntityMap {
 export type Table = keyof EntityMap;
 
 export abstract class Store {
+  /** Transaction-only lock. Always lock library before document before task. */
+  abstract lock(table: Table, id: number): Promise<Row | undefined>;
   abstract list(table: Table, where?: Record<string, unknown>): Promise<Row[]>;
 
   abstract get(table: Table, id: number): Promise<Row | undefined>;

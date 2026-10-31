@@ -33,18 +33,20 @@ export class MindMapsService {
     const doc =
       documentId == null
         ? await this.documents.latest(userId)
-        : await this.documents.owned(documentId, userId);
+        : await this.documents.ready(documentId, userId);
     const response = await this.llm.complete(mindMapPrompt(doc.content.slice(0, 20000)), apiKey);
     const data = (response.match(/\{[\s\S]*\}/)?.[0] || response).trim();
     validate(data);
     return publicRow(
       await this.store.transaction(async (tx) => {
-        const source = await tx.get('documents', doc.id);
-        if (!source || source.userId !== userId)
+        const kb = await tx.lock('knowledgeBases', doc.knowledgeBaseId);
+        const source = await tx.lock('documents', doc.id);
+        if (!kb || kb.deletedAt || !source || source.userId !== userId || source.deletedAt)
           throw new ApiError(500, 'Document not found: ' + doc.id);
         return tx.save('mindmaps', {
           userId,
           documentId: doc.id,
+          versionId: doc.activeVersionId,
           title: doc.filename + ' - Mind Map',
           data,
         });
@@ -59,13 +61,17 @@ export class MindMapsService {
   }
 
   async get(id: number, userId: number) {
-    return publicRow(await this.owned(id, userId));
+    const row = await this.owned(id, userId);
+    const doc = row.documentId ? await this.store.get('documents', row.documentId) : null;
+    return { ...publicRow(row), sourceOutdated: !!doc && row.versionId !== doc.activeVersionId };
   }
 
   async list(userId: number) {
-    return (await this.store.list('mindmaps', { userId }))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)
-      .map(publicRow);
+    return Promise.all(
+      (await this.store.list('mindmaps', { userId }))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)
+        .map((row) => this.get(row.id, userId)),
+    );
   }
 
   async update(id: number, userId: number, data: string) {

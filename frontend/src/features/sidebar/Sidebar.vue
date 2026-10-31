@@ -44,7 +44,12 @@
         >
           <div class="chat-title-wrapper">
             <el-icon><ChatLineRound /></el-icon>
-            <el-tooltip :content="chat.title" placement="right" :show-after="400" :hide-after="0">
+            <el-tooltip
+              :content="chat.title"
+              placement="right"
+              :show-after="400"
+              :hide-after="0"
+            >
               <span class="chat-title-text">{{ chat.title }}</span>
             </el-tooltip>
           </div>
@@ -60,10 +65,17 @@
       </div>
 
       <div class="section-title" v-show="!isCollapsed" style="margin-top: 24px">
-        文档
+        知识库
       </div>
       <div class="upload-wrapper" v-show="!isCollapsed">
-        <Upload @activated="handleFileActivated" @deleted="(id) => emit('file-deleted', id)" />
+        <Upload
+          :knowledge-base-id="knowledgeBaseId"
+          :document-id="documentId"
+          @knowledge-base-change="(id) => emit('knowledge-base-change', id)"
+          @activated="handleFileActivated"
+          @deleted="(id) => emit('file-deleted', id)"
+          @version-changed="emit('version-changed')"
+        />
       </div>
       <div class="upload-collapsed" v-show="isCollapsed">
         <el-tooltip content="上传文档" placement="right">
@@ -72,7 +84,6 @@
           </el-button>
         </el-tooltip>
       </div>
-
     </div>
 
     <div class="sidebar-footer">
@@ -130,6 +141,8 @@ import request from "../../utils/request";
 const props = defineProps<{
   username: string;
   currentChatId: number | null;
+  knowledgeBaseId: number | null;
+  documentId: number | null;
 }>();
 
 const emit = defineEmits<{
@@ -141,6 +154,8 @@ const emit = defineEmits<{
   (e: "file-activated", filename: string, id: number | null): void;
   (e: "file-deleted", id: number): void;
   (e: "username-changed", username: string): void;
+  (e: "knowledge-base-change", id: number): void;
+  (e: "version-changed"): void;
 }>();
 
 const confirm = useConfirm();
