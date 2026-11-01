@@ -1,6 +1,8 @@
 # 多知识库 RAG 系统
 
-混合检索、重排和异步总结的升级步骤见 [问答质量运行指南](docs/rag-quality-deployment.md)。新增独立 Embedding/重排配置及本地匹配 tokenizer，需先完成预检；真实模型效果验收与程序回归分开进行。
+学习项目原理与代码实现，请先阅读 [项目学习指南](docs/项目学习指南.md)。
+
+混合检索、重排和异步总结的升级步骤见 [问答质量运行指南](docs/rag-quality-deployment.md)。默认使用无需本地文件的保守 token 估算，可配置匹配的本地 tokenizer；真实模型效果验收与程序回归分开进行。
 
 毕业设计项目，使用 Vue 3、NestJS、MySQL、Qdrant 和 Redis/BullMQ，支持 PDF/Markdown 的上传、异步解析、检索问答与引用溯源。
 

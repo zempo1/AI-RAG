@@ -962,6 +962,62 @@ test("empty states and task failures remain useful without clearing current docu
   await expect(page.locator(".task-list")).toContainText("部分失败");
 });
 
+test('chat scroll navigation preserves reading position when an answer finishes', async ({ page }) => {
+  await fixture(page, false, true);
+  await page.route('**/api/chats/7', route => route.fulfill({ json: { data: {
+    id: 7, knowledgeBaseId: 1, readOnly: false, pendingTasks: [],
+    messages: Array.from({ length: 12 }, (_, index) => [
+      { role: 'user', content: `问题 ${index + 1}` },
+      { role: 'assistant', content: '这是用于阅读历史记录的回答。\n\n'.repeat(6) },
+    ]).flat(),
+  } } }));
+  await page.getByText('历史问答', { exact: true }).click();
+  const container = page.locator('.messages-container');
+  const jump = page.getByRole('button', { name: '回到底部', exact: true });
+  const distance = () => container.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop);
+  await expect.poll(distance).toBeLessThan(5);
+  await expect(jump).toBeHidden();
+  await container.evaluate(el => el.scrollTo({ top: 0, behavior: 'instant' }));
+  await expect(jump).toBeVisible();
+  await jump.click();
+  await expect.poll(distance).toBeLessThan(5);
+  await expect(jump).toBeHidden();
+
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/stream-chat', async route => {
+    await pending;
+    await route.fulfill({ contentType: 'text/event-stream', body:
+      'event: message\ndata: "新增回答"\n\n' +
+      'event: done\ndata: {"answer":"新增回答","citations":[],"chatId":7,"generationStatus":"completed"}\n\n',
+    });
+  });
+  await page.getByPlaceholder('发送消息...').fill('继续分析');
+  await page.getByPlaceholder('发送消息...').press('Enter');
+  await expect.poll(distance).toBeLessThan(5);
+  await container.evaluate(el => el.scrollTo({ top: 0, behavior: 'instant' }));
+  await expect(jump).toBeVisible();
+  release();
+  await expect(page.locator('.message-row.assistant').last()).toContainText('新增回答');
+  await expect(page.locator('.generation-status')).toBeHidden();
+  await expect.poll(() => container.evaluate(el => el.scrollTop)).toBe(0);
+  await expect(jump).toBeVisible();
+  await page.screenshot({ path: 'test-results/chat-reading-history.png' });
+  await jump.click();
+  await expect.poll(distance).toBeLessThan(5);
+  await expect(jump).toBeHidden();
+  await page.screenshot({ path: 'test-results/chat-bottom.png' });
+  await page.setViewportSize({ width: 1153, height: 835 });
+  await container.evaluate(el => el.scrollTo({ top: 0, behavior: 'instant' }));
+  await expect(jump).toBeVisible();
+  await page.screenshot({ path: 'test-results/chat-narrow.png' });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await jump.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(distance).toBeLessThan(5);
+  await expect(jump).toBeHidden();
+});
+
 test('shows lightweight generation status', async ({ page }) => {
   await fixture(page);
   await page.route('**/api/stream-chat', async route => {

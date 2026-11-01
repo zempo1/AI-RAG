@@ -11,7 +11,7 @@ Node.js >=22.21.1。API 与 Worker 共用代码、MySQL 和原件目录；Qdrant
     npm install
     Copy-Item .env.example .env
 
-填写 DB_USER、DB_PASSWORD、JWT_SECRET（至少 32 字符）；CHAT_API_KEY 可以由服务端配置，也可以由前端通过 X-Api-Key 按请求提供。Embedding 使用本地固定版本 MiniLM，与聊天模型独立。
+填写 DB_USER、DB_PASSWORD、JWT_SECRET（至少 32 字符）；CHAT_API_KEY 可以由服务端配置，也可以由前端通过 X-Api-Key 按请求提供。新索引默认使用百炼 qwen3.7-text-embedding-flash（1024 维），重排使用 qwen3.7-text-rerank；旧 MiniLM 384 维索引保留兼容。配置详情见 ../docs/rag-quality-deployment.md。
 
 已有数据库：
 

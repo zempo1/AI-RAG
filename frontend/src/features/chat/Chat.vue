@@ -21,89 +21,95 @@
     <div v-if="taskConnectionError" class="qa-task-status" role="status">
       暂时无法更新后台任务，正在重试…
     </div>
-    <div class="messages-container" ref="messagesContainer">
-      <div v-if="messages.length === 0" class="empty-state">
-        <div class="logo-container">
-          <div class="logo">AI</div>
-        </div>
-        <h1>有什么我可以帮您的吗？</h1>
-        <p class="subtitle">直接提问，或选择文档深入交流</p>
-      </div>
-
+    <div class="messages-viewport">
       <div
-        v-for="(msg, index) in messages"
-        :key="index"
-        class="message-row"
-        :class="msg.role"
+        class="messages-container"
+        ref="messagesContainer"
+        @scroll.passive="updateScrollState"
       >
-        <div class="message-content-wrapper">
-          <div class="avatar">
-            <div v-if="msg.role === 'assistant'" class="ai-avatar">AI</div>
-            <el-avatar
-              v-else
-              :size="32"
-              icon="UserFilled"
-              class="user-avatar"
-            />
+        <div ref="messagesContent" class="messages-content">
+          <div v-if="messages.length === 0" class="empty-state">
+            <div class="logo-container">
+              <div class="logo">AI</div>
+            </div>
+            <h1>有什么我可以帮您的吗？</h1>
+            <p class="subtitle">直接提问，或选择文档深入交流</p>
           </div>
-          <div class="message-text">
-            <div class="role-name">
-              {{ msg.role === "user" ? "您" : "AI 助手" }}
-            </div>
-            <div
-              v-if="msg.role === 'assistant'"
-              v-html="
-                renderMarkdown(
-                  msg.content,
-                  (msg.citations || []).map((c) => c.number),
-                )
-              "
-              @click="handleCitationClick($event, msg)"
-              class="markdown-body"
-            ></div>
 
-            <details v-if="msg.sources?.length" class="retrieved-sources">
-              <summary>检索到的参考资料（{{ msg.sources.length }}）</summary>
-              <button
-                v-for="source in msg.sources"
-                :key="source.number"
-                @click="selectedCitation = source"
-              >
-                {{ source.filename }} · {{ source.text.slice(0, 45) }}
-              </button>
-            </details>
-            <div
-              v-if="msg.role === 'user' && msg.retrievalContext"
-              class="message-scope"
-            >
-              {{ scopeLabel(msg.retrievalContext) }}
+          <div
+            v-for="(msg, index) in messages"
+            :key="index"
+            class="message-row"
+            :class="msg.role"
+          >
+            <div class="message-content-wrapper">
+              <div class="message-text">
+                <div v-if="msg.role === 'user'" class="user-content">
+                  {{ msg.content }}
+                </div>
+                <div
+                  v-if="msg.role === 'assistant'"
+                  v-html="
+                    renderMarkdown(
+                      msg.content,
+                      (msg.citations || []).map((c) => c.number),
+                    )
+                  "
+                  @click="handleCitationClick($event, msg)"
+                  class="markdown-body"
+                ></div>
+
+                <details v-if="msg.sources?.length" class="retrieved-sources">
+                  <summary>检索到的参考资料（{{ msg.sources.length }}）</summary>
+                  <button
+                    v-for="source in msg.sources"
+                    :key="source.number"
+                    @click="selectedCitation = source"
+                  >
+                    {{ source.filename }} · {{ source.text.slice(0, 45) }}
+                  </button>
+                </details>
+                <div
+                  v-if="msg.role === 'user' && msg.retrievalContext"
+                  class="message-scope"
+                >
+                  {{ scopeLabel(msg.retrievalContext) }}
+                </div>
+                <button
+                  v-if="
+                    msg.role === 'assistant' &&
+                    (msg.retrievalRunId || msg.diagnostics?.runId)
+                  "
+                  class="debug-trigger"
+                  @click="
+                    debugRunId = Number(
+                      msg.retrievalRunId || msg.diagnostics?.runId,
+                    )
+                  "
+                >
+                  查看检索过程
+                </button>
+                <span
+                  v-if="msg.generationStatus === 'interrupted'"
+                  class="interrupted-label"
+                  >生成已中断，内容可能不完整</span
+                >
+                <GenerationStatus v-if="msg.role === 'assistant' && msg.loading" :stage="msg.content ? 'writing' : (msg.stage || 'connecting')" :has-content="!!msg.content" />
+              </div>
             </div>
-            <button
-              v-if="
-                msg.role === 'assistant' &&
-                (msg.retrievalRunId || msg.diagnostics?.runId)
-              "
-              class="debug-trigger"
-              @click="
-                debugRunId = Number(
-                  msg.retrievalRunId || msg.diagnostics?.runId,
-                )
-              "
-            >
-              查看检索过程
-            </button>
-            <span
-              v-if="msg.generationStatus === 'interrupted'"
-              class="interrupted-label"
-              >生成已中断，内容可能不完整</span
-            >
-            <div v-if="msg.role === 'user'" class="user-content">
-              {{ msg.content }}
-            </div>
-            <GenerationStatus v-if="msg.role === 'assistant' && msg.loading" :stage="msg.content ? 'writing' : (msg.stage || 'connecting')" :has-content="!!msg.content" />
           </div>
         </div>
       </div>
+      <button
+        v-if="showScrollToBottom"
+        class="scroll-to-bottom"
+        type="button"
+        aria-label="回到底部"
+        title="回到底部"
+        @click="scrollToBottom()"
+      >
+        <el-icon aria-hidden="true"><Bottom /></el-icon>
+      </button>
     </div>
 
     <div class="input-container">
@@ -223,7 +229,7 @@
 
 <script setup lang="ts">
 import { ref, nextTick, watch, onMounted, onBeforeUnmount } from "vue";
-import { UserFilled, Promotion, Key, Lock } from "@element-plus/icons-vue";
+import { Bottom, Promotion, Key, Lock } from "@element-plus/icons-vue";
 import { renderMarkdown } from "../../utils/markdown";
 import {
   getChatHistory,
@@ -319,7 +325,7 @@ function pollTask(
         loading.value = false;
         const next = history.pendingTasks?.[0];
         if (next) pollTask(next, taskChatId, currentEpoch);
-        await scrollToBottom();
+        await scrollToBottom(true, false);
         return;
       }
       if (["failed", "canceled"].includes(result.status)) {
@@ -367,6 +373,10 @@ const input = ref("");
 const loading = ref(false);
 const chatId = ref<number | null>(null);
 const messagesContainer = ref<HTMLElement | null>(null);
+const messagesContent = ref<HTMLElement | null>(null);
+const showScrollToBottom = ref(false);
+const followingBottom = ref(true);
+let resizeObserver: ResizeObserver | undefined;
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 
 const apiKeyDialogVisible = ref(false);
@@ -374,6 +384,12 @@ const apiKeyInput = ref("");
 const userApiKey = ref("");
 
 onMounted(() => {
+  resizeObserver = new ResizeObserver(() => {
+    if (followingBottom.value) void scrollToBottom(true, false);
+    else updateScrollState();
+  });
+  if (messagesContainer.value) resizeObserver.observe(messagesContainer.value);
+  if (messagesContent.value) resizeObserver.observe(messagesContent.value);
   const storedKey = localStorage.getItem("user_api_key");
   if (storedKey) {
     userApiKey.value = storedKey;
@@ -397,14 +413,26 @@ const saveApiKey = () => {
   toast.success("API Key 已保存");
 };
 
-const scrollToBottom = async (instant = false) => {
+const updateScrollState = () => {
+  const el = messagesContainer.value;
+  if (!el) return;
+  const nearBottom = el.scrollHeight - el.clientHeight - el.scrollTop <= 80;
+  followingBottom.value = nearBottom;
+  showScrollToBottom.value = !nearBottom;
+};
+
+const scrollToBottom = async (instant = false, force = true) => {
+  if (force) followingBottom.value = true;
   await nextTick();
+  if (!force && !followingBottom.value) return;
   const el = messagesContainer.value;
   if (el) {
     el.scrollTo({
       top: el.scrollHeight,
-      behavior: instant ? ("instant" as ScrollBehavior) : "smooth",
+      behavior: instant || window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? ("instant" as ScrollBehavior) : "smooth",
     });
+    if (instant) updateScrollState();
   }
 };
 
@@ -453,6 +481,8 @@ const reset = () => {
   selectedCitation.value = null;
   chatId.value = null;
   messages.value = [];
+  followingBottom.value = true;
+  showScrollToBottom.value = false;
   input.value = "";
   if (textareaRef.value) textareaRef.value.style.height = "auto";
 };
@@ -493,7 +523,7 @@ const sendMessage = async () => {
   const aiMsgIndex =
     messages.value.push({ role: "assistant", content: "", loading: true }) - 1;
 
-  await scrollToBottom();
+  await scrollToBottom(true);
 
   await sendStreamChat(
     {
@@ -513,7 +543,7 @@ const sendMessage = async () => {
       onMessage: (token) => {
         if (currentEpoch !== epoch) return;
         messages.value[aiMsgIndex].content += token;
-        scrollToBottom();
+        void scrollToBottom(true, false);
       },
       onChatId: (id) => {
         if (currentEpoch !== epoch) return;
@@ -579,13 +609,14 @@ const sendMessage = async () => {
         if (messages.value[aiMsgIndex]) {
           messages.value[aiMsgIndex].loading = false;
         }
-        await scrollToBottom();
+        await scrollToBottom(true, false);
       },
     },
     streamAbort.signal,
   );
 };
 onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
   epoch++;
   stopTaskPolling();
   streamAbort?.abort();
