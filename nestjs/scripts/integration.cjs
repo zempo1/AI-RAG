@@ -32,6 +32,23 @@ const result = spawnSync(
         process.env.TEST_REDIS_RESTART || (!process.env.TEST_REDIS_URL ? '1' : '0'),
       ORIGINALS_DIR: '.tmp/mysql-integration/originals',
       INDEX_RETENTION_MS: '0',
+      EMBEDDING_PROVIDER: 'local',
+      EMBEDDING_MODEL: 'Xenova/all-MiniLM-L6-v2',
+      EMBEDDING_REVISION: '6fa4bf687ce79106377b66d10009c0e513715e24',
+      EMBEDDING_DIMENSIONS: '384',
+      EMBEDDING_TOKENIZER: path.resolve(
+        __dirname,
+        '../.cache/models/Xenova/all-MiniLM-L6-v2/6fa4bf687ce79106377b66d10009c0e513715e24',
+      ),
+      CHAT_TOKENIZER: path.resolve(
+        __dirname,
+        '../.cache/models/Xenova/all-MiniLM-L6-v2/6fa4bf687ce79106377b66d10009c0e513715e24',
+      ),
+      // External model calls must never inherit the developer's paid-service keys.
+      CHAT_API_KEY: '',
+      EMBEDDING_API_KEY: '',
+      QUERY_PLAN_API_KEY: '',
+      RERANK_API_KEY: '',
     },
   },
 );

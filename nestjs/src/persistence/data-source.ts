@@ -17,8 +17,12 @@ import {
   DocumentChunk,
 } from '../modules/documents/entities/document-version.entity';
 import { ProcessingTask } from '../modules/tasks/entities/processing-task.entity';
+import { RetrievalRun, SummaryCache } from './quality.persistence';
+import { RagQuality1793491200000 } from './migrations/1793491200000-rag-quality';
 
 export const entityTargets = {
+  retrievalRuns: RetrievalRun,
+  summaryCaches: SummaryCache,
   knowledgeBases: KnowledgeBase,
   categories: DocumentCategory,
   versions: DocumentVersion,
@@ -54,6 +58,7 @@ export function mysqlOptions(env: Record<string, any>): DataSourceOptions {
       InitialSchema1793203200000,
       DocumentCascade1793376000000,
       KnowledgeBases1793404800000,
+      RagQuality1793491200000,
     ],
     synchronize: false,
     migrationsRun: false,

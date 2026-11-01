@@ -44,6 +44,21 @@ export class HistoryService {
       knowledgeBaseId: chat.knowledgeBaseId as number,
       readOnly: !kb || !!kb.deletedAt,
       messages,
+      pendingTasks: (await this.store.list('tasks', { userId }))
+        .filter(
+          (t) =>
+            t.kind === 'qa' &&
+            t.payload?.chatId === id &&
+            !['completed', 'partial_failed', 'failed', 'canceled'].includes(t.status),
+        )
+        .map(({ id, status, stage, completed, total, error }) => ({
+          id,
+          status,
+          stage,
+          completed,
+          total,
+          error,
+        })),
     };
   }
 
@@ -79,11 +94,19 @@ export class HistoryService {
     content: string,
     citations: Citation[] = [],
     generationStatus = 'completed',
+    metadata: { retrievalContext?: unknown; retrievalRunId?: number; diagnostics?: unknown } = {},
   ): Promise<void> {
     // Historical writes from a request that began before deletion are allowed to settle.
     const chat = await this.store.get('chats', chatId);
     if (!chat || chat.userId !== userId) throw new ApiError(404, 'Chat not found');
-    await this.store.save('messages', { chatId, role, content, citations, generationStatus });
+    await this.store.save('messages', {
+      chatId,
+      role,
+      content,
+      citations,
+      generationStatus,
+      ...metadata,
+    });
   }
 
   async delete(id: number, userId: number): Promise<void> {

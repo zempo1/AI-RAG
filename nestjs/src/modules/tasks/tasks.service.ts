@@ -21,6 +21,16 @@ export class TasksService {
       waitingUntil && Date.parse(waitingUntil) > Date.now() && !terminalTask(row.status);
     return {
       ...result,
+      ...(row.kind === 'qa'
+        ? {
+            payload: {
+              chatId: row.payload?.chatId,
+              requestId: row.payload?.requestId,
+              qaResult: row.payload?.qaResult,
+            },
+            qaResult: row.payload?.qaResult,
+          }
+        : {}),
       canDismiss: terminalTask(row.status) && !executionToken && !row.parentTaskId,
       waitingUntil: delayed ? waitingUntil : null,
       waitingReason: delayed
@@ -72,7 +82,7 @@ export class TasksService {
       .sort(
         (a, b) => Number(terminalTask(a.status)) - Number(terminalTask(b.status)) || b.id - a.id,
       )
-      .filter(t => !terminalTask(t.status) || historyCount++ < 50)
+      .filter((t) => !terminalTask(t.status) || historyCount++ < 50)
       .map((row) => this.present(row));
   }
 
@@ -157,7 +167,11 @@ export class TasksService {
       } else {
         const doc = initial.documentId ? await tx.lock('documents', initial.documentId) : undefined;
         const task = await tx.lock('tasks', id);
-        if (!task || task.status !== 'failed' || !task.retryable)
+        if (
+          !task ||
+          !['failed', ...(task.kind === 'qa' ? ['partial_failed'] : [])].includes(task.status) ||
+          !task.retryable
+        )
           throw new ApiError(409, '任务不可重试');
         if (task.kind === 'index') {
           if (kb?.rebuildTaskId && kb.rebuildTaskId !== task.parentTaskId)

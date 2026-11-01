@@ -15,6 +15,10 @@ export class DocumentVersion {
 
 @Entity('document_index_revisions')
 export class DocumentIndexRevision {
+  @Column({ type: 'json', nullable: true, name: 'model_profile' }) modelProfile: Record<
+    string,
+    unknown
+  > | null;
   @PrimaryGeneratedColumn({ type: 'bigint' }) id: number;
   @Column({ type: 'bigint', name: 'document_id' }) documentId: number;
   @Column({ type: 'bigint', name: 'version_id' }) versionId: number;
@@ -29,6 +33,10 @@ export class DocumentIndexRevision {
 @Entity('document_chunks')
 @Index(['indexRevisionId', 'chunkIndex'], { unique: true })
 export class DocumentChunk {
+  @Column({ type: 'json', nullable: true, name: 'retrieval_metadata' }) retrievalMetadata: Record<
+    string,
+    unknown
+  > | null;
   @PrimaryGeneratedColumn({ type: 'bigint' }) id: number;
   @Column({ type: 'bigint', name: 'document_id' }) documentId: number;
   @Column({ type: 'bigint', name: 'version_id' }) versionId: number;

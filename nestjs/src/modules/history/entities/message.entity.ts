@@ -2,6 +2,13 @@ import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('messages')
 export class Message {
+  @Column({ type: 'json', nullable: true, name: 'retrieval_context' }) retrievalContext: Record<
+    string,
+    unknown
+  > | null;
+  @Column({ type: 'bigint', nullable: true, name: 'retrieval_run_id' }) retrievalRunId:
+    number | null;
+  @Column({ type: 'json', nullable: true }) diagnostics: Record<string, unknown> | null;
   @Column({ type: 'json', nullable: true })
   citations: unknown[] | null;
   @Column({ type: 'varchar', length: 30, nullable: true, name: 'generation_status' })

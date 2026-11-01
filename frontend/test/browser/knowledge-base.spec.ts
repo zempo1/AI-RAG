@@ -1,5 +1,199 @@
 import { test, expect, type Page } from "@playwright/test";
 
+test("chat source selection and mode are sent independently from the workbench", async ({
+  page,
+}) => {
+  await fixture(page);
+  let submitted: any;
+  await page.route("**/api/stream-chat", (route) => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({
+      contentType: "text/event-stream",
+      body:
+        "event: done\ndata: " +
+        JSON.stringify({
+          answer: "受控答案",
+          citations: [],
+          chatId: 7,
+          generationStatus: "completed",
+          retrievalRunId: 88,
+        }) +
+        "\n\n",
+    });
+  });
+  await page.locator(".qa-controls > .el-select").first().click();
+  await page
+    .locator(".qa-source-popper .el-select-dropdown__item:visible")
+    .filter({ hasText: "资料.md" })
+    .click();
+  await page.keyboard.press("Escape");
+  await page.locator(".qa-controls > .el-select").nth(1).click();
+  await page.getByRole("option", { name: "全文概览", exact: true }).click();
+  await page.getByPlaceholder("发送消息...").fill("总结所选资料");
+  await page.getByPlaceholder("发送消息...").press("Enter");
+  await expect.poll(() => submitted?.mode).toBe("overview");
+  expect(submitted.documentIds).toEqual([1]);
+  expect(submitted.requestId).toMatch(/^[a-f0-9-]{36}$/);
+  await expect(
+    page.getByRole("button", { name: "查看检索过程", exact: true }),
+  ).toBeVisible();
+  await page.route("**/api/retrieval-runs/88", (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          payload: {
+            originalQuestion: "总结所选资料",
+            plan: { standaloneQuestion: "总结资料.md" },
+            scope: [{ documentId: 1, indexRevisionId: 1 }],
+            candidates: {
+              lexical: [{ chunkId: 1, score: 2 }],
+              dense: [{ chunkId: 1, score: 0.9 }],
+            },
+            fused: [{ chunkId: 1 }],
+            reranked: [{ chunkId: 1 }],
+            evidence: [{ chunkId: 1 }],
+            tokens: { used: 120, budget: 8000 },
+            degraded: ["重排超时，使用融合排名"],
+          },
+        },
+      },
+    }),
+  );
+  await page.getByRole("button", { name: "查看检索过程", exact: true }).click();
+  await expect(page.locator(".retrieval-debug")).toContainText("重排超时");
+  await expect(page.locator(".retrieval-debug")).toContainText("8000");
+  await page.screenshot({
+    path: "test-results/retrieval-debug.png",
+    animations: "disabled",
+  });
+});
+
+test("reopening history restores sources and resumes a pending summary task", async ({
+  page,
+}) => {
+  await fixture(page, false, true);
+  let complete = false;
+  await page.route("**/api/chats/7", (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          id: 7,
+          knowledgeBaseId: 1,
+          readOnly: false,
+          messages: [
+            {
+              role: "user",
+              content: "历史总结任务",
+              retrievalContext: { documentIds: [1], mode: "overview" },
+            },
+            ...(complete
+              ? [
+                  {
+                    role: "assistant",
+                    content: "恢复后的后台答案",
+                    generationStatus: "completed",
+                    citations: [],
+                  },
+                ]
+              : []),
+          ],
+          pendingTasks: complete
+            ? []
+            : [
+                {
+                  id: 92,
+                  status: "running",
+                  stage: "summarizing",
+                  completed: 1,
+                  total: 3,
+                },
+              ],
+        },
+      },
+    }),
+  );
+  await page.route("**/api/tasks/92", (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          id: 92,
+          status: complete ? "partial_failed" : "running",
+          stage: "summarizing",
+          completed: 1,
+          total: 3,
+        },
+      },
+    }),
+  );
+  await page.getByText("历史问答", { exact: true }).click();
+  await expect(page.locator(".qa-task-status")).toContainText("后台问答");
+  await expect(page.locator(".qa-controls")).toContainText("全文概览");
+  complete = true;
+  await expect(
+    page.locator(".message-row.assistant .markdown-body"),
+  ).toHaveText("恢复后的后台答案", { timeout: 6000 });
+  await expect(page.locator(".qa-task-status")).toHaveCount(0);
+  await expect(page.locator(".message-scope")).toContainText("所选 1 份文档");
+});
+
+test("accepted async responses complete from task history without reporting a broken stream", async ({
+  page,
+}) => {
+  await fixture(page);
+  let complete = false;
+  await page.route("**/api/stream-chat", (route) =>
+    route.fulfill({
+      contentType: "text/event-stream",
+      body: 'event: accepted\ndata: {"taskId":91,"chatId":7,"requestId":"r"}\n\n',
+    }),
+  );
+  await page.route("**/api/tasks/91", (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          id: 91,
+          status: complete ? "completed" : "running",
+          stage: "summarizing",
+          completed: 1,
+          total: 2,
+        },
+      },
+    }),
+  );
+  await page.route("**/api/chats/7", (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          id: 7,
+          knowledgeBaseId: 1,
+          messages: [
+            {
+              role: "user",
+              content: "总结全文",
+              retrievalContext: { mode: "overview", documentIds: [1] },
+            },
+            {
+              role: "assistant",
+              content: "完整后台答案",
+              citations: [],
+              generationStatus: "completed",
+            },
+          ],
+          pendingTasks: [],
+        },
+      },
+    }),
+  );
+  await page.getByPlaceholder("发送消息...").fill("总结全文");
+  await page.getByPlaceholder("发送消息...").press("Enter");
+  await expect(page.locator(".qa-task-status")).toContainText("后台");
+  complete = true;
+  await expect(
+    page.locator(".message-row.assistant .markdown-body"),
+  ).toHaveText("完整后台答案", { timeout: 6000 });
+  await expect(page.locator(".interrupted-label")).toHaveCount(0);
+});
+
 test("idle management stops polling and completed history can be cleared", async ({
   page,
 }) => {
@@ -267,7 +461,7 @@ async function fixture(page: Page, interrupted = false, historical = false) {
   );
   await page.goto("/");
   await expect(
-    page.getByText("问答范围：当前知识库中的可用文档"),
+    page.getByText("支持通用回答与知识库问答"),
   ).toBeVisible();
   return state;
 }
@@ -766,4 +960,20 @@ test("empty states and task failures remain useful without clearing current docu
   await page.getByRole("button", { name: "刷新文档", exact: true }).click();
   await expect(page.locator(".load-error")).toContainText("暂时无法更新文档");
   await expect(page.locator(".task-list")).toContainText("部分失败");
+});
+
+test('shows lightweight generation status', async ({ page }) => {
+  await fixture(page);
+  await page.route('**/api/stream-chat', async route => {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    await route.fulfill({ contentType: 'text/event-stream', body: 'event: status\ndata: {"stage":"retrieving"}\n\n' });
+  });
+  await page.getByPlaceholder('发送消息...').fill('解释文档');
+  await page.getByPlaceholder('发送消息...').press('Enter');
+  await expect(page.locator('.generation-status')).toBeVisible();
+  await expect(page.locator('.activity-title')).toHaveText('正在连接…');
+  await expect(page.locator('.qa-scope-hint')).toHaveCount(0);
+  await expect(page.locator('.citation-list')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/generation-waiting.png' });
+  await expect(page.locator('.generation-status')).toBeHidden();
 });

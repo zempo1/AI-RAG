@@ -65,7 +65,7 @@ describe('vector storage and RAG', () => {
           throw new Error('must not call');
         },
       } as any);
-      expect(await chat.chat('问题', 1)).toEqual({ answer: NO_CONTEXT_ANSWER, citations: [] });
+      expect(await chat.chat('问题', 1)).toMatchObject({ answer: NO_CONTEXT_ANSWER, citations: [] });
     } finally {
       await p.cleanup();
     }

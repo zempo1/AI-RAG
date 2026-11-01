@@ -1,0 +1,119 @@
+.qa-controls {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 140px;
+  gap: 8px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  .el-select {
+    min-width: 0;
+  }
+  .qa-scope-hint,
+  .qa-control-error {
+    grid-column: 1 / -1;
+    font-size: 12px;
+    text-align: left;
+    color: var(--text-secondary);
+  }
+}
+.qa-control-error {
+  color: #ff939b;
+  font-size: 13px;
+}
+.qa-control-error button {
+  color: #d7c8ff;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.qa-task-status {
+  display: grid;
+  gap: 5px;
+  padding: 12px 24px;
+  text-align: left;
+  color: #d7c8ff;
+  background: #241d31;
+  border-bottom: 1px solid #4c3b69;
+  font-size: 13px;
+}
+.qa-task-status small {
+  color: var(--text-secondary);
+}
+.message-scope {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+}
+.debug-trigger {
+  color: #d7c8ff;
+  background: #262031;
+  border: 1px solid #4c3b69;
+  border-radius: 7px;
+  padding: 7px 10px;
+  min-height: 36px;
+  cursor: pointer;
+  margin-top: 12px;
+  font: inherit;
+  font-size: 12px;
+}
+.debug-trigger:focus-visible,
+.qa-control-error button:focus-visible {
+  outline: 2px solid #b49aff;
+  outline-offset: 3px;
+}
+.retrieval-debug {
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border-color);
+  .el-drawer__header {
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--border-color);
+    padding: 22px;
+    color: var(--text-primary);
+  }
+  .el-drawer__close-btn {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+  }
+  .el-drawer__body {
+    padding: 22px;
+  }
+  .debug-description {
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.7;
+    margin-top: 0;
+  }
+  .debug-section {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border-color);
+  }
+  h3,
+  summary {
+    color: #d7c8ff;
+    font-size: 14px;
+    margin: 0 0 10px;
+  }
+  pre {
+    padding: 14px;
+    border-radius: 9px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 12px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 0;
+    max-height: 350px;
+    overflow: auto;
+  }
+}
+@media (max-width: 600px) {
+  .qa-controls {
+    padding: 10px 12px;
+    grid-template-columns: minmax(100px, 1fr) 115px;
+  }
+}

@@ -1,3 +1,4 @@
+import { ModelProfile } from '../embeddings/model-profile';
 import { SourceLocation } from '../documents/parsers/parsed-document';
 export interface Segment {
   text: string;
@@ -13,6 +14,7 @@ export interface Segment {
 }
 
 export interface SearchScope {
+  modelProfile?: ModelProfile;
   userId: number;
   knowledgeBaseId: number;
   indexRevisionIds: number[];
@@ -25,9 +27,17 @@ export interface Match {
 
 export abstract class VectorStore {
   abstract removeDocument(documentId: number, userId: number): void | Promise<void>;
-  abstract removeRevision(indexRevisionId: number, userId: number): void | Promise<void>;
+  abstract removeRevision(
+    indexRevisionId: number,
+    userId: number,
+    profile?: ModelProfile,
+  ): void | Promise<void>;
 
-  abstract addAll(vectors: number[][], segments: Segment[]): void | Promise<void>;
+  abstract addAll(
+    vectors: number[][],
+    segments: Segment[],
+    profile?: ModelProfile,
+  ): void | Promise<void>;
 
   abstract search(
     vector: number[],

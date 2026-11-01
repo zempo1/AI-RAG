@@ -4,6 +4,8 @@ export interface Row {
 }
 
 export interface EntityMap {
+  retrievalRuns: import('./quality.persistence').RetrievalRun;
+  summaryCaches: import('./quality.persistence').SummaryCache;
   knowledgeBases: import('../modules/knowledge-bases/entities/knowledge-base.entity').KnowledgeBase;
   categories: import('../modules/knowledge-bases/entities/knowledge-base.entity').DocumentCategory;
   versions: import('../modules/documents/entities/document-version.entity').DocumentVersion;

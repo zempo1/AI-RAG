@@ -1,3 +1,5 @@
+import { legacyModelProfile, ModelProfile, profileFingerprint } from '../embeddings/model-profile';
+import { TokenizerService } from '../embeddings/tokenizer.service';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { readFile, unlink } from 'node:fs/promises';
@@ -165,8 +167,10 @@ export class IndexingService {
 
   private async index(task: Row, token: string, report?: (progress: object) => Promise<void>) {
     const revision = (await this.store.get('indexRevisions', task.indexRevisionId))!;
-    if (!revision || revision.embeddingFingerprint !== embeddingFingerprint(this.config))
-      throw new ApiError(409, 'Embedding 配置已变化，请使用匹配模型或重新提交索引任务');
+    if (!revision) throw new ApiError(409, '索引版本不存在');
+    const profile = (revision.modelProfile || legacyModelProfile(this.config)) as ModelProfile;
+    if (revision.embeddingFingerprint !== profileFingerprint(profile))
+      throw new ApiError(409, '索引模型配置不匹配');
     const version = (await this.store.get('versions', revision.versionId))!;
     if (!version) throw new ApiError(400, '文档版本不存在');
     await this.store.save('indexRevisions', { id: revision.id, status: 'building' });
@@ -192,7 +196,9 @@ export class IndexingService {
       };
       await this.progress(task, token, 'parsing', 1, 1, report);
     }
-    const blocks = this.chunker.splitStructured(parsed);
+    const blocks = revision.modelProfile
+      ? await this.chunker.splitTokenStructured(parsed, new TokenizerService(this.config), profile)
+      : this.chunker.splitStructured(parsed);
     if (!blocks.length) throw new ApiError(400, '文档未提取到有效片段');
     await this.progress(task, token, 'chunking', 0, blocks.length, report);
     const segments = await this.store.transaction(async (tx) => {
@@ -231,20 +237,24 @@ export class IndexingService {
     for (let offset = 0; offset < segments.length; offset += 16) {
       await this.progress(task, token, 'embedding', offset, segments.length, report);
       const batch = segments.slice(offset, offset + 16);
-      const vectors = await this.embeddings.embedDocuments(batch.map((s) => s.text));
+      const vectors = await this.embeddings.embedDocuments(
+        batch.map((s) => s.text),
+        profile,
+      );
       if (
         vectors.length !== batch.length ||
         vectors.some((v) => !v.length || !v.every(Number.isFinite) || !v.some((x) => x !== 0))
       )
         throw new Error('Invalid embedding response');
       await this.guard(task, token);
-      await this.vectors.addAll(vectors, batch);
+      await this.vectors.addAll(vectors, batch, profile);
       await this.progress(task, token, 'indexing', offset + batch.length, segments.length, report);
       if (offset + batch.length === segments.length) {
         const check = await this.vectors.search(vectors[0], 1, 0, {
           userId: task.userId,
           knowledgeBaseId: task.knowledgeBaseId,
           indexRevisionIds: [revision.id],
+          modelProfile: profile,
         });
         if (!check.length) throw new Error('向量写入后无法查询，尚未发布索引');
       }

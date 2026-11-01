@@ -1,0 +1,38 @@
+[
+  {
+    "id": "api",
+    "filename": "api-guide.md",
+    "kind": "technical",
+    "text": "# API 网关\n\n错误码 TS-999 表示缓存版本不兼容，应清理本地缓存。\n\n访问令牌有效期为 30 分钟，刷新令牌有效期为 7 天。\n\nPOST /v2/session/refresh 用于刷新令牌。请求头必须携带 X-Tenant-ID。\n\n默认连接超时为 12 秒，最多重试 2 次。\n\n版本 v2.4.1 修复了租户切换后缓存污染的问题。\n\n网关拒绝缺少租户标识的请求，返回 HTTP 400。"
+  },
+  {
+    "id": "paper",
+    "filename": "research-paper.md",
+    "kind": "paper",
+    "text": "# 检索实验报告\n\n研究比较向量检索、混合检索、混合加重排三种方法。\n\n测试集包含 120 道人工标注问题，来自 6 份文档。\n\n实验固定模型版本和分块规则，仅改变检索方法。\n\n向量检索召回率为 72%，混合检索为 84%，加入重排为 89%。\n\n研究指出这些数字只属于本实验，不能直接推广到所有知识库。\n\n实验不包含扫描件，表格仅采用简单文本表格。"
+  },
+  {
+    "id": "textbook",
+    "filename": "database-textbook.md",
+    "kind": "textbook",
+    "text": "# 数据库教材\n\n事务的四个特性是原子性、一致性、隔离性、持久性。\n\n原子性要求事务中的操作全部成功或全部撤销。\n\nB+ 树的叶子节点保存索引数据，并通过链表连接。\n\n复合索引 (tenant_id, created_at) 通常按最左前缀使用。\n\nMVCC 通过多个数据版本改善并发读取。\n\n本教材推荐先测量查询计划，再决定是否增加索引。"
+  },
+  {
+    "id": "policy",
+    "filename": "lab-policy.md",
+    "kind": "policy",
+    "text": "# 实验室制度\n\n实验室开放时间为工作日 08:30 至 18:00。\n\n原始实验数据保留 60 天，审批记录保留 180 天。\n\n设备借用必须提前 2 天申请，由实验室管理员审批。\n\n访客须由教师陪同，并登记姓名和访问时间。\n\n每周五 17:00 检查消防通道，不得堆放设备。\n\n发生设备故障时先断电，再联系管理员，禁止自行拆机。"
+  },
+  {
+    "id": "manual",
+    "filename": "device-manual.md",
+    "kind": "manual",
+    "text": "# 传感器手册\n\n型号 AX-204 的工作电压为 5 V，采样频率为 100 Hz。\n\n型号 AX-205 的工作电压为 12 V，采样频率为 250 Hz。\n\n状态码 E-17 表示温度过高，应停止采样并检查通风。\n\n设备应在 0 至 45 摄氏度环境下使用。\n\n固件 v3.2 使用 USB-C 接口升级，升级期间禁止断电。\n\n校准周期为 90 天，校准前设备需要预热 10 分钟。"
+  },
+  {
+    "id": "table",
+    "filename": "service-table.pdf",
+    "kind": "simple-table-pdf",
+    "text": "Service settings\nService | TimeoutSeconds | Retries | Port\nGateway | 12 | 2 | 8080\nWorker | 30 | 3 | 8081\nIndexer | 60 | 1 | 8082\nProtocol: TCP\nUnits: timeout is measured in seconds.\nA zero retry value disables automatic retries."
+  }
+]

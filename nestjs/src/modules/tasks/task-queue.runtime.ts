@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy, Optional } from '@nestjs/common';
+import { QaTasksService } from './qa-tasks.service';
 import { ConfigService } from '@nestjs/config';
 import { Queue, Worker, UnrecoverableError, DelayedError } from 'bullmq';
 import { Store, now } from '../../persistence/store';
@@ -21,11 +22,12 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
     private readonly store: Store,
     private readonly indexing: IndexingService,
     private readonly tasks: TasksService,
+    @Optional() private readonly qa?: QaTasksService,
   ) {}
 
   onModuleInit() {
     if (this.config.get('QUEUE_DRIVER') === 'bullmq') {
-      for (const name of ['documents', 'cleanup']) {
+      for (const name of ['documents', 'cleanup', 'qa']) {
         const queue = new Queue(name, {
           prefix: this.config.get('QUEUE_PREFIX'),
           connection: this.connection(false),
@@ -37,7 +39,7 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
             name,
             async (job) => {
               try {
-                const result = await this.indexing.process(
+                const result = await (name === 'qa' ? this.qa! : this.indexing).process(
                   job.data.taskId,
                   job.attemptsMade + 1,
                   (progress) => job.updateProgress(progress),
@@ -109,12 +111,17 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
         if (this.config.get('QUEUE_DRIVER') === 'memory') {
           if (delay) continue;
           try {
-            await this.indexing.process(task.id, task.attempts + 1);
+            await (task.kind === 'qa' ? this.qa! : this.indexing).process(
+              task.id,
+              task.attempts + 1,
+            );
           } catch {
             /* Durable task status carries the failure; next tick retries. */
           }
         } else {
-          const queue = this.queues.get(task.kind === 'index' ? 'documents' : 'cleanup');
+          const queue = this.queues.get(
+            task.kind === 'qa' ? 'qa' : task.kind === 'index' ? 'documents' : 'cleanup',
+          );
           if (!queue) continue;
           const jobId = 'task-' + task.id + '-' + task.dispatchGeneration;
           const existing = await queue.getJob(jobId);

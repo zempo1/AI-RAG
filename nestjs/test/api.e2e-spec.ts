@@ -7,7 +7,10 @@ import { EmbeddingsService } from '../src/modules/embeddings/embeddings.service'
 import { LlmService } from '../src/modules/llm/llm.service';
 import { request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { ConfigService } from '@nestjs/config';
+import { QaTasksService } from '../src/modules/tasks/qa-tasks.service';
+import { SummaryService } from '../src/modules/rag/summary.service';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -128,7 +131,12 @@ describe('existing Vue API contract', () => {
       .set(auth())
       .send({ question: '内容是什么' })
       .expect(200);
-    expect(answer.body.data).toEqual({ answer: '根据文档回答', citations: [] });
+    expect(answer.body.data).toMatchObject({
+      answer: '根据文档回答',
+      citations: [],
+      chatId: expect.any(Number),
+      retrievalRunId: expect.any(Number),
+    });
     await request(app.getHttpServer())
       .post('/api/documents/' + doc + '/activate')
       .set(auth())
@@ -423,16 +431,168 @@ describe('existing Vue API contract', () => {
       .expect(409);
   });
   it('protects task history endpoints and retains internal records', async () => {
-    const uploaded = (await request(app.getHttpServer()).post('/api/upload').set(auth()).attach('file', Buffer.from('任务历史'), 'history.md').expect(202)).body.data;
-    await request(app.getHttpServer()).delete('/api/tasks/' + uploaded.taskId).set({ Authorization: 'Bearer ' + other }).expect(404);
-    await request(app.getHttpServer()).delete('/api/tasks/' + uploaded.taskId).set(auth()).expect(409);
+    const uploaded = (
+      await request(app.getHttpServer())
+        .post('/api/upload')
+        .set(auth())
+        .attach('file', Buffer.from('任务历史'), 'history.md')
+        .expect(202)
+    ).body.data;
+    await request(app.getHttpServer())
+      .delete('/api/tasks/' + uploaded.taskId)
+      .set({ Authorization: 'Bearer ' + other })
+      .expect(404);
+    await request(app.getHttpServer())
+      .delete('/api/tasks/' + uploaded.taskId)
+      .set(auth())
+      .expect(409);
     await app.get(IndexingService).process(uploaded.taskId);
-    await request(app.getHttpServer()).delete('/api/tasks/' + uploaded.taskId).set(auth()).expect(200);
-    await request(app.getHttpServer()).get('/api/tasks/' + uploaded.taskId).set(auth()).expect(200);
-    const list = await request(app.getHttpServer()).get('/api/tasks').query({ knowledgeBaseId: uploaded.knowledgeBaseId }).set(auth()).expect(200);
+    await request(app.getHttpServer())
+      .delete('/api/tasks/' + uploaded.taskId)
+      .set(auth())
+      .expect(200);
+    await request(app.getHttpServer())
+      .get('/api/tasks/' + uploaded.taskId)
+      .set(auth())
+      .expect(200);
+    const list = await request(app.getHttpServer())
+      .get('/api/tasks')
+      .query({ knowledgeBaseId: uploaded.knowledgeBaseId })
+      .set(auth())
+      .expect(200);
     expect(list.body.data.some((t: any) => t.id === uploaded.taskId)).toBe(false);
-    await request(app.getHttpServer()).delete('/api/tasks').query({ knowledgeBaseId: uploaded.knowledgeBaseId }).set({ Authorization: 'Bearer ' + other }).expect(404);
-    await request(app.getHttpServer()).delete('/api/tasks').query({ knowledgeBaseId: uploaded.knowledgeBaseId }).set(auth()).expect(200);
+    await request(app.getHttpServer())
+      .delete('/api/tasks')
+      .query({ knowledgeBaseId: uploaded.knowledgeBaseId })
+      .set({ Authorization: 'Bearer ' + other })
+      .expect(404);
+    await request(app.getHttpServer())
+      .delete('/api/tasks')
+      .query({ knowledgeBaseId: uploaded.knowledgeBaseId })
+      .set(auth())
+      .expect(200);
   });
 
+  it('queues long overviews once, restores pending history, and protects internal snapshots', async () => {
+    const config = app.get(ConfigService),
+      previousBudget = config.get('RAG_EVIDENCE_TOKENS');
+    config.set('RAG_EVIDENCE_TOKENS', 300);
+    const summary = app.get(SummaryService),
+      original = summary.summarize.bind(summary);
+    summary.summarize = async (snapshot: any) =>
+      ({
+        answer: '完整总结[1]',
+        citations: snapshot.sources.slice(0, 1),
+        coverage: { complete: true },
+        diagnostics: snapshot.diagnostics,
+      }) as any;
+    try {
+      const upload = await request(app.getHttpServer())
+        .post('/api/upload')
+        .set(auth())
+        .attach(
+          'file',
+          Buffer.from('# 章节\n\n' + '知识库证据覆盖。'.repeat(400)),
+          'long-overview.md',
+        )
+        .expect(202);
+      await app.get(IndexingService).process(upload.body.data.taskId);
+      const body = {
+        question: '总结全文',
+        mode: 'overview',
+        documentIds: [upload.body.data.documentId],
+        knowledgeBaseId: upload.body.data.knowledgeBaseId,
+        requestId: randomUUID(),
+      };
+      const first = await request(app.getHttpServer())
+        .post('/api/chat')
+        .set(auth())
+        .send(body)
+        .expect(202);
+      const second = await request(app.getHttpServer())
+        .post('/api/chat')
+        .set(auth())
+        .send(body)
+        .expect(202);
+      expect(second.body.data.taskId).toBe(first.body.data.taskId);
+      const stream = await request(app.getHttpServer())
+        .post('/api/stream-chat')
+        .set(auth())
+        .send(body)
+        .expect(200);
+      expect(stream.text).toContain('event: accepted');
+      const taskId = first.body.data.taskId,
+        chatId = first.body.data.chatId;
+      const task = await request(app.getHttpServer())
+        .get('/api/tasks/' + taskId)
+        .set(auth())
+        .expect(200);
+      expect(task.body.data.payload.snapshot).toBeUndefined();
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/chats/' + chatId)
+            .set(auth())
+            .expect(200)
+        ).body.data.pendingTasks,
+      ).toHaveLength(1);
+      await app.get(QaTasksService).process(taskId);
+      await app.get(QaTasksService).process(taskId);
+      const history = (
+        await request(app.getHttpServer())
+          .get('/api/chats/' + chatId)
+          .set(auth())
+          .expect(200)
+      ).body.data;
+      expect(history.messages.filter((m: any) => m.role === 'assistant')).toHaveLength(1);
+      expect(history.pendingTasks).toHaveLength(0);
+      const runId = history.messages.find((m: any) => m.role === 'assistant').retrievalRunId;
+      await request(app.getHttpServer())
+        .get('/api/retrieval-runs/' + runId)
+        .set(auth())
+        .expect(200);
+      await request(app.getHttpServer())
+        .get('/api/retrieval-runs/' + runId)
+        .set('Authorization', 'Bearer ' + other)
+        .expect(404);
+      await request(app.getHttpServer())
+        .post('/api/chat')
+        .set(auth())
+        .send({ ...body, question: 'different' })
+        .expect(409);
+    } finally {
+      config.set('RAG_EVIDENCE_TOKENS', previousBudget);
+      summary.summarize = original;
+    }
+  });
+
+  it('keeps streamed retrieval diagnostics after history reload', async () => {
+    const a = (
+      await request(app.getHttpServer())
+        .post('/api/upload')
+        .set(auth())
+        .attach('file', Buffer.from('诊断回归的原文证据'), 'diagnostics.md')
+        .expect(202)
+    ).body.data;
+    await app.get(IndexingService).process(a.taskId);
+    const stream = await request(app.getHttpServer())
+      .post('/api/stream-chat')
+      .set(auth())
+      .send({
+        question: '原文证据',
+        knowledgeBaseId: a.knowledgeBaseId,
+        documentIds: [a.documentId],
+      })
+      .expect(200);
+    const done = JSON.parse(stream.text.split('event: done\ndata: ')[1].split('\n\n')[0]);
+    const history = (
+      await request(app.getHttpServer())
+        .get('/api/chats/' + done.chatId)
+        .set(auth())
+        .expect(200)
+    ).body.data;
+    const answer = history.messages.find((m: any) => m.role === 'assistant');
+    expect(answer.retrievalRunId).toBe(done.retrievalRunId);
+    expect(answer.diagnostics.runId).toBe(done.retrievalRunId);
+  });
 });

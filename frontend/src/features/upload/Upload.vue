@@ -452,9 +452,13 @@ const stageLabels: Record<string, string> = {
   running: "执行中",
   retrying: "等待重试",
   waiting: "等待前置任务",
+  summarizing: "逐章节总结中",
+  retrieving: "检索资料中",
+  generating: "生成回答中",
   superseded: "已有更新版本",
 };
 const kindLabels: Record<string, string> = {
+  qa: "后台问答",
   index: "文档索引",
   rebuild: "全库重建",
   cleanup: "文档清理",

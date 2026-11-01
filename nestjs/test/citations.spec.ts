@@ -72,19 +72,26 @@ describe('scoped retrieval and citation snapshots', () => {
   });
 
   it('removes invented source numbers and persists only references actually used by the answer', async () => {
-    const accepted = await p.documents.ingest(Buffer.from('第一段\n\n第二段'), 'a.md', 1);
+    const accepted = await p.documents.ingest(
+      Buffer.from('# 第一节\n\n第一段\n\n# 第二节\n\n第二段'),
+      'a.md',
+      1,
+    );
     await p.indexing.process(accepted.taskId);
     const rag = new RagService(p.embeddings as any, p.vectors, p.store, p.libraries);
     const context = await rag.prepare('内容', 1, accepted.knowledgeBaseId);
     const final = normalizeCitations('结论[2]。不存在[99]，再次引用[2]。', context.sources);
     expect(final.answer).toBe('结论[2]。不存在，再次引用[2]。');
-    expect(final.citations.map((c) => c.text)).toEqual(['第二段']);
+    expect(final.citations.map((c) => c.text)).toEqual(['# 第二节\n\n第二段']);
     const history = new HistoryService(p.store, p.libraries);
     const chat = await history.create('问答', 1, accepted.knowledgeBaseId);
     await history.addMessage(chat.id, 1, 'assistant', final.answer, final.citations, 'completed');
     await p.documents.delete(accepted.documentId, 1);
     const loaded = await history.get(chat.id, 1);
-    expect(loaded.messages[0].citations[0]).toMatchObject({ text: '第二段', sourceDeleted: true });
+    expect(loaded.messages[0].citations[0]).toMatchObject({
+      text: '# 第二节\n\n第二段',
+      sourceDeleted: true,
+    });
     await p.documents.deleteLibrary(accepted.knowledgeBaseId, 1);
     expect((await history.get(chat.id, 1)).readOnly).toBe(true);
     await expect(history.writable(chat.id, 1, accepted.knowledgeBaseId)).rejects.toMatchObject({

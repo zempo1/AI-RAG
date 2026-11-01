@@ -28,8 +28,34 @@ export function validateConfig(input: Record<string, unknown>): Record<string, a
   const url = new URL(c.CHAT_BASE_URL);
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('CHAT_BASE_URL must be HTTP(S)');
   c.CHAT_MODEL ||= 'qwen3.8-flash';
-  c.EMBEDDING_MODEL ||= 'Xenova/all-MiniLM-L6-v2';
-  c.EMBEDDING_REVISION ||= '6fa4bf687ce79106377b66d10009c0e513715e24';
+  c.EMBEDDING_PROVIDER ||= c.STORAGE_DRIVER === 'memory' ? 'local' : 'dashscope';
+  if (!['local', 'dashscope'].includes(c.EMBEDDING_PROVIDER))
+    throw new Error('Invalid EMBEDDING_PROVIDER');
+  c.EMBEDDING_MODEL ||=
+    c.EMBEDDING_PROVIDER === 'local' ? 'Xenova/all-MiniLM-L6-v2' : 'qwen3.7-text-embedding-flash';
+  c.EMBEDDING_REVISION ||=
+    c.EMBEDDING_PROVIDER === 'local' ? '6fa4bf687ce79106377b66d10009c0e513715e24' : 'api-v1';
+  c.EMBEDDING_DIMENSIONS = Number(
+    c.EMBEDDING_DIMENSIONS || (c.EMBEDDING_PROVIDER === 'local' ? 384 : 1024),
+  );
+  if (![64, 128, 256, 384, 512, 768, 1024, 1536, 2048].includes(c.EMBEDDING_DIMENSIONS))
+    throw new Error('Invalid EMBEDDING_DIMENSIONS');
+  if (c.EMBEDDING_PROVIDER === 'local' && c.EMBEDDING_DIMENSIONS !== 384)
+    throw new Error('旧 MiniLM 模型仅支持 384 维');
+  if (c.EMBEDDING_PROVIDER === 'dashscope' && c.EMBEDDING_DIMENSIONS === 384)
+    throw new Error('远程 Embedding 模型不支持 384 维，请选择 1024 等受支持维度');
+  if (c.EMBEDDING_PROVIDER === 'dashscope' &&
+      c.EMBEDDING_MODEL === 'qwen3.7-text-embedding-flash' &&
+      ![256, 512, 768, 1024].includes(c.EMBEDDING_DIMENSIONS))
+    throw new Error('qwen3.7-text-embedding-flash 仅支持 256、512、768、1024 维');
+  c.RERANK_MODEL ||= 'qwen3.7-text-rerank';
+  c.EMBEDDING_BASE_URL ||= 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+  c.EMBEDDING_TOKENIZER ||= c.STORAGE_DRIVER === 'memory' ? 'test:unicode-v1' : 'estimate:utf8-v1';
+  c.CHAT_TOKENIZER ||= c.STORAGE_DRIVER === 'memory' ? 'test:unicode-v1' : 'estimate:utf8-v1';
+  for (const key of ['EMBEDDING_BASE_URL']) {
+    if (!['https:', 'http:'].includes(new URL(c[key]).protocol))
+      throw new Error(key + ' must be HTTP(S)');
+  }
   c.MODEL_CACHE_DIR = resolve(c.MODEL_CACHE_DIR || '.cache/models');
   c.UPLOAD_TEMP_DIR = resolve(c.UPLOAD_TEMP_DIR || '.tmp/uploads');
   c.ORIGINALS_DIR = resolve(c.ORIGINALS_DIR || '.data/originals');
@@ -56,5 +82,22 @@ export function validateConfig(input: Record<string, unknown>): Record<string, a
   c.MAX_DOCUMENT_BYTES = Number(c.MAX_DOCUMENT_BYTES || 128 * 1024 * 1024);
   if (!Number.isSafeInteger(c.MAX_DOCUMENT_BYTES) || c.MAX_DOCUMENT_BYTES < 1)
     throw new Error('MAX_DOCUMENT_BYTES must be a positive integer');
+  for (const [key, fallback] of Object.entries({
+    CHAT_CONTEXT_TOKENS: 32768,
+    CHAT_OUTPUT_TOKENS: 4096,
+    RAG_EVIDENCE_TOKENS: 8000,
+    RAG_HISTORY_TOKENS: 2048,
+    QUERY_PLAN_TOKEN_BUDGET: 4096,
+    QUALITY_MODEL_TIMEOUT_MS: 20000,
+  })) {
+    c[key] = Number(c[key] ?? fallback);
+    if (!Number.isSafeInteger(c[key]) || c[key] < 1)
+      throw new Error(key + ' must be a positive integer');
+  }
+  if (c.CHAT_CONTEXT_TOKENS <= c.CHAT_OUTPUT_TOKENS + 512)
+    throw new Error('CHAT_CONTEXT_TOKENS must leave room for input and safety reserve');
+  c.RERANK_MIN_SCORE = Number(c.RERANK_MIN_SCORE ?? 0);
+  if (!Number.isFinite(c.RERANK_MIN_SCORE) || c.RERANK_MIN_SCORE < 0 || c.RERANK_MIN_SCORE > 1)
+    throw new Error('RERANK_MIN_SCORE must be within [0,1]');
   return c;
 }

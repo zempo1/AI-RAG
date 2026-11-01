@@ -1,5 +1,12 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  currentModelProfile,
+  legacyModelProfile,
+  ModelProfile,
+  assertTokenizerProfile,
+} from './model-profile';
+import { TokenizerService } from './tokenizer.service';
 
 @Injectable()
 export class EmbeddingsService implements OnModuleDestroy {
@@ -9,13 +16,20 @@ export class EmbeddingsService implements OnModuleDestroy {
 
   constructor(private readonly config: ConfigService) {}
 
+  currentProfile() {
+    return currentModelProfile(this.config);
+  }
+  legacyProfile() {
+    return legacyModelProfile(this.config);
+  }
+
   private load(): Promise<any> {
     if (!this.extractor)
       this.extractor = (async () => {
         const { env, pipeline } = await import('@huggingface/transformers');
         env.cacheDir = this.config.getOrThrow('MODEL_CACHE_DIR');
-        return pipeline('feature-extraction', this.config.getOrThrow('EMBEDDING_MODEL'), {
-          revision: this.config.getOrThrow('EMBEDDING_REVISION'),
+        return pipeline('feature-extraction', legacyModelProfile(this.config).model, {
+          revision: legacyModelProfile(this.config).revision,
           dtype: 'fp32',
           device: 'cpu',
         });
@@ -26,7 +40,12 @@ export class EmbeddingsService implements OnModuleDestroy {
     return this.extractor;
   }
 
-  async embedDocuments(texts: string[]): Promise<number[][]> {
+  async embedDocuments(
+    texts: string[],
+    profile: ModelProfile = this.currentProfile(),
+  ): Promise<number[][]> {
+    assertTokenizerProfile(profile);
+    if (profile.provider === 'dashscope') return this.remote(texts, profile);
     if (!texts.length) return [];
     const run = async () => {
       const extractor = await this.load();
@@ -51,8 +70,56 @@ export class EmbeddingsService implements OnModuleDestroy {
     return pending;
   }
 
-  async embedQuery(text: string): Promise<number[]> {
-    return (await this.embedDocuments([text]))[0];
+  async embedQuery(text: string, profile: ModelProfile = this.currentProfile()): Promise<number[]> {
+    return (await this.embedDocuments([text], profile))[0];
+  }
+
+  private async remote(texts: string[], profile: ModelProfile): Promise<number[][]> {
+    if (!texts.length) return [];
+    const key = this.config.get<string>('EMBEDDING_API_KEY') || this.config.get<string>('CHAT_API_KEY');
+    if (!key) throw new Error('请配置 EMBEDDING_API_KEY 或 CHAT_API_KEY');
+    const tokenizer = new TokenizerService(this.config);
+    for (const text of texts)
+      if ((await tokenizer.count(text, profile.tokenizer)) > 8192)
+        throw new Error('Embedding 输入超过模型 token 上限，拒绝静默截断');
+    const all: number[][] = [];
+    for (let i = 0; i < texts.length; i += 10) {
+      const input = texts.slice(i, i + 10);
+      const response = await fetch(
+        (
+          this.config.get<string>('EMBEDDING_BASE_URL') ||
+          'https://dashscope.aliyuncs.com/compatible-mode/v1'
+        ).replace(/\/$/, '') + '/embeddings',
+        {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: profile.model,
+            input,
+            dimensions: profile.dimensions,
+            encoding_format: 'float',
+          }),
+          signal: AbortSignal.timeout(30000),
+        },
+      );
+      if (!response.ok) throw new Error('Embedding API HTTP ' + response.status);
+      const body: any = await response.json();
+      const rows = [...(body.data || [])].sort((a, b) => a.index - b.index);
+      if (
+        rows.length !== input.length ||
+        rows.some(
+          (r, i) =>
+            r.index !== i ||
+            !Array.isArray(r.embedding) ||
+            r.embedding.length !== profile.dimensions ||
+            !r.embedding.every(Number.isFinite) ||
+            !r.embedding.some((x: number) => x !== 0),
+        )
+      )
+        throw new Error('Invalid API embedding response');
+      all.push(...rows.map((r) => r.embedding));
+    }
+    return all;
   }
 
   async onModuleDestroy(): Promise<void> {

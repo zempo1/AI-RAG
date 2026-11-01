@@ -7,6 +7,8 @@ export interface Citation {
   versionId: number;
   indexRevisionId: number;
   chunkId: number;
+  /** All original child chunks represented by an expanded parent or merged range. */
+  chunkIds?: number[];
   filename: string;
   text: string;
   location: SourceLocation | null;

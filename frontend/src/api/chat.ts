@@ -3,16 +3,33 @@ import { SseDecoder, type SseEvent } from "../utils/sse";
 import type { Citation } from "./knowledge-bases";
 
 export const getChatHistory = (id: number) => request.get("/api/chats/" + id);
+export type QaMode = "auto" | "general" | "search" | "overview" | "compare";
+export interface RetrievalContext {
+  documentIds?: number[];
+  mode?: QaMode;
+}
+export interface AcceptedAnswer {
+  taskId: number;
+  chatId: number;
+  requestId: string;
+}
+export const getRetrievalRun = (id: number) =>
+  request.get<any, any>("/api/retrieval-runs/" + id);
 export interface StreamChatParams {
   question: string;
   chatId: number | null;
   knowledgeBaseId: number;
+  documentIds?: number[];
+  mode?: QaMode;
+  requestId?: string;
 }
 export interface FinalAnswer {
   answer: string;
   citations: Citation[];
   chatId: number;
   generationStatus: string;
+  retrievalRunId?: number;
+  diagnostics?: Record<string, unknown>;
 }
 
 export async function sendStreamChat(
@@ -21,6 +38,8 @@ export async function sendStreamChat(
     onMessage: (text: string) => void;
     onChatId: (id: number) => void;
     onSources?: (sources: Citation[]) => void;
+    onStatus?: (stage: string) => void;
+    onAccepted?: (accepted: AcceptedAnswer) => void;
     onCitations?: (citations: Citation[]) => void;
     onDone: (answer: FinalAnswer) => void;
     onError: (error: unknown) => void;
@@ -54,8 +73,12 @@ export async function sendStreamChat(
       decoder = new SseDecoder();
     const handle = (frame: SseEvent) => {
       const value = JSON.parse(frame.data);
-      if (frame.event === "chatId") callbacks.onChatId(Number(value));
-      else if (frame.event === "sources") callbacks.onSources?.(value);
+      if (frame.event === "status") callbacks.onStatus?.(String(value.stage));
+      else if (frame.event === "chatId") callbacks.onChatId(Number(value));
+      else if (frame.event === "accepted") {
+        completed = true;
+        callbacks.onAccepted?.(value);
+      } else if (frame.event === "sources") callbacks.onSources?.(value);
       else if (frame.event === "citations") callbacks.onCitations?.(value);
       else if (frame.event === "done") {
         completed = true;

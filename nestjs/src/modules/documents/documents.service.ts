@@ -7,6 +7,7 @@ import { Store, Row, now } from '../../persistence/store';
 import { DocumentParser } from './parsers/document.parser';
 import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service';
 import { TasksService, terminalTask } from '../tasks/tasks.service';
+import { currentModelProfile } from '../embeddings/model-profile';
 import { embeddingFingerprint } from '../vector-store/qdrant-vector-store.service';
 import { ApiError } from '../../common/api-error';
 
@@ -167,6 +168,7 @@ export class DocumentsService {
       documentId: doc.id,
       versionId,
       embeddingFingerprint: embeddingFingerprint(this.config),
+      modelProfile: currentModelProfile(this.config),
       status: 'pending',
       retiredAt: null,
     });

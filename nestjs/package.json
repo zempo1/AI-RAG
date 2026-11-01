@@ -19,7 +19,9 @@
     "verify:originals": "node test/verify-originals.cjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "schema:upgrade": "npm run build && node scripts/upgrade-schema.cjs"
+    "schema:upgrade": "npm run build && node scripts/upgrade-schema.cjs",
+    "eval:quality": "npm run build && node scripts/evaluate-quality.cjs",
+    "quality:preflight": "npm run build && node scripts/quality-preflight.cjs"
   },
   "dependencies": {
     "@huggingface/transformers": "4.3.2",

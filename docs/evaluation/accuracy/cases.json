@@ -1,0 +1,1435 @@
+[
+  {
+    "id": "api-1",
+    "split": "tune",
+    "type": "fact",
+    "question": "TS-999 应如何处理？",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "清理本地缓存"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "TS-999 表示缓存版本不兼容"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "api-2",
+    "split": "tune",
+    "type": "fact",
+    "question": "访问令牌多久过期？",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "30 分钟"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "访问令牌有效期为 30 分钟"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "api-3",
+    "split": "tune",
+    "type": "fact",
+    "question": "刷新令牌有效期是多少？",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "7 天"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "刷新令牌有效期为 7 天"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "api-4",
+    "split": "tune",
+    "type": "fact",
+    "question": "刷新令牌调用哪个接口？",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "POST /v2/session/refresh"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "POST /v2/session/refresh 用于刷新令牌"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "api-5",
+    "split": "tune",
+    "type": "fact",
+    "question": "请求需要哪个租户请求头？",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "X-Tenant-ID"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "请求头必须携带 X-Tenant-ID"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "api-6",
+    "split": "acceptance",
+    "type": "fact",
+    "question": "v2.4.1 修复了什么？",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "租户切换",
+      "缓存污染"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "版本 v2.4.1 修复了租户切换后缓存污染的问题"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "api-followup",
+    "split": "acceptance",
+    "type": "followup",
+    "question": "请说明刚才提到的具体要求。",
+    "history": [
+      {
+        "role": "user",
+        "content": "TS-999 应如何处理？"
+      },
+      {
+        "role": "assistant",
+        "content": "清理本地缓存"
+      }
+    ],
+    "documentIds": [
+      "api"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "清理本地缓存"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "TS-999 表示缓存版本不兼容"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "api-overview",
+    "split": "acceptance",
+    "type": "overview",
+    "question": "按章节概括这份文档的全部主要内容。",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "overview",
+    "expectedPoints": [
+      "清理本地缓存",
+      "30 分钟",
+      "7 天",
+      "POST /v2/session/refresh",
+      "X-Tenant-ID",
+      "租户切换",
+      "缓存污染"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "TS-999 表示缓存版本不兼容"
+      },
+      {
+        "document": "api",
+        "text": "访问令牌有效期为 30 分钟"
+      },
+      {
+        "document": "api",
+        "text": "刷新令牌有效期为 7 天"
+      },
+      {
+        "document": "api",
+        "text": "POST /v2/session/refresh 用于刷新令牌"
+      },
+      {
+        "document": "api",
+        "text": "请求头必须携带 X-Tenant-ID"
+      },
+      {
+        "document": "api",
+        "text": "版本 v2.4.1 修复了租户切换后缓存污染的问题"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "api-compare",
+    "split": "acceptance",
+    "type": "compare",
+    "question": "对比技术网关手册和服务配置表中的 Gateway 超时与重试设置。",
+    "documentIds": [
+      "api",
+      "table"
+    ],
+    "mode": "compare",
+    "expectedPoints": [
+      "12",
+      "2"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "默认连接超时为 12 秒，最多重试 2 次"
+      },
+      {
+        "document": "table",
+        "text": "Gateway | 12 | 2 | 8080"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "api-missing",
+    "split": "acceptance",
+    "type": "unanswerable",
+    "question": "文档作者的家庭住址是什么？",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "search",
+    "expectedPoints": [],
+    "evidence": [],
+    "expectedAbstention": true,
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "paper-1",
+    "split": "tune",
+    "type": "fact",
+    "question": "实验比较了哪三种检索方法？",
+    "documentIds": [
+      "paper"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "向量检索",
+      "混合检索",
+      "重排"
+    ],
+    "evidence": [
+      {
+        "document": "paper",
+        "text": "研究比较向量检索、混合检索、混合加重排三种方法"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "paper-2",
+    "split": "tune",
+    "type": "fact",
+    "question": "测试集有多少道题？",
+    "documentIds": [
+      "paper"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "120"
+    ],
+    "evidence": [
+      {
+        "document": "paper",
+        "text": "测试集包含 120 道人工标注问题"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "paper-3",
+    "split": "tune",
+    "type": "fact",
+    "question": "问题来自多少份文档？",
+    "documentIds": [
+      "paper"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "6"
+    ],
+    "evidence": [
+      {
+        "document": "paper",
+        "text": "来自 6 份文档"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "paper-4",
+    "split": "tune",
+    "type": "fact",
+    "question": "混合检索召回率是多少？",
+    "documentIds": [
+      "paper"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "84%"
+    ],
+    "evidence": [
+      {
+        "document": "paper",
+        "text": "混合检索为 84%"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "paper-5",
+    "split": "tune",
+    "type": "fact",
+    "question": "加入重排后的召回率是多少？",
+    "documentIds": [
+      "paper"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "89%"
+    ],
+    "evidence": [
+      {
+        "document": "paper",
+        "text": "加入重排为 89%"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "paper-6",
+    "split": "acceptance",
+    "type": "fact",
+    "question": "这些数字能直接推广到所有知识库吗？",
+    "documentIds": [
+      "paper"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "不能"
+    ],
+    "evidence": [
+      {
+        "document": "paper",
+        "text": "不能直接推广到所有知识库"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "paper-followup",
+    "split": "acceptance",
+    "type": "followup",
+    "question": "请说明刚才提到的具体要求。",
+    "history": [
+      {
+        "role": "user",
+        "content": "实验比较了哪三种检索方法？"
+      },
+      {
+        "role": "assistant",
+        "content": "向量检索，混合检索，重排"
+      }
+    ],
+    "documentIds": [
+      "paper"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "向量检索",
+      "混合检索",
+      "重排"
+    ],
+    "evidence": [
+      {
+        "document": "paper",
+        "text": "研究比较向量检索、混合检索、混合加重排三种方法"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "paper-overview",
+    "split": "acceptance",
+    "type": "overview",
+    "question": "按章节概括这份文档的全部主要内容。",
+    "documentIds": [
+      "paper"
+    ],
+    "mode": "overview",
+    "expectedPoints": [
+      "向量检索",
+      "混合检索",
+      "重排",
+      "120",
+      "6",
+      "84%",
+      "89%",
+      "不能"
+    ],
+    "evidence": [
+      {
+        "document": "paper",
+        "text": "研究比较向量检索、混合检索、混合加重排三种方法"
+      },
+      {
+        "document": "paper",
+        "text": "测试集包含 120 道人工标注问题"
+      },
+      {
+        "document": "paper",
+        "text": "来自 6 份文档"
+      },
+      {
+        "document": "paper",
+        "text": "混合检索为 84%"
+      },
+      {
+        "document": "paper",
+        "text": "加入重排为 89%"
+      },
+      {
+        "document": "paper",
+        "text": "不能直接推广到所有知识库"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "paper-compare",
+    "split": "acceptance",
+    "type": "compare",
+    "question": "对比技术网关手册和服务配置表中的 Gateway 超时与重试设置。",
+    "documentIds": [
+      "api",
+      "table"
+    ],
+    "mode": "compare",
+    "expectedPoints": [
+      "12",
+      "2"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "默认连接超时为 12 秒，最多重试 2 次"
+      },
+      {
+        "document": "table",
+        "text": "Gateway | 12 | 2 | 8080"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "paper-missing",
+    "split": "acceptance",
+    "type": "unanswerable",
+    "question": "文档作者的家庭住址是什么？",
+    "documentIds": [
+      "paper"
+    ],
+    "mode": "search",
+    "expectedPoints": [],
+    "evidence": [],
+    "expectedAbstention": true,
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "textbook-1",
+    "split": "tune",
+    "type": "fact",
+    "question": "事务的四个特性是什么？",
+    "documentIds": [
+      "textbook"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "原子性",
+      "一致性",
+      "隔离性",
+      "持久性"
+    ],
+    "evidence": [
+      {
+        "document": "textbook",
+        "text": "事务的四个特性是原子性、一致性、隔离性、持久性"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "textbook-2",
+    "split": "tune",
+    "type": "fact",
+    "question": "原子性要求什么？",
+    "documentIds": [
+      "textbook"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "全部成功",
+      "全部撤销"
+    ],
+    "evidence": [
+      {
+        "document": "textbook",
+        "text": "原子性要求事务中的操作全部成功或全部撤销"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "textbook-3",
+    "split": "tune",
+    "type": "fact",
+    "question": "B+ 树叶子节点如何连接？",
+    "documentIds": [
+      "textbook"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "链表"
+    ],
+    "evidence": [
+      {
+        "document": "textbook",
+        "text": "并通过链表连接"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "textbook-4",
+    "split": "tune",
+    "type": "fact",
+    "question": "复合索引通常遵循什么规则？",
+    "documentIds": [
+      "textbook"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "最左前缀"
+    ],
+    "evidence": [
+      {
+        "document": "textbook",
+        "text": "通常按最左前缀使用"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "textbook-5",
+    "split": "tune",
+    "type": "fact",
+    "question": "MVCC 通过什么改善并发读取？",
+    "documentIds": [
+      "textbook"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "多个数据版本"
+    ],
+    "evidence": [
+      {
+        "document": "textbook",
+        "text": "MVCC 通过多个数据版本改善并发读取"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "textbook-6",
+    "split": "acceptance",
+    "type": "fact",
+    "question": "增加索引前推荐先做什么？",
+    "documentIds": [
+      "textbook"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "查询计划"
+    ],
+    "evidence": [
+      {
+        "document": "textbook",
+        "text": "先测量查询计划"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "textbook-followup",
+    "split": "acceptance",
+    "type": "followup",
+    "question": "请说明刚才提到的具体要求。",
+    "history": [
+      {
+        "role": "user",
+        "content": "事务的四个特性是什么？"
+      },
+      {
+        "role": "assistant",
+        "content": "原子性，一致性，隔离性，持久性"
+      }
+    ],
+    "documentIds": [
+      "textbook"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "原子性",
+      "一致性",
+      "隔离性",
+      "持久性"
+    ],
+    "evidence": [
+      {
+        "document": "textbook",
+        "text": "事务的四个特性是原子性、一致性、隔离性、持久性"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "textbook-overview",
+    "split": "acceptance",
+    "type": "overview",
+    "question": "按章节概括这份文档的全部主要内容。",
+    "documentIds": [
+      "textbook"
+    ],
+    "mode": "overview",
+    "expectedPoints": [
+      "原子性",
+      "一致性",
+      "隔离性",
+      "持久性",
+      "全部成功",
+      "全部撤销",
+      "链表",
+      "最左前缀",
+      "多个数据版本",
+      "查询计划"
+    ],
+    "evidence": [
+      {
+        "document": "textbook",
+        "text": "事务的四个特性是原子性、一致性、隔离性、持久性"
+      },
+      {
+        "document": "textbook",
+        "text": "原子性要求事务中的操作全部成功或全部撤销"
+      },
+      {
+        "document": "textbook",
+        "text": "并通过链表连接"
+      },
+      {
+        "document": "textbook",
+        "text": "通常按最左前缀使用"
+      },
+      {
+        "document": "textbook",
+        "text": "MVCC 通过多个数据版本改善并发读取"
+      },
+      {
+        "document": "textbook",
+        "text": "先测量查询计划"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "textbook-compare",
+    "split": "acceptance",
+    "type": "compare",
+    "question": "对比技术网关手册和服务配置表中的 Gateway 超时与重试设置。",
+    "documentIds": [
+      "api",
+      "table"
+    ],
+    "mode": "compare",
+    "expectedPoints": [
+      "12",
+      "2"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "默认连接超时为 12 秒，最多重试 2 次"
+      },
+      {
+        "document": "table",
+        "text": "Gateway | 12 | 2 | 8080"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "textbook-missing",
+    "split": "acceptance",
+    "type": "unanswerable",
+    "question": "文档作者的家庭住址是什么？",
+    "documentIds": [
+      "textbook"
+    ],
+    "mode": "search",
+    "expectedPoints": [],
+    "evidence": [],
+    "expectedAbstention": true,
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "policy-1",
+    "split": "tune",
+    "type": "fact",
+    "question": "实验室工作日几点开放？",
+    "documentIds": [
+      "policy"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "08:30"
+    ],
+    "evidence": [
+      {
+        "document": "policy",
+        "text": "工作日 08:30 至 18:00"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "policy-2",
+    "split": "tune",
+    "type": "fact",
+    "question": "原始实验数据保留多久？",
+    "documentIds": [
+      "policy"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "60 天"
+    ],
+    "evidence": [
+      {
+        "document": "policy",
+        "text": "原始实验数据保留 60 天"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "policy-3",
+    "split": "tune",
+    "type": "fact",
+    "question": "审批记录保留多久？",
+    "documentIds": [
+      "policy"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "180 天"
+    ],
+    "evidence": [
+      {
+        "document": "policy",
+        "text": "审批记录保留 180 天"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "policy-4",
+    "split": "tune",
+    "type": "fact",
+    "question": "借设备需要提前几天？",
+    "documentIds": [
+      "policy"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "2 天"
+    ],
+    "evidence": [
+      {
+        "document": "policy",
+        "text": "设备借用必须提前 2 天申请"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "policy-5",
+    "split": "tune",
+    "type": "fact",
+    "question": "谁审批设备借用？",
+    "documentIds": [
+      "policy"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "管理员"
+    ],
+    "evidence": [
+      {
+        "document": "policy",
+        "text": "由实验室管理员审批"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "policy-6",
+    "split": "acceptance",
+    "type": "fact",
+    "question": "访客需要满足什么要求？",
+    "documentIds": [
+      "policy"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "教师陪同",
+      "登记"
+    ],
+    "evidence": [
+      {
+        "document": "policy",
+        "text": "访客须由教师陪同，并登记姓名和访问时间"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "policy-followup",
+    "split": "acceptance",
+    "type": "followup",
+    "question": "请说明刚才提到的具体要求。",
+    "history": [
+      {
+        "role": "user",
+        "content": "实验室工作日几点开放？"
+      },
+      {
+        "role": "assistant",
+        "content": "08:30"
+      }
+    ],
+    "documentIds": [
+      "policy"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "08:30"
+    ],
+    "evidence": [
+      {
+        "document": "policy",
+        "text": "工作日 08:30 至 18:00"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "policy-overview",
+    "split": "acceptance",
+    "type": "overview",
+    "question": "按章节概括这份文档的全部主要内容。",
+    "documentIds": [
+      "policy"
+    ],
+    "mode": "overview",
+    "expectedPoints": [
+      "08:30",
+      "60 天",
+      "180 天",
+      "2 天",
+      "管理员",
+      "教师陪同",
+      "登记"
+    ],
+    "evidence": [
+      {
+        "document": "policy",
+        "text": "工作日 08:30 至 18:00"
+      },
+      {
+        "document": "policy",
+        "text": "原始实验数据保留 60 天"
+      },
+      {
+        "document": "policy",
+        "text": "审批记录保留 180 天"
+      },
+      {
+        "document": "policy",
+        "text": "设备借用必须提前 2 天申请"
+      },
+      {
+        "document": "policy",
+        "text": "由实验室管理员审批"
+      },
+      {
+        "document": "policy",
+        "text": "访客须由教师陪同，并登记姓名和访问时间"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "policy-compare",
+    "split": "acceptance",
+    "type": "compare",
+    "question": "对比技术网关手册和服务配置表中的 Gateway 超时与重试设置。",
+    "documentIds": [
+      "api",
+      "table"
+    ],
+    "mode": "compare",
+    "expectedPoints": [
+      "12",
+      "2"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "默认连接超时为 12 秒，最多重试 2 次"
+      },
+      {
+        "document": "table",
+        "text": "Gateway | 12 | 2 | 8080"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "policy-missing",
+    "split": "acceptance",
+    "type": "unanswerable",
+    "question": "文档作者的家庭住址是什么？",
+    "documentIds": [
+      "policy"
+    ],
+    "mode": "search",
+    "expectedPoints": [],
+    "evidence": [],
+    "expectedAbstention": true,
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "manual-1",
+    "split": "tune",
+    "type": "fact",
+    "question": "AX-204 的工作电压是多少？",
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "5 V"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "型号 AX-204 的工作电压为 5 V"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "manual-2",
+    "split": "tune",
+    "type": "fact",
+    "question": "AX-205 的采样频率是多少？",
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "250 Hz"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "采样频率为 250 Hz"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "manual-3",
+    "split": "tune",
+    "type": "fact",
+    "question": "E-17 表示什么？",
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "温度过高"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "状态码 E-17 表示温度过高"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "manual-4",
+    "split": "tune",
+    "type": "fact",
+    "question": "设备适用温度范围是多少？",
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "0",
+      "45"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "设备应在 0 至 45 摄氏度环境下使用"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "manual-5",
+    "split": "tune",
+    "type": "fact",
+    "question": "v3.2 升级使用什么接口？",
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "USB-C"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "固件 v3.2 使用 USB-C 接口升级"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "manual-6",
+    "split": "acceptance",
+    "type": "fact",
+    "question": "校准周期是多少？",
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "90 天"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "校准周期为 90 天"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "manual-followup",
+    "split": "acceptance",
+    "type": "followup",
+    "question": "请说明刚才提到的具体要求。",
+    "history": [
+      {
+        "role": "user",
+        "content": "AX-204 的工作电压是多少？"
+      },
+      {
+        "role": "assistant",
+        "content": "5 V"
+      }
+    ],
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "5 V"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "型号 AX-204 的工作电压为 5 V"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "manual-overview",
+    "split": "acceptance",
+    "type": "overview",
+    "question": "按章节概括这份文档的全部主要内容。",
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "overview",
+    "expectedPoints": [
+      "5 V",
+      "250 Hz",
+      "温度过高",
+      "0",
+      "45",
+      "USB-C",
+      "90 天"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "型号 AX-204 的工作电压为 5 V"
+      },
+      {
+        "document": "manual",
+        "text": "采样频率为 250 Hz"
+      },
+      {
+        "document": "manual",
+        "text": "状态码 E-17 表示温度过高"
+      },
+      {
+        "document": "manual",
+        "text": "设备应在 0 至 45 摄氏度环境下使用"
+      },
+      {
+        "document": "manual",
+        "text": "固件 v3.2 使用 USB-C 接口升级"
+      },
+      {
+        "document": "manual",
+        "text": "校准周期为 90 天"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "manual-compare",
+    "split": "acceptance",
+    "type": "compare",
+    "question": "对比技术网关手册和服务配置表中的 Gateway 超时与重试设置。",
+    "documentIds": [
+      "api",
+      "table"
+    ],
+    "mode": "compare",
+    "expectedPoints": [
+      "12",
+      "2"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "默认连接超时为 12 秒，最多重试 2 次"
+      },
+      {
+        "document": "table",
+        "text": "Gateway | 12 | 2 | 8080"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "manual-missing",
+    "split": "acceptance",
+    "type": "unanswerable",
+    "question": "文档作者的家庭住址是什么？",
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "search",
+    "expectedPoints": [],
+    "evidence": [],
+    "expectedAbstention": true,
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "table-1",
+    "split": "tune",
+    "type": "fact",
+    "question": "Gateway 的超时是多少秒？",
+    "documentIds": [
+      "table"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "12"
+    ],
+    "evidence": [
+      {
+        "document": "table",
+        "text": "Gateway | 12 | 2 | 8080"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "table-2",
+    "split": "tune",
+    "type": "fact",
+    "question": "Worker 重试次数是多少？",
+    "documentIds": [
+      "table"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "3"
+    ],
+    "evidence": [
+      {
+        "document": "table",
+        "text": "Worker | 30 | 3 | 8081"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "table-3",
+    "split": "tune",
+    "type": "fact",
+    "question": "Indexer 的端口是多少？",
+    "documentIds": [
+      "table"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "8082"
+    ],
+    "evidence": [
+      {
+        "document": "table",
+        "text": "Indexer | 60 | 1 | 8082"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "table-4",
+    "split": "tune",
+    "type": "fact",
+    "question": "服务采用什么协议？",
+    "documentIds": [
+      "table"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "TCP"
+    ],
+    "evidence": [
+      {
+        "document": "table",
+        "text": "Protocol: TCP"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "table-5",
+    "split": "tune",
+    "type": "fact",
+    "question": "超时数值的单位是什么？",
+    "documentIds": [
+      "table"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "seconds"
+    ],
+    "evidence": [
+      {
+        "document": "table",
+        "text": "timeout is measured in seconds"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "table-6",
+    "split": "acceptance",
+    "type": "fact",
+    "question": "重试值为零表示什么？",
+    "documentIds": [
+      "table"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "disables"
+    ],
+    "evidence": [
+      {
+        "document": "table",
+        "text": "A zero retry value disables automatic retries"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "table-followup",
+    "split": "acceptance",
+    "type": "followup",
+    "question": "请说明刚才提到的具体要求。",
+    "history": [
+      {
+        "role": "user",
+        "content": "Gateway 的超时是多少秒？"
+      },
+      {
+        "role": "assistant",
+        "content": "12"
+      }
+    ],
+    "documentIds": [
+      "table"
+    ],
+    "mode": "search",
+    "expectedPoints": [
+      "12"
+    ],
+    "evidence": [
+      {
+        "document": "table",
+        "text": "Gateway | 12 | 2 | 8080"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "table-overview",
+    "split": "acceptance",
+    "type": "overview",
+    "question": "按章节概括这份文档的全部主要内容。",
+    "documentIds": [
+      "table"
+    ],
+    "mode": "overview",
+    "expectedPoints": [
+      "12",
+      "3",
+      "8082",
+      "TCP",
+      "seconds",
+      "disables"
+    ],
+    "evidence": [
+      {
+        "document": "table",
+        "text": "Gateway | 12 | 2 | 8080"
+      },
+      {
+        "document": "table",
+        "text": "Worker | 30 | 3 | 8081"
+      },
+      {
+        "document": "table",
+        "text": "Indexer | 60 | 1 | 8082"
+      },
+      {
+        "document": "table",
+        "text": "Protocol: TCP"
+      },
+      {
+        "document": "table",
+        "text": "timeout is measured in seconds"
+      },
+      {
+        "document": "table",
+        "text": "A zero retry value disables automatic retries"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "table-compare",
+    "split": "acceptance",
+    "type": "compare",
+    "question": "对比技术网关手册和服务配置表中的 Gateway 超时与重试设置。",
+    "documentIds": [
+      "api",
+      "table"
+    ],
+    "mode": "compare",
+    "expectedPoints": [
+      "12",
+      "2"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "默认连接超时为 12 秒，最多重试 2 次"
+      },
+      {
+        "document": "table",
+        "text": "Gateway | 12 | 2 | 8080"
+      }
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "table-missing",
+    "split": "acceptance",
+    "type": "unanswerable",
+    "question": "文档作者的家庭住址是什么？",
+    "documentIds": [
+      "table"
+    ],
+    "mode": "search",
+    "expectedPoints": [],
+    "evidence": [],
+    "expectedAbstention": true,
+    "annotationStatus": "authored_requires_human_review"
+  }
+]

@@ -5,8 +5,21 @@
     </div>
     <div v-else class="chat-status">
       {{
-        knowledgeBaseId ? "问答范围：当前知识库中的可用文档" : "请先选择知识库"
+        knowledgeBaseId ? "支持通用回答与知识库问答" : "请先选择知识库"
       }}
+    </div>
+    <QuestionSources
+      :knowledge-base-id="knowledgeBaseId"
+      v-model:document-ids="selectedDocumentIds"
+      v-model:mode="mode"
+      :disabled="loading || readOnly"
+    />
+    <div v-if="activeTask" class="qa-task-status" role="status">
+      <strong>后台问答处理中</strong><span>{{ taskLabel(activeTask) }}</span
+      ><small>可离开页面，任务完成后会保存到当前会话。</small>
+    </div>
+    <div v-if="taskConnectionError" class="qa-task-status" role="status">
+      暂时无法更新后台任务，正在重试…
     </div>
     <div class="messages-container" ref="messagesContainer">
       <div v-if="messages.length === 0" class="empty-state">
@@ -14,7 +27,7 @@
           <div class="logo">AI</div>
         </div>
         <h1>有什么我可以帮您的吗？</h1>
-        <p class="subtitle">您可以询问关于上传文档的任何问题</p>
+        <p class="subtitle">直接提问，或选择文档深入交流</p>
       </div>
 
       <div
@@ -48,21 +61,7 @@
               @click="handleCitationClick($event, msg)"
               class="markdown-body"
             ></div>
-            <div v-if="msg.citations?.length" class="citation-list">
-              <span>答案引用</span>
-              <button
-                v-for="source in msg.citations"
-                :key="source.number"
-                @click="selectedCitation = source"
-              >
-                [{{ source.number }}] {{ source.filename
-                }}{{
-                  source.location?.page
-                    ? " · 第 " + source.location.page + " 页"
-                    : ""
-                }}
-              </button>
-            </div>
+
             <details v-if="msg.sources?.length" class="retrieved-sources">
               <summary>检索到的参考资料（{{ msg.sources.length }}）</summary>
               <button
@@ -73,6 +72,26 @@
                 {{ source.filename }} · {{ source.text.slice(0, 45) }}
               </button>
             </details>
+            <div
+              v-if="msg.role === 'user' && msg.retrievalContext"
+              class="message-scope"
+            >
+              {{ scopeLabel(msg.retrievalContext) }}
+            </div>
+            <button
+              v-if="
+                msg.role === 'assistant' &&
+                (msg.retrievalRunId || msg.diagnostics?.runId)
+              "
+              class="debug-trigger"
+              @click="
+                debugRunId = Number(
+                  msg.retrievalRunId || msg.diagnostics?.runId,
+                )
+              "
+            >
+              查看检索过程
+            </button>
             <span
               v-if="msg.generationStatus === 'interrupted'"
               class="interrupted-label"
@@ -81,10 +100,7 @@
             <div v-if="msg.role === 'user'" class="user-content">
               {{ msg.content }}
             </div>
-            <span
-              v-if="msg.role === 'assistant' && msg.loading"
-              class="cursor"
-            ></span>
+            <GenerationStatus v-if="msg.role === 'assistant' && msg.loading" :stage="msg.content ? 'writing' : (msg.stage || 'connecting')" :has-content="!!msg.content" />
           </div>
         </div>
       </div>
@@ -113,6 +129,7 @@
       </div>
     </div>
 
+    <RetrievalDebug :run-id="debugRunId" @close="debugRunId = null" />
     <el-dialog
       v-model="apiKeyDialogVisible"
       title="API Key 配置"
@@ -208,7 +225,17 @@
 import { ref, nextTick, watch, onMounted, onBeforeUnmount } from "vue";
 import { UserFilled, Promotion, Key, Lock } from "@element-plus/icons-vue";
 import { renderMarkdown } from "../../utils/markdown";
-import { getChatHistory, sendStreamChat } from "../../api/chat";
+import {
+  getChatHistory,
+  sendStreamChat,
+  type QaMode,
+  type RetrievalContext,
+  type AcceptedAnswer,
+} from "../../api/chat";
+import { getTask, type ProcessingTask } from "../../api/knowledge-bases";
+import QuestionSources from "./QuestionSources.vue";
+import GenerationStatus from "./GenerationStatus.vue";
+import RetrievalDebug from "./RetrievalDebug.vue";
 import { useToast } from "../../composables/useToast";
 import type { Citation } from "../../api/knowledge-bases";
 
@@ -216,14 +243,111 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   loading?: boolean;
+  stage?: string;
   citations?: Citation[];
   sources?: Citation[];
   generationStatus?: string;
+  retrievalContext?: RetrievalContext;
+  retrievalRunId?: number;
+  diagnostics?: Record<string, any>;
 }
 
 const props = defineProps<{ knowledgeBaseId: number | null }>();
 const emit = defineEmits(["chat-created", "history-loaded"]);
 const readOnly = ref(false);
+const selectedDocumentIds = ref<number[]>([]),
+  mode = ref<QaMode>("auto"),
+  debugRunId = ref<number | null>(null);
+const activeTask = ref<ProcessingTask | null>(null),
+  taskConnectionError = ref(false);
+let taskTimer: ReturnType<typeof setTimeout> | undefined;
+const modeLabels: Record<QaMode, string> = {
+  auto: "自动判断",
+  general: "通用回答",
+  search: "知识问答",
+  overview: "全文概览",
+  compare: "文档比较",
+};
+const scopeLabel = (context: RetrievalContext) =>
+  context.mode === "general" ? "通用回答" :
+  modeLabels[context.mode || "auto"] +
+  " · " +
+  (context.documentIds?.length
+    ? "所选 " + context.documentIds.length + " 份文档"
+    : "全部可用文档");
+const taskLabel = (task: ProcessingTask) =>
+  (({ queued: "等待处理", retrying: "正在重试", running: "正在处理" })[
+    task.status
+  ] || task.stage) +
+  (task.total != null ? " · " + task.completed + "/" + task.total : "");
+function stopTaskPolling() {
+  if (taskTimer) clearTimeout(taskTimer);
+  taskTimer = undefined;
+  activeTask.value = null;
+  taskConnectionError.value = false;
+}
+function restoreContext(rows: Message[]) {
+  const context = [...rows]
+    .reverse()
+    .find((m) => m.role === "user" && m.retrievalContext)?.retrievalContext;
+  if (context) {
+    selectedDocumentIds.value = [...(context.documentIds || [])];
+    mode.value = context.mode || "auto";
+  }
+}
+function pollTask(
+  task: ProcessingTask,
+  taskChatId: number,
+  currentEpoch: number,
+) {
+  activeTask.value = task;
+  loading.value = true;
+  const tick = async () => {
+    if (currentEpoch !== epoch) return;
+    try {
+      const result = await getTask(task.id);
+      if (currentEpoch !== epoch) return;
+      activeTask.value = result;
+      taskConnectionError.value = false;
+      if (["completed", "partial_failed"].includes(result.status)) {
+        const history: any = await getChatHistory(taskChatId);
+        if (currentEpoch !== epoch) return;
+        messages.value = history.messages || [];
+        readOnly.value = !!history.readOnly;
+        restoreContext(messages.value);
+        stopTaskPolling();
+        loading.value = false;
+        const next = history.pendingTasks?.[0];
+        if (next) pollTask(next, taskChatId, currentEpoch);
+        await scrollToBottom();
+        return;
+      }
+      if (["failed", "canceled"].includes(result.status)) {
+        const message = messages.value.at(-1);
+        if (message?.role === "assistant" && message.loading) {
+          message.content = result.error || "后台问答任务未完成，可稍后重试。";
+          message.loading = false;
+          message.generationStatus = "interrupted";
+        }
+        toast.error(result.error || "后台问答任务未完成");
+        stopTaskPolling();
+        loading.value = false;
+        return;
+      }
+    } catch (error: any) {
+      if (currentEpoch !== epoch) return;
+      if ([401, 403, 404].includes(error?.response?.status)) {
+        toast.error("无法继续读取此后台任务，请重新打开会话确认状态。");
+        stopTaskPolling();
+        loading.value = false;
+        return;
+      }
+      taskConnectionError.value = true;
+    }
+    if (currentEpoch === epoch) taskTimer = setTimeout(tick, 2000);
+  };
+  void tick();
+}
 const selectedCitation = ref<Citation | null>(null);
 let streamAbort: AbortController | undefined;
 let epoch = 0;
@@ -294,6 +418,7 @@ const adjustTextareaHeight = () => {
 
 const loadHistory = async (id: number) => {
   streamAbort?.abort();
+  stopTaskPolling();
   const currentEpoch = ++epoch;
   chatId.value = id;
   loading.value = true;
@@ -302,13 +427,16 @@ const loadHistory = async (id: number) => {
     const data: any = await getChatHistory(id);
     if (currentEpoch !== epoch) return;
     messages.value = data.messages || [];
+    restoreContext(messages.value);
     readOnly.value = !!data.readOnly;
     emit("history-loaded", data.knowledgeBaseId);
+    const pending = data.pendingTasks?.[0];
+    if (pending) pollTask(pending, id, currentEpoch);
   } catch (e) {
     console.error(e);
     toast.error("加载聊天记录失败");
   } finally {
-    if (currentEpoch === epoch) loading.value = false;
+    if (currentEpoch === epoch && !activeTask.value) loading.value = false;
     scrollToBottom(true);
   }
 };
@@ -316,6 +444,10 @@ const loadHistory = async (id: number) => {
 const reset = () => {
   streamAbort?.abort();
   epoch++;
+  stopTaskPolling();
+  selectedDocumentIds.value = [];
+  mode.value = "auto";
+  debugRunId.value = null;
   loading.value = false;
   readOnly.value = false;
   selectedCitation.value = null;
@@ -349,7 +481,11 @@ const sendMessage = async () => {
   streamAbort = new AbortController();
 
   const question = input.value;
-  messages.value.push({ role: "user", content: question });
+  const retrievalContext: RetrievalContext = {
+    documentIds: [...selectedDocumentIds.value],
+    mode: mode.value,
+  };
+  messages.value.push({ role: "user", content: question, retrievalContext });
   input.value = "";
   if (textareaRef.value) textareaRef.value.style.height = "auto";
 
@@ -360,8 +496,20 @@ const sendMessage = async () => {
   await scrollToBottom();
 
   await sendStreamChat(
-    { question, chatId: chatId.value, knowledgeBaseId: props.knowledgeBaseId },
     {
+      question,
+      chatId: chatId.value,
+      knowledgeBaseId: props.knowledgeBaseId,
+      ...(selectedDocumentIds.value.length
+        ? { documentIds: [...selectedDocumentIds.value] }
+        : {}),
+      mode: mode.value,
+      requestId: crypto.randomUUID(),
+    },
+    {
+      onStatus: (stage) => {
+        if (currentEpoch === epoch) messages.value[aiMsgIndex].stage = stage;
+      },
       onMessage: (token) => {
         if (currentEpoch !== epoch) return;
         messages.value[aiMsgIndex].content += token;
@@ -371,6 +519,23 @@ const sendMessage = async () => {
         if (currentEpoch !== epoch) return;
         chatId.value = id;
         emit("chat-created", id);
+      },
+      onAccepted: (accepted: AcceptedAnswer) => {
+        if (currentEpoch !== epoch) return;
+        chatId.value = accepted.chatId;
+        emit("chat-created", accepted.chatId);
+        messages.value[aiMsgIndex].content = "正在后台逐章节处理文档…";
+        pollTask(
+          {
+            id: accepted.taskId,
+            status: "queued",
+            stage: "queued",
+            completed: 0,
+            total: null,
+          } as ProcessingTask,
+          accepted.chatId,
+          currentEpoch,
+        );
       },
       onSources: (sources) => {
         if (currentEpoch === epoch)
@@ -382,6 +547,8 @@ const sendMessage = async () => {
           content: final.answer,
           citations: final.citations,
           generationStatus: final.generationStatus,
+          retrievalRunId: final.retrievalRunId,
+          diagnostics: final.diagnostics,
         });
       },
       onError: (err) => {
@@ -407,6 +574,7 @@ const sendMessage = async () => {
       },
       onFinish: async () => {
         if (currentEpoch !== epoch) return;
+        if (activeTask.value) return;
         loading.value = false;
         if (messages.value[aiMsgIndex]) {
           messages.value[aiMsgIndex].loading = false;
@@ -419,11 +587,13 @@ const sendMessage = async () => {
 };
 onBeforeUnmount(() => {
   epoch++;
+  stopTaskPolling();
   streamAbort?.abort();
 });
 </script>
 
 <style lang="scss" src="./Chat.scss" scoped></style>
+<style lang="scss" src="./Quality.scss"></style>
 <style scoped>
 :global(.citation-drawer .el-drawer__body) {
   color: var(--text-primary);
