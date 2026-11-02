@@ -3,10 +3,19 @@ export interface PageImageRef {
   page: number;
   profile: string;
 }
+/** 归一化坐标，原点为旋转后的页面左上角。 */
+export type RegionBox = [number, number, number, number];
+export interface RegionImageRef extends PageImageRef {
+  regionId: string;
+  bbox: RegionBox;
+  kind: 'region' | 'scan' | 'fallback';
+}
 export type ContentType = 'native' | 'ocr' | 'table' | 'figure';
 export interface SourceLocation {
   contentType?: ContentType;
   pageImage?: PageImageRef;
+  regionImage?: RegionImageRef;
+  relatedParagraphs?: number[];
   page: number | null;
   paragraph: number | null;
   heading: string | null;
@@ -17,6 +26,8 @@ export interface SourceLocation {
 export interface ParsedBlock {
   text: string;
   location: SourceLocation;
+  /** 仅用于检索与父块展开，不计入原文偏移。 */
+  contextText?: string;
 }
 export interface ParsedDocument {
   text: string;

@@ -1,6 +1,6 @@
 import { ChatService } from '../src/modules/chat/chat.service';
 
-it('uses the same authorized image context for normal and streaming answers', async () => {
+it('uses only text for normal and streaming answers even for legacy page image citations', async () => {
   const images = [{ dataUrl: 'data:image/png;base64,aA==', label: '[1] 第1页' }];
   const source: any = {
     number: 1,
@@ -26,8 +26,8 @@ it('uses the same authorized image context for normal and streaming answers', as
     assets,
   );
   const context = await chat.prepare('图中顺序？', 7);
-  expect((await chat.answerPrepared(context)).answer).toBe('原图已核对[1]');
+  expect((await chat.answerPrepared(context)).answer).toBe('仅文字[1]');
   const events: any[] = [];
   for await (const event of chat.streamPrepared(context)) events.push(event);
-  expect(events.find((e) => e.type === 'done').answer).toBe('原图已核对[1]');
+  expect(events.find((e) => e.type === 'done').answer).toBe('仅文字[1]');
 });

@@ -31,9 +31,9 @@ async function fixture(): Promise<Buffer> {
   });
   doc.text('Native source');
   doc.image(image.toBuffer('image/png'), 70, 130, { width: 400 });
-  doc.rect(70, 250, 100, 60).stroke();
-  doc.rect(270, 250, 100, 60).stroke();
-  doc.moveTo(170, 280).lineTo(270, 280).stroke();
+  doc.rect(70, 350, 100, 60).stroke();
+  doc.rect(270, 350, 100, 60).stroke();
+  doc.moveTo(170, 380).lineTo(270, 380).stroke();
   doc.addPage();
   doc.image(image.toBuffer('image/png'), 70, 100, { width: 400 });
   doc.end();
@@ -45,6 +45,7 @@ describe('rendered PDF vision pipeline with real HTTP and persistent page cache'
     dir: string,
     base: string,
     failPage: number,
+    failCall: number,
     calls: number[],
     badOutput: boolean;
   beforeAll(async () => {
@@ -63,7 +64,7 @@ describe('rendered PDF vision pipeline with real HTTP and persistent page cache'
         res.end();
         return;
       }
-      if (page === failPage) {
+      if (page === failPage || calls.length === failCall) {
         res.writeHead(429, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: { message: 'rate limited' } }));
         return;
@@ -102,6 +103,7 @@ describe('rendered PDF vision pipeline with real HTTP and persistent page cache'
     dir = await mkdtemp(join(tmpdir(), 'visual-pdf-'));
     calls = [];
     failPage = 0;
+    failCall = 0;
     badOutput = false;
   });
   afterEach(async () => {
@@ -140,18 +142,18 @@ describe('rendered PDF vision pipeline with real HTTP and persistent page cache'
     expect(first.text).toContain('IMAGE-ONLY-42');
     expect(first.text).toContain('| 数量 | 42 |');
     expect(
-      first.blocks.find((b) => b.location.contentType === 'figure')?.location.pageImage?.page,
+      first.blocks.find((b) => b.location.contentType === 'figure')?.location.regionImage?.page,
     ).toBe(1);
     expect(first.blocks.find((b) => b.text.includes('IMAGE-ONLY'))?.location.page).toBe(2);
     const second = await p.parser.parseStructured(bytes, 'mixed.pdf', undefined, scope);
     expect(second).toEqual(first);
-    expect(calls).toEqual([1, 2]);
+    expect(calls).toEqual([1, 1, 2]);
     p.config.set('VISION_MODEL', 'another-vision-model');
     const changed = await p.parser.parseStructured(bytes, 'mixed.pdf', undefined, scope);
-    expect(changed.blocks.find((b) => b.location.pageImage)?.location.pageImage?.profile).not.toBe(
-      first.blocks.find((b) => b.location.pageImage)?.location.pageImage?.profile,
-    );
-    expect(calls).toEqual([1, 2, 1, 2]);
+    expect(
+      changed.blocks.find((b) => b.location.regionImage)?.location.regionImage?.profile,
+    ).not.toBe(first.blocks.find((b) => b.location.regionImage)?.location.regionImage?.profile);
+    expect(calls).toEqual([1, 1, 2, 1, 1, 2]);
   });
 
   it('keeps the published index on page failure and reuses successful pages during retry', async () => {
@@ -189,16 +191,16 @@ describe('rendered PDF vision pipeline with real HTTP and persistent page cache'
       );
       failPage = 0;
       await indexing.process(replacement.taskId, 2);
-      expect(calls).toEqual([1, 2, 2]);
+      expect(calls).toEqual([1, 1, 2, 2]);
       const ready = await p.store.get('documents', accepted.documentId);
       expect(ready?.activeIndexRevisionId).not.toBe(before?.activeIndexRevisionId);
       expect(ready?.content).toContain('IMAGE-ONLY-42');
       const chunks = await p.store.list('chunks', {
         indexRevisionId: ready?.activeIndexRevisionId,
       });
-      expect(chunks.some((c) => c.location?.contentType === 'table' && c.location.pageImage)).toBe(
-        true,
-      );
+      expect(
+        chunks.some((c) => c.location?.contentType === 'table' && c.location.regionImage),
+      ).toBe(true);
       const context = await new RagService(
         p.embeddings as any,
         p.vectors,
@@ -212,9 +214,9 @@ describe('rendered PDF vision pipeline with real HTTP and persistent page cache'
         mode: 'search',
       });
       expect(
-        context.sources.some((s) => s.location?.contentType === 'figure' && s.location.pageImage),
+        context.sources.some((s) => s.location?.contentType === 'figure' && s.location.regionImage),
       ).toBe(true);
-      expect((await visual.assets.forSources(1, context.sources)).length).toBeGreaterThan(0);
+      expect(context.sources.some((s) => s.location?.contentType === 'native')).toBe(true);
     } finally {
       await p.cleanup();
     }
@@ -231,6 +233,19 @@ describe('rendered PDF vision pipeline with real HTTP and persistent page cache'
       }),
     ).rejects.toThrow('第1页');
   });
+  it('retries only the failed region while preserving successful regions on the same page', async () => {
+    const { MemoryStore } = await import('../src/persistence/memory.store');
+    const p = parser(new MemoryStore()),
+      bytes = await fixture();
+    const scope = { userId: 1, documentId: 1, versionId: 1 };
+    failCall = 2;
+    await expect(p.parser.parseStructured(bytes, 'a.pdf', undefined, scope)).rejects.toThrow(
+      '图片区域2',
+    );
+    failCall = 0;
+    await p.parser.parseStructured(bytes, 'a.pdf', undefined, scope);
+    expect(calls).toEqual([1, 1, 1, 2]);
+  });
 
   it('rebuilds a truncated PNG cache while reusing intact pages', async () => {
     const { MemoryStore } = await import('../src/persistence/memory.store');
@@ -238,14 +253,14 @@ describe('rendered PDF vision pipeline with real HTTP and persistent page cache'
       bytes = await fixture();
     const scope = { userId: 1, documentId: 1, versionId: 1 };
     const first = await p.parser.parseStructured(bytes, 'mixed.pdf', undefined, scope);
-    const ref = first.blocks.find((b) => b.location.pageImage)!.location.pageImage!;
-    const file = join(p.assets.directory(scope, ref.profile), '1.png');
+    const ref = first.blocks.find((b) => b.location.regionImage)!.location.regionImage!;
+    const file = join(p.assets.directory(scope, ref.profile), `1-${ref.regionId}.png`);
     const original = await readFile(file);
     await writeFile(file, original.subarray(0, 30));
     const repaired = await p.parser.parseStructured(bytes, 'mixed.pdf', undefined, scope);
     expect(repaired).toEqual(first);
     expect((await readFile(file)).equals(original)).toBe(true);
-    expect(calls).toEqual([1, 2, 1]);
+    expect(calls).toEqual([1, 1, 2, 1]);
   });
 
   it('checks cancellation before each paid request and preserves the cancellation error type', async () => {

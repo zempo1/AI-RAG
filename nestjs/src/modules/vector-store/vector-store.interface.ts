@@ -11,6 +11,7 @@ export interface Segment {
   indexRevisionId?: number;
   chunkId?: number;
   location?: SourceLocation;
+  retrievalMetadata?: Record<string, unknown>;
 }
 
 export interface SearchScope {

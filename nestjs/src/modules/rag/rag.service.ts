@@ -69,17 +69,38 @@ export class RagService {
     const strategy = this.config?.get<string>('RAG_RETRIEVAL_STRATEGY') || 'hybrid-rerank';
     const kb = await this.libraries.resolve(userId, knowledgeBaseId);
     const general = async (directAnswer?: string): Promise<RetrievalResult> => {
-      const history = (options.history || []).slice(-12).map(t => ({ role: t.role, content: t.content }));
-      while (history.length && await this.count(JSON.stringify(history)) > 2048) history.shift();
+      const history = (options.history || [])
+        .slice(-12)
+        .map((t) => ({ role: t.role, content: t.content }));
+      while (history.length && (await this.count(JSON.stringify(history))) > 2048) history.shift();
       return {
-        knowledgeBaseId: kb.id, sources: [], directAnswer,
-        prompt: '你是友好、严谨的中文助手。回答通用问题，不声称读取了用户文档，不编造文档引用。涉及文档事实时请用户使用文档问答。直接回答，避免冗长重复。以下对话作为上下文：\n' + JSON.stringify(history) + '\n用户：' + question,
+        knowledgeBaseId: kb.id,
+        sources: [],
+        directAnswer,
+        prompt:
+          '你是友好、严谨的中文助手。回答通用问题，不声称读取了用户文档，不编造文档引用。涉及文档事实时请用户使用文档问答。直接回答，避免冗长重复。以下对话作为上下文：\n' +
+          JSON.stringify(history) +
+          '\n用户：' +
+          question,
         diagnostics: { responseType: 'general', mode: 'general' },
       };
     };
-    const greeting = question.trim().replace(/[!！。.?？\s]/g, '').toLowerCase();
-    if (['你好', '您好', '嗨', 'hello', 'hi', '早上好', '晚上好', '谢谢', '感谢', '再见'].includes(greeting))
-      return general(/谢谢|感谢/.test(greeting) ? '不客气！还有什么可以帮你？' : greeting === '再见' ? '再见，随时可以继续提问。' : '你好！你可以直接向我提问，也可以让我帮你分析知识库中的文档。');
+    const greeting = question
+      .trim()
+      .replace(/[!！。.?？\s]/g, '')
+      .toLowerCase();
+    if (
+      ['你好', '您好', '嗨', 'hello', 'hi', '早上好', '晚上好', '谢谢', '感谢', '再见'].includes(
+        greeting,
+      )
+    )
+      return general(
+        /谢谢|感谢/.test(greeting)
+          ? '不客气！还有什么可以帮你？'
+          : greeting === '再见'
+            ? '再见，随时可以继续提问。'
+            : '你好！你可以直接向我提问，也可以让我帮你分析知识库中的文档。',
+      );
     if (options.mode === 'general') return general();
     // 仅使用当前用户、当前知识库中已发布的索引，避免检索到其他用户或构建中的版本。
     const docs = (await this.store.list('documents', { userId, knowledgeBaseId: kb.id })).filter(
@@ -99,9 +120,10 @@ export class RagService {
       scope: [],
       degraded: [],
       candidates: { lexical: [], vector: [], fused: [], reranked: [] },
-      tokenCounting: (this.config?.get('CHAT_TOKENIZER') || 'estimate:utf8-v1') === 'estimate:utf8-v1'
-        ? { mode: 'conservative_estimate', unit: 'utf8_bytes', exact: false }
-        : { mode: 'tokenizer', exact: false },
+      tokenCounting:
+        (this.config?.get('CHAT_TOKENIZER') || 'estimate:utf8-v1') === 'estimate:utf8-v1'
+          ? { mode: 'conservative_estimate', unit: 'utf8_bytes', exact: false }
+          : { mode: 'tokenizer', exact: false },
       tokens: {},
       timings: {},
     };
@@ -140,7 +162,12 @@ export class RagService {
         )
           throw new Error('Query plan token budget exceeded');
         const plan = await this.models.plan(question, history, planDocuments);
-        if (plan.route === 'general' && (!options.mode || options.mode === 'auto') && !explicit && !named.length)
+        if (
+          plan.route === 'general' &&
+          (!options.mode || options.mode === 'auto') &&
+          !explicit &&
+          !named.length
+        )
           return general();
         query = plan.query;
         diagnostics.queryPlan = plan;
@@ -234,7 +261,14 @@ export class RagService {
               index = new LexicalIndex(
                 chunks
                   .filter((c) => c.indexRevisionId === revisionId)
-                  .map((c) => ({ id: c.id, text: c.text, terms: c.retrievalMetadata?.terms })),
+                  .map((c) => ({
+                    id: c.id,
+                    text:
+                      typeof c.retrievalMetadata?.embeddingText === 'string'
+                        ? c.retrievalMetadata.embeddingText
+                        : c.text,
+                    terms: c.retrievalMetadata?.terms,
+                  })),
               );
               this.lexicalCache.set(revisionId, index);
             }
@@ -301,7 +335,12 @@ export class RagService {
           options.onProgress?.('reranking');
           const ranking = await this.models.rerank(
             query,
-            candidates.map((c) => byChunk.get(c.id)!.text),
+            candidates.map((c) => {
+              const chunk = byChunk.get(c.id)!;
+              return typeof chunk.retrievalMetadata?.embeddingText === 'string'
+                ? chunk.retrievalMetadata.embeddingText
+                : chunk.text;
+            }),
           );
           const threshold = Number(this.config?.get('RERANK_MIN_SCORE') || 0);
           candidates = ranking
@@ -368,6 +407,32 @@ export class RagService {
                 c.documentId === chunk.documentId && Math.abs(c.chunkIndex - chunk.chunkIndex) <= 1,
             )
             .forEach((c) => add(c, match.score));
+      }
+    }
+    // 图片描述的上下文作为独立原文证据展开，避免给合成文字伪造连续偏移。
+    for (const source of [...evidence]) {
+      if (!source.location?.regionImage) continue;
+      const visual = chunks.find((c) => c.id === source.chunkId);
+      const ranges = visual?.retrievalMetadata?.contextRanges;
+      if (!Array.isArray(ranges)) continue;
+      for (const chunk of chunks) {
+        if (
+          chunk.documentId !== source.documentId ||
+          chunk.indexRevisionId !== source.indexRevisionId ||
+          chunk.location?.contentType !== 'native' ||
+          chunk.location?.page !== source.location.page
+        )
+          continue;
+        for (const range of ranges) {
+          const start = Math.max(chunk.location.start, range.start),
+            end = Math.min(chunk.location.end, range.end);
+          if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end <= start) continue;
+          evidence.push({
+            ...citation(chunk, source.score),
+            text: chunk.text.slice(start - chunk.location.start, end - chunk.location.start),
+            location: { ...chunk.location, start, end },
+          });
+        }
       }
     }
     // Keep exact raw citations; deduplicate overlapping source ranges instead of synthesizing new text.

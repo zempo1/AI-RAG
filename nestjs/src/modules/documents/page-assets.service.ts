@@ -4,7 +4,7 @@ import { readFile, rm } from 'node:fs/promises';
 import { join, resolve, relative, isAbsolute } from 'node:path';
 import { Store } from '../../persistence/store';
 import { ApiError } from '../../common/api-error';
-import { PageImageRef } from './parsers/parsed-document';
+import { PageImageRef, RegionImageRef } from './parsers/parsed-document';
 import { Citation } from '../rag/citations';
 import { VisionImage } from '../llm/llm.service';
 
@@ -46,6 +46,24 @@ export class PageAssetsService {
   }
 
   async image(userId: number, documentId: number, ref: PageImageRef): Promise<Buffer> {
+    return this.readImage(userId, documentId, ref, `${ref.page}.png`);
+  }
+
+  async regionImage(
+    userId: number,
+    documentId: number,
+    ref: Pick<RegionImageRef, 'versionId' | 'page' | 'profile' | 'regionId'>,
+  ): Promise<Buffer> {
+    if (!/^[a-f0-9]{24}$/.test(ref.regionId)) throw new ApiError(400, '图片区域标识无效');
+    return this.readImage(userId, documentId, ref, `${ref.page}-${ref.regionId}.png`);
+  }
+
+  private async readImage(
+    userId: number,
+    documentId: number,
+    ref: PageImageRef,
+    filename: string,
+  ): Promise<Buffer> {
     this.id(ref.page);
     const path = this.directory({ userId, documentId, versionId: ref.versionId }, ref.profile);
     const doc = await this.store.get('documents', documentId);
@@ -63,7 +81,7 @@ export class PageAssetsService {
     )
       throw new ApiError(404, '页面来源不存在或不可访问');
     try {
-      return await readFile(join(path, `${ref.page}.png`));
+      return await readFile(join(path, filename));
     } catch (error: any) {
       if (error.code === 'ENOENT') throw new ApiError(404, '页面图片不可用，请重新建立索引');
       throw error;

@@ -75,7 +75,7 @@ export class LlmService {
       JSON.stringify({
         event: 'vision_usage',
         model: this.config.get('VISION_MODEL') || 'qwen3.8-flash',
-        pages: images.length,
+      images: images.length,
         inputTokens: usage?.input_tokens ?? null,
         outputTokens: usage?.output_tokens ?? null,
         totalTokens: usage?.total_tokens ?? null,

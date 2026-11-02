@@ -599,24 +599,51 @@ describe('existing Vue API contract', () => {
     expect(answer.diagnostics.runId).toBe(done.retrievalRunId);
   });
 
-  it('serves page images as authenticated binary responses and rejects deleted or foreign sources', async () => {
-    const uploaded = (await request(app.getHttpServer()).post('/api/upload').set(auth())
-      .attach('file', Buffer.from('页面测试正文'), 'page.md').expect(202)).body.data;
-    await app.get(IndexingService).process(uploaded.taskId);
-    const store = app.get(Store), document = (await store.get('documents', uploaded.documentId))!;
-    const owner = document.userId, versionId = document.activeVersionId, profile = 'a'.repeat(64);
-    const dir = app.get(PageAssetsService).directory({ userId: owner, documentId: document.id, versionId }, profile);
-    await mkdir(dir, { recursive: true });
-    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jvJkAAAAASUVORK5CYII=', 'base64');
-    await writeFile(join(dir, '1.png'), png);
-    const url = `/api/documents/${document.id}/versions/${versionId}/pages/1/image?profile=${profile}`;
-    const image = await request(app.getHttpServer()).get(url).set(auth()).expect(200).expect('Content-Type', /image\/png/);
-    expect(image.body).toEqual(png);
-    expect(image.headers['cache-control']).toBe('private, no-store');
-    await request(app.getHttpServer()).get(url).expect(401);
-    await request(app.getHttpServer()).get(url).set('Authorization', 'Bearer ' + other).expect(404);
-    await request(app.getHttpServer()).get(url.replace(profile, '..%2Foutside')).set(auth()).expect(400);
-    await store.save('documents', { id: document.id, deletedAt: 'deleted' });
-    await request(app.getHttpServer()).get(url).set(auth()).expect(404);
-  });
+  it.each([false, true])(
+    'serves private images (region=%s) and rejects deleted or foreign sources',
+    async (region) => {
+      const uploaded = (
+        await request(app.getHttpServer())
+          .post('/api/upload')
+          .set(auth())
+          .attach('file', Buffer.from('页面测试正文'), 'page.md')
+          .expect(202)
+      ).body.data;
+      await app.get(IndexingService).process(uploaded.taskId);
+      const store = app.get(Store),
+        document = (await store.get('documents', uploaded.documentId))!;
+      const owner = document.userId,
+        versionId = document.activeVersionId,
+        profile = 'a'.repeat(64);
+      const dir = app
+        .get(PageAssetsService)
+        .directory({ userId: owner, documentId: document.id, versionId }, profile);
+      await mkdir(dir, { recursive: true });
+      const png = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jvJkAAAAASUVORK5CYII=',
+        'base64',
+      );
+      const regionId = 'b'.repeat(24);
+      await writeFile(join(dir, region ? `1-${regionId}.png` : '1.png'), png);
+      const url = `/api/documents/${document.id}/versions/${versionId}/pages/1${region ? '/regions/' + regionId : ''}/image?profile=${profile}`;
+      const image = await request(app.getHttpServer())
+        .get(url)
+        .set(auth())
+        .expect(200)
+        .expect('Content-Type', /image\/png/);
+      expect(image.body).toEqual(png);
+      expect(image.headers['cache-control']).toBe('private, no-store');
+      await request(app.getHttpServer()).get(url).expect(401);
+      await request(app.getHttpServer())
+        .get(url)
+        .set('Authorization', 'Bearer ' + other)
+        .expect(404);
+      await request(app.getHttpServer())
+        .get(url.replace(profile, '..%2Foutside'))
+        .set(auth())
+        .expect(400);
+      await store.save('documents', { id: document.id, deletedAt: 'deleted' });
+      await request(app.getHttpServer()).get(url).set(auth()).expect(404);
+    },
+  );
 });

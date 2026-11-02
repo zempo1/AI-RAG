@@ -65,13 +65,17 @@ export interface Citation {
     end: number;
     contentType?: 'native' | 'ocr' | 'table' | 'figure';
     pageImage?: { versionId: number; page: number; profile: string };
+    regionImage?: { versionId: number; page: number; profile: string; regionId: string;
+      bbox: [number, number, number, number]; kind: 'region' | 'scan' | 'fallback' };
+    relatedParagraphs?: number[];
   } | null;
 }
 export const getCitationPageImage = (source: Citation, signal?: AbortSignal) => {
-  const image = source.location?.pageImage;
+  const region = source.location?.regionImage;
+  const image = region || source.location?.pageImage;
   if (!image) return Promise.reject(new Error('此来源没有页面图片'));
   return request.get<any, Blob>(
-    `/api/documents/${source.documentId}/versions/${image.versionId}/pages/${image.page}/image`,
+    `/api/documents/${source.documentId}/versions/${image.versionId}/pages/${image.page}${region ? '/regions/' + region.regionId : ''}/image`,
     { params: { profile: image.profile }, responseType: 'blob', signal },
   );
 };

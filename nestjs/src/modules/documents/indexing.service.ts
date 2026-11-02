@@ -180,8 +180,7 @@ export class IndexingService {
     const version = (await this.store.get('versions', revision.versionId))!;
     if (!version) throw new ApiError(400, '文档版本不存在');
     await this.store.save('indexRevisions', { id: revision.id, status: 'building' });
-    const parsingStage =
-      /\.pdf$/i.test(version.filename) && this.config.get('VISION_ENABLED') ? 'vision' : 'parsing';
+    const parsingStage = 'parsing';
     await this.progress(task, token, parsingStage, 0, null, report);
     let parsed: ParsedDocument;
     if (version.originalPath) {
@@ -199,6 +198,7 @@ export class IndexingService {
           documentId: task.documentId,
           versionId: version.id,
           guard: () => this.guard(task, token),
+          stage: (stage, page, total) => this.progress(task, token, stage, page - 1, total, report),
         },
       );
     } else {
@@ -259,7 +259,11 @@ export class IndexingService {
       await this.progress(task, token, 'embedding', offset, segments.length, report);
       const batch = segments.slice(offset, offset + 16);
       const vectors = await this.embeddings.embedDocuments(
-        batch.map((s) => s.text),
+        batch.map((s) =>
+          typeof s.retrievalMetadata?.embeddingText === 'string'
+            ? s.retrievalMetadata.embeddingText
+            : s.text,
+        ),
         profile,
       );
       if (

@@ -5,6 +5,19 @@ import { join } from 'node:path';
 import { MemoryStore } from '../src/persistence/memory.store';
 import { PageAssetsService } from '../src/modules/documents/page-assets.service';
 
+it('authorizes region images and validates region identifiers', async () => {
+  const region: any = { versionId: 3, page: 1, profile, regionId: 'b'.repeat(24) };
+  const path = assets.directory({ userId: 1, documentId: 2, versionId: 3 }, profile);
+  await writeFile(join(path, `1-${region.regionId}.png`), Buffer.from('crop'));
+  expect((await (assets as any).regionImage(1, 2, region)).toString()).toBe('crop');
+  await expect((assets as any).regionImage(2, 2, region)).rejects.toMatchObject({ status: 404 });
+  await expect(
+    (assets as any).regionImage(1, 2, { ...region, regionId: '../x' }),
+  ).rejects.toThrow();
+  await store.save('documents', { id: 2, deletedAt: 'now' });
+  await expect((assets as any).regionImage(1, 2, region)).rejects.toMatchObject({ status: 404 });
+});
+
 let dir: string, store: MemoryStore, assets: PageAssetsService;
 const profile = 'a'.repeat(64);
 beforeEach(async () => {

@@ -1,10 +1,10 @@
-# PDF 图片文字与图表理解
+# PDF 按内容分流与局部图片理解
 
-PDF 索引任务保留原生文字，并将每页渲染为 PNG，调用百炼视觉模型补充图片文字、Markdown 表格和图解。正文中的 `[图片文字识别]`、`[表格识别]`、`[模型生成的图解]` 标记区分来源。模型无法辨认的内容应明确说明，仍需结合原图核对。
+PDF.js 在本地提取正文和位置，并检查图片及矢量绘图操作。纯文字页不调用视觉模型；混排页只把图片、表格、图表区域交给百炼，附带附近正文作为上下文。纯扫描页、文字乱码或无法可靠定位的复杂页面允许整页识别，并记录原因。
 
-## 配置与部署
+正文使用 `[图片文字识别]`、`[表格识别]`、`[模型生成的图解]` 区分来源。图片描述建立检索子块，附近正文参与向量、关键词及重排；原文证据分别保留准确偏移，命中后一起展开。普通及流式问答只发送文字证据，不再发送图片，也不会声称核对了原图。
 
-在 `nestjs/.env` 按需配置以下变量；新增变量的默认值已生效，不必复制真实密钥到其他位置：
+## 配置与运行
 
 ```dotenv
 VISION_ENABLED=true
@@ -16,53 +16,46 @@ VISION_OUTPUT_TOKENS=8192
 PAGE_ASSETS_DIR=.data/pages
 ```
 
-- 地址为空时继承 `CHAT_BASE_URL`；视觉密钥优先使用 `VISION_API_KEY`，其次为问答请求的密钥和服务端 `CHAT_API_KEY`。后台解析没有请求密钥，必须有服务端视觉或聊天密钥。
-- API 与 Worker 必须共享持久化的 `PAGE_ASSETS_DIR` 和 `ORIGINALS_DIR`，并使用相同的视觉配置。更新依赖后重新构建、重启两者。`@napi-rs/canvas` 已作为正式依赖固定版本；安装时不要省略其平台二进制包。
-- 不要将页面目录配置为公开静态目录。识别时页面会发送给所配置的视觉服务，并产生按量费用。长 PDF 的首次索引时间会增加。
-- 可通过 `VISION_ENABLED=false` 关闭后续索引的视觉解析；已有视觉索引仍依赖其页面图片和视觉模型配置。
-- 本次数据扩展使用既有 `location` JSON 字段，无需新增数据库迁移；旧索引仍可读取。
+地址和密钥为空时分别继承服务端 `CHAT_BASE_URL`、`CHAT_API_KEY`。API 与 Worker 共享持久化的 `PAGE_ASSETS_DIR` 和 `ORIGINALS_DIR`，使用一致配置。更新代码后构建并重启两者。沿用现有 PDF.js 与 `@napi-rs/canvas`，无需部署独立 OCR。
 
-## 索引、缓存与兼容
+本地可能渲染混排页以获取准确图形边界；正常情况下只上传裁剪区域。重复水印依据本地图片内容、位置、透明度和跨页重复情况判断；重复页边装饰不单独触发识别。复杂版面仍可能整页兜底，不能保证每份资料都减少调用次数。
 
-页面 PNG 与成功解析清单按 `用户/文档/版本/配置指纹/页码` 保存。指纹包含模型、接口地址、解析提示词、渲染参数和输出预算，不包含密钥。重试复用成功页面，缓存损坏或配置变化时重新解析；整份文档解析和向量写入成功后才发布索引。
+## 缓存、引用与兼容
 
-缓存清单记录图片字节数与 SHA-256；命中时核对完整性，截断或损坏图片以及缺少校验信息的旧清单重新生成。
+资源路径按用户、文档、版本、配置指纹隔离。新区域资源为 `<页码>-<区域标识>.png/json`，包含归一化边界框、区域类型、上下文及原生文字校验值、图片字节数与 SHA-256。配置指纹包含分流/裁剪版本、模型、地址、提示词和渲染预算，不含密钥。成功区域独立复用；失败重试不重复调用同页已成功的区域。模型错误不会改用整页请求重试。
 
-临时模型故障沿用原有最多三次任务尝试；失败信息包含页码。取消、替换或删除任务时，在页面处理边界核对任务执行权，旧任务不能发布结果。删除文档后立刻拒绝原图访问，后台等待索引任务终止后清理原件及页面缓存。历史版本资源保留到文档删除，支持历史引用。
+取消、替换及删除会检查任务执行权。全部解析和向量写入成功后才切换索引；失败继续服务已有索引。删除后立即拒绝图片访问，后台清理资源。
 
-已有 PDF 需要点击文档的“重建索引”，或者使用现有 `POST /api/documents/:id/reindex`。没有原件的历史 PDF 在启用视觉解析时提示重新上传；Markdown 与原有长文分析范围保持不变。
-
-## 问答与页面接口
-
-检索继续使用文本向量和关键词索引。视觉块及父块保留 `location.contentType`、`location.pageImage = { versionId, page, profile }`；不同内容类型不合并为一个父块。普通及流式问答按证据顺序选择最多三张不同页面原图核对，原图不可访问时明确失败，不静默声称已核对。
-
-页面读取接口：
+新引用使用 `location.regionImage = { versionId, page, profile, regionId, bbox, kind }`。`bbox` 为旋转后页面左上角起始的归一化 `[x0,y0,x1,y1]`；`kind` 为 `region`、`scan` 或 `fallback`。附近正文通过 `relatedParagraphs` 关联。引用面板展示识别文字和对应局部图/整页来源。
 
 ```text
-GET /api/documents/:id/versions/:versionId/pages/:page/image?profile=<64位指纹>
+GET /api/documents/:id/versions/:versionId/pages/:page/regions/:regionId/image?profile=<指纹>
+GET /api/documents/:id/versions/:versionId/pages/:page/image?profile=<指纹>  # 历史引用
 Authorization: Bearer <token>
 ```
 
-接口校验用户、知识库、文档、版本和删除状态，返回 `image/png`，使用 `private, no-store`。引用抽屉通过鉴权请求创建临时 Blob URL，并在切换、关闭时释放；删除来源只显示已保存的文字快照。
+两种接口均校验用户、知识库、文档、版本和删除状态，返回 `image/png`、`private, no-store`。前端使用鉴权 Blob URL，切换或关闭引用时释放。
 
-## 验证
+无需数据库迁移；保留旧 `pageImage` 和历史索引。已有 PDF 点击“重建索引”后应用新分流；缺少原件的历史 PDF 提示重新上传。关闭 `VISION_ENABLED` 后仍可提取文字。Markdown 和长文分析覆盖范围保持现有行为。
+
+## 验证与开销观测
 
 ```powershell
 cd nestjs
 npm test
 npm run test:e2e
 npm run build
-npm run test:vision              # 不调用模型
-npm run test:vision -- --live    # 付费真实调用：一页解析及一次带图问答
-npm run test:vision -- --live --scan  # 将样页变成无文字层的扫描 PDF 再验证
+npm run test:vision -- --live       # 合成混排样例解析 + 纯文字问答
+npm run test:vision -- --live --scan
+node scripts/pdf-regions-benchmark.cjs --file <PDF路径> --pages 2,23
+# 加 --live 对所选页面分别进行整页基线与区域解析，产生真实费用
+# --build-dir 可指定独立构建目录；--output 可指定报告目录
 cd ../frontend
 npm test
 npm run test:e2e
 npm run build
 ```
 
-真实样例包含原生文字、图片代码、表格、柱状图和矢量流程图，产物位于忽略目录 `nestjs/.data/vision-smoke`。重复执行会复用页面解析缓存，但仍会进行带图问答。`vision_usage` 日志记录每次视觉调用的模型、图片数和服务端报告的 token 用量；不记录页面内容或密钥，不将 token 数折算成未经核实的费用。
+`pdf-document-layout` 记录文字页、区域、扫描页与兜底页数；`pdf-page-layout` 记录兜底原因和本地耗时；`pdf-region` 记录缓存命中、图片像素/字节与调用耗时；`vision_usage` 记录模型服务报告的输入/输出 token。日志不记录密钥或正文。
 
-2026-11-02 实测：图片代码 `IMAGE-CODE-42`、表格 `Alpha=42/Beta=18`、柱状图差值 `10`、流程 `Review → Publish` 均正确。首次解析 2,356 token，带图问答 2,143 token，共 4,499 token；这是单个清晰样例的验收结果，不代表所有资料的识别准确率。
-
-同页栅格化为完全无文字层的扫描 PDF 后，上述检查也全部通过：解析 2,367 token，问答 2,135 token，共 4,502 token。两种样例四次实际调用共 9,001 token。
+2026-11-02 用用户物理层课件第 2、23 页真实对比：整页方式 2 次调用，输入 3,647、输出 122 token，输入图片 3,110,400 像素，约 4.45 秒；区域方式 1 次调用，输入 656、输出 131 token，393,078 像素，约 2.35 秒。第 2 页跳过视觉，第 23 页保留光纤结构与全反射关系描述。报告位于本地忽略目录 `.data/region-benchmark/physics-ready/report.json`。这是少量样例结果，耗时受网络影响，不能作为固定节省率。

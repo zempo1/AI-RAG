@@ -201,7 +201,7 @@
           {{
             selectedCitation.location?.paragraph
               ? "第 " + selectedCitation.location.paragraph + " 段"
-              : selectedCitation.location?.pageImage ? "图片与图表内容" : selectedCitation.location?.page ? "本页文字" : "历史片段，位置未知"
+              : (selectedCitation.location?.regionImage || selectedCitation.location?.pageImage) ? "图片与图表内容" : selectedCitation.location?.page ? "本页文字" : "历史片段，位置未知"
           }}
           {{
             selectedCitation.location?.heading

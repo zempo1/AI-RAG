@@ -21,14 +21,20 @@ export class RecursiveChunker {
         previous.location.heading === block.location.heading &&
         previous.location.contentType === block.location.contentType &&
         previous.location.pageImage?.profile === block.location.pageImage?.profile &&
+        previous.location.regionImage?.regionId === block.location.regionImage?.regionId &&
+        previous.contextText === block.contextText &&
         block.location.start >= previous.location.end
       ) {
         previous.location.end = block.location.end;
         previous.text = document.text.slice(previous.location.start, block.location.end);
-      } else groups.push({ text: block.text, location: { ...block.location } });
+      } else groups.push({ ...block, location: { ...block.location } });
     }
     const output: (ParsedBlock & { retrievalMetadata: Record<string, unknown> })[] = [];
     for (const group of groups) {
+      const context = group.contextText
+        ? (await tokenizer.windows(group.contextText, 96, 0, profile.tokenizer))[0]?.text || ''
+        : '';
+      const contextRanges = this.contextRanges(document, group);
       // 父块保留较完整上下文；子块负责精确检索，命中后可展开父块补足语义。
       for (const parent of await tokenizer.windows(group.text, 1536, 0, profile.tokenizer)) {
         const parentStart = group.location.start + parent.start;
@@ -48,7 +54,8 @@ export class RecursiveChunker {
             .find((b) => b.location.start <= start && b.location.page === group.location.page);
           // 将词频随片段保存，构建关键词索引时可直接复用，减少重复分词。
           const terms: Record<string, number> = {};
-          const normalized = child.text.normalize('NFKC').toLowerCase();
+          const embeddingText = context ? `${child.text}\n\n相关正文：\n${context}` : child.text;
+          const normalized = embeddingText.normalize('NFKC').toLowerCase();
           const words = [...new Intl.Segmenter('zh', { granularity: 'word' }).segment(normalized)]
             .filter((w) => w.isWordLike && /\p{Script=Han}/u.test(w.segment))
             .map((w) => w.segment);
@@ -66,6 +73,8 @@ export class RecursiveChunker {
               parentId,
               parentText: parent.text,
               parentLocation,
+              embeddingText,
+              contextRanges,
               sectionId: group.location.heading || `${group.location.page ?? 'legacy'}`,
               terms,
               tokenCount: child.tokenCount,
@@ -76,14 +85,35 @@ export class RecursiveChunker {
     }
     return output;
   }
-  splitStructured(document: ParsedDocument, size = 500, overlap = 50): ParsedBlock[] {
-    const result: ParsedBlock[] = [];
+  private contextRanges(document: ParsedDocument, block: ParsedBlock) {
+    return document.blocks
+      .filter(
+        (b) =>
+          b.location.contentType === 'native' &&
+          b.location.page === block.location.page &&
+          block.location.relatedParagraphs?.includes(b.location.paragraph!),
+      )
+      .map((b) => ({ start: b.location.start, end: b.location.end }));
+  }
+  splitStructured(document: ParsedDocument, size = 500, overlap = 50) {
+    const result: (ParsedBlock & { retrievalMetadata?: Record<string, unknown> })[] = [];
     for (const block of document.blocks) {
       let cursor = 0;
       for (const text of this.split(block.text, size, overlap)) {
         const index = block.text.indexOf(text, cursor);
         const start = block.location.start + index;
-        result.push({ text, location: { ...block.location, start, end: start + text.length } });
+        result.push({
+          text,
+          location: { ...block.location, start, end: start + text.length },
+          ...(block.contextText
+            ? {
+                retrievalMetadata: {
+                  embeddingText: text + '\n\n相关正文：\n' + block.contextText.slice(0, 300),
+                  contextRanges: this.contextRanges(document, block),
+                },
+              }
+            : {}),
+        });
         cursor = Math.max(index + text.length - overlap, index + 1);
       }
     }

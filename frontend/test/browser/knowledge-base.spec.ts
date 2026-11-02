@@ -1063,12 +1063,14 @@ test('shows lightweight generation status', async ({ page }) => {
   await expect(page.locator('.generation-status')).toBeHidden();
 });
 
-test('visual citations load private page images and allow retry without losing recognized text', async ({ page }) => {
+for (const region of [false, true]) {
+test(`visual citations load private ${region ? 'region' : 'page'} images and allow retry without losing recognized text`, async ({ page }) => {
   await fixture(page, false, true);
   const source = { number: 1, documentId: 1, versionId: 2, knowledgeBaseId: 1, indexRevisionId: 3,
     chunkId: 4, filename: '图示.pdf', text: '[模型生成的图解]\n申请 → 审核 → 发布', score: 1,
     location: { page: 2, paragraph: null, heading: null, start: 0, end: 26, contentType: 'figure',
-      pageImage: { versionId: 2, page: 2, profile: 'a'.repeat(64) } } };
+      ...(region ? { regionImage: { versionId: 2, page: 2, profile: 'a'.repeat(64), regionId: 'b'.repeat(24), bbox: [.1,.2,.5,.6], kind: 'region' } }
+        : { pageImage: { versionId: 2, page: 2, profile: 'a'.repeat(64) } }) } };
   await page.route('**/api/chats/7', route => route.fulfill({ json: { data: {
     id: 7, knowledgeBaseId: 1, readOnly: false, pendingTasks: [], messages: [
       { role: 'user', content: '图中的步骤是什么？' },
@@ -1076,7 +1078,7 @@ test('visual citations load private page images and allow retry without losing r
     ],
   } } }));
   let available = false, authorization = '';
-  await page.route('**/api/documents/1/versions/2/pages/2/image?*', route => {
+  await page.route(`**/api/documents/1/versions/2/pages/2${region ? '/regions/' + 'b'.repeat(24) : ''}/image?*`, route => {
     authorization = route.request().headers().authorization;
     if (!available) return route.fulfill({ status: 503, json: { message: '暂时不可用' } });
     return route.fulfill({ contentType: 'image/png', body: Buffer.from(
@@ -1090,9 +1092,10 @@ test('visual citations load private page images and allow retry without losing r
   await expect(drawer).toContainText('页面原图暂不可用');
   available = true;
   await drawer.getByRole('button', { name: '重新加载原图' }).click();
-  const image = drawer.getByRole('img', { name: '图示.pdf 第 2 页原图' });
+  const image = drawer.getByRole('img', { name: `图示.pdf 第 2 页${region ? '图片区域' : '原图'}` });
   await expect(image).toBeVisible();
   await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(1);
   expect(authorization).toBe('Bearer test-token');
-  await expect(drawer.getByRole('link', { name: '查看完整页面原图（新窗口）' })).toHaveAttribute('href', /^blob:/);
+  await expect(drawer.getByRole('link', { name: `查看${region ? '图片区域' : '完整页面原图'}（新窗口）` })).toHaveAttribute('href', /^blob:/);
 });
+}

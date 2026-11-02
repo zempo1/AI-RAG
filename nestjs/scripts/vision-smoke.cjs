@@ -147,13 +147,9 @@ const { DocumentParser } = require('../dist/modules/documents/parsers/document.p
     versionId: 1,
   });
   await writeFile(join(root, 'parsed.json'), JSON.stringify(parsed, null, 2));
-  const sources = parsed.blocks
-    .filter((b) => b.location.pageImage)
-    .map((b, i) => ({ ...b, number: i + 1, documentId: 1, versionId: 1 }));
   const answer = await llm.complete(
-    '依据原图回答：图片代码是什么？表格 Alpha 和 Beta 分别是多少？Q2 比 Q1 多多少？流程中 Review 的下一步是什么？看不清时说明。',
-    undefined,
-    await assets.forSources(1, sources),
+    '依据以下正文和图片识别结果回答：图片代码是什么？表格 Alpha 和 Beta 分别是多少？Q2 比 Q1 多多少？流程中 Review 的下一步是什么？证据不足时说明。\n\n' +
+      parsed.text,
   );
   await writeFile(join(root, 'answer.txt'), answer);
   const checks = {

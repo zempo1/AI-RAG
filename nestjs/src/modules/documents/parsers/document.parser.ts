@@ -1,11 +1,13 @@
 /** 从 PDF 文本层或 UTF-8 Markdown 提取带位置的文本块。 */
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable, Optional, Logger } from '@nestjs/common';
 import { ApiError } from '../../../common/api-error';
 import { ParsedDocument, paragraphBlocks } from './parsed-document';
 import { PdfVisualService, ParseContext } from './pdf-visual.service';
+import { textPositions } from './pdf-layout';
 
 @Injectable()
 export class DocumentParser {
+  private readonly logger = new Logger(DocumentParser.name);
   constructor(@Optional() private readonly visual?: PdfVisualService) {}
   validateFilename(filename: string): void {
     if (
@@ -46,53 +48,105 @@ export class DocumentParser {
         });
         document = await task.promise;
         const pages: string[] = [];
+        const counts = { textPages: 0, regions: 0, scanPages: 0, fallbackPages: 0 };
         for (let i = 1; i <= document.numPages; i++) {
           const page = await document.getPage(i);
+          try {
+            await context?.guard?.();
+            await context?.stage?.('parsing', i, document.numPages);
+          } catch (error) {
+            progressError = error;
+            throw error;
+          }
           // 保留原生文字，再逐页补充图片、扫描文字和图解。
           const content = await page.getTextContent();
           let previous: any;
           let pageText = '';
+          const itemRanges: { start: number; end: number }[] = [];
           for (const item of content.items as any[]) {
             if (!('str' in item)) continue;
+            // PDF.js 可能用一个宽空白 item 表示栏间距。
+            if (!item.str.trim() && item.width > Math.max(previous?.height || 10, item.height) * 2)
+              pageText += '\n\n';
             // 根据文字纵向位置推断段落边界，减少 PDF 提取后所有内容粘成一段的问题。
             if (
               previous &&
-              Math.abs(previous.transform[5] - item.transform[5]) >
-                Math.max(previous.height, item.height) * 1.6
+              (Math.abs(previous.transform[5] - item.transform[5]) >
+                Math.max(previous.height, item.height) * 1.6 ||
+                (Math.abs(previous.transform[5] - item.transform[5]) <
+                  Math.max(previous.height, item.height) &&
+                  item.transform[4] - previous.transform[4] - previous.width >
+                    Math.max(previous.height, item.height) * 2))
             )
               pageText += '\n\n';
+            const itemStart = pageText.length;
             pageText += item.str + (item.hasEOL ? '\n' : '');
+            itemRanges.push({ start: itemStart, end: pageText.length });
             previous = item;
           }
           // 记录页码和全局文本偏移，后续切块与引用都能追溯到原文位置。
           const offset = pages.reduce((sum, p) => sum + p.length + 1, 0);
-          blocks.push(
-            ...paragraphBlocks(pageText, i, offset).map((b) => ({
-              ...b,
-              location: { ...b.location, contentType: 'native' as const },
-            })),
+          const nativeBlocks = paragraphBlocks(pageText, i).map((b) => ({
+            ...b,
+            location: { ...b.location, contentType: 'native' as const },
+          }));
+          const positions = textPositions(content, page.getViewport({ scale: 1 }));
+          const paragraphItems = nativeBlocks.map((b) =>
+            itemRanges
+              .map((r, index) =>
+                r.end > b.location.start && r.start < b.location.end ? index : -1,
+              )
+              .filter((n) => n >= 0),
           );
+          const entries: { order: number; block: ParsedDocument['blocks'][number] }[] =
+            nativeBlocks.map((block, n) => ({ order: n, block }));
           if (context && this.visual?.enabled) {
             try {
-              const result = await this.visual.page(document, page, pageText, context);
+              const result = await this.visual.page(document, page, pageText, context, content);
+              if (result.stats)
+                for (const key of Object.keys(counts) as (keyof typeof counts)[])
+                  counts[key] += result.stats[key];
               for (const supplement of result.blocks) {
                 const labels = { ocr: '图片文字识别', table: '表格识别', figure: '模型生成的图解' };
                 const value = `[${labels[supplement.type]}]\n${supplement.text}`;
-                const separator = pageText ? '\n\n' : '';
-                const start = offset + pageText.length + separator.length;
-                blocks.push({
-                  text: value,
-                  location: {
-                    page: i,
-                    paragraph: null,
-                    heading: null,
-                    start,
-                    end: start + value.length,
-                    contentType: supplement.type,
-                    pageImage: result.image,
+                const ref = supplement.regionImage;
+                const related = paragraphItems
+                  .map((items, index) =>
+                    items.some((n) => supplement.textIndexes?.includes(n)) ? index + 1 : -1,
+                  )
+                  .filter((n) => n > 0);
+                let anchor = nativeBlocks.length - 1;
+                if (ref?.kind === 'region') {
+                  const [x0, y0, x1] = ref.bbox;
+                  anchor = -1;
+                  for (let n = 0; n < nativeBlocks.length; n++) {
+                    if (
+                      paragraphItems[n].some((index) => {
+                        const b = positions[index]?.bbox;
+                        return b && b[1] <= y0 && Math.min(b[2], x1) > Math.max(b[0], x0);
+                      })
+                    )
+                      anchor = n;
+                  }
+                }
+                entries.push({
+                  order: anchor + 0.5,
+                  block: {
+                    text: value,
+                    contextText: supplement.contextText,
+                    location: {
+                      page: i,
+                      paragraph: null,
+                      heading: null,
+                      start: 0,
+                      end: 0,
+                      contentType: supplement.type,
+                      pageImage: result.image,
+                      regionImage: ref,
+                      relatedParagraphs: related,
+                    },
                   },
                 });
-                pageText += separator + value;
               }
             } catch (error) {
               // 保留取消/取代任务的错误类型，供索引执行器正确终止。
@@ -101,6 +155,16 @@ export class DocumentParser {
               progressError = error;
               throw error;
             }
+          }
+          pageText = '';
+          for (const { block } of entries.sort((a, b) => a.order - b.order)) {
+            if (pageText) pageText += '\n\n';
+            const start = offset + pageText.length;
+            blocks.push({
+              ...block,
+              location: { ...block.location, start, end: start + block.text.length },
+            });
+            pageText += block.text;
           }
           pages.push(pageText);
           page.cleanup();
@@ -112,6 +176,10 @@ export class DocumentParser {
           }
         }
         text = pages.join('\n');
+        if (context && this.visual?.enabled)
+          this.logger.log(
+            JSON.stringify({ event: 'pdf-document-layout', pages: document.numPages, ...counts }),
+          );
       } catch (error) {
         if (progressError) throw progressError;
         throw Object.assign(new ApiError(400, 'PDF 解析失败：文件损坏、加密或格式不受支持'), {

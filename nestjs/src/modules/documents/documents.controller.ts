@@ -83,6 +83,24 @@ export class DocumentsController {
     response.send(bytes);
   }
 
+  // 区域接口同样经文档、版本、知识库归属校验，路径不接受自由文件名。
+  @Get('documents/:id/versions/:versionId/pages/:page/regions/:regionId/image')
+  async regionImage(
+    @Param('id', IdPipe) id: number,
+    @Param('versionId', IdPipe) versionId: number,
+    @Param('page', IdPipe) page: number,
+    @Param('regionId') regionId: string,
+    @Query('profile') profile: string,
+    @UserId() user: number,
+    @Res() response: Response,
+  ) {
+    const bytes = await this.assets.regionImage(user, id, { versionId, page, profile, regionId });
+    response.setHeader('Content-Type', 'image/png');
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.send(bytes);
+  }
+
   @Get('documents/:id')
   async summary(@Param('id', IdPipe) id: number, @UserId() user: number) {
     const { content, userId, ...doc } = await this.documents.owned(id, user);
