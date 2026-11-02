@@ -63,8 +63,18 @@ export interface Citation {
     heading: string | null;
     start: number;
     end: number;
+    contentType?: 'native' | 'ocr' | 'table' | 'figure';
+    pageImage?: { versionId: number; page: number; profile: string };
   } | null;
 }
+export const getCitationPageImage = (source: Citation, signal?: AbortSignal) => {
+  const image = source.location?.pageImage;
+  if (!image) return Promise.reject(new Error('此来源没有页面图片'));
+  return request.get<any, Blob>(
+    `/api/documents/${source.documentId}/versions/${image.versionId}/pages/${image.page}/image`,
+    { params: { profile: image.profile }, responseType: 'blob', signal },
+  );
+};
 export const listKnowledgeBases = () =>
   request.get<any, KnowledgeBase[]>("/api/knowledge-bases");
 export const createKnowledgeBase = (name: string, description = "") =>

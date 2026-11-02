@@ -28,6 +28,14 @@ export function validateConfig(input: Record<string, unknown>): Record<string, a
   const url = new URL(c.CHAT_BASE_URL);
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('CHAT_BASE_URL must be HTTP(S)');
   c.CHAT_MODEL ||= 'qwen3.8-flash';
+  c.VISION_MODEL ||= 'qwen3.8-flash';
+  c.VISION_BASE_URL ||= c.CHAT_BASE_URL;
+  if (!['http:', 'https:'].includes(new URL(c.VISION_BASE_URL).protocol))
+    throw new Error('VISION_BASE_URL must be HTTP(S)');
+  if (c.VISION_ENABLED !== undefined && ![true, false, 'true', 'false'].includes(c.VISION_ENABLED))
+    throw new Error('VISION_ENABLED must be true or false');
+  c.VISION_ENABLED = c.VISION_ENABLED !== false && c.VISION_ENABLED !== 'false';
+  c.PAGE_ASSETS_DIR = resolve(c.PAGE_ASSETS_DIR || '.data/pages');
   c.EMBEDDING_PROVIDER ||= c.STORAGE_DRIVER === 'memory' ? 'local' : 'dashscope';
   if (!['local', 'dashscope'].includes(c.EMBEDDING_PROVIDER))
     throw new Error('Invalid EMBEDDING_PROVIDER');
@@ -44,9 +52,11 @@ export function validateConfig(input: Record<string, unknown>): Record<string, a
     throw new Error('旧 MiniLM 模型仅支持 384 维');
   if (c.EMBEDDING_PROVIDER === 'dashscope' && c.EMBEDDING_DIMENSIONS === 384)
     throw new Error('远程 Embedding 模型不支持 384 维，请选择 1024 等受支持维度');
-  if (c.EMBEDDING_PROVIDER === 'dashscope' &&
-      c.EMBEDDING_MODEL === 'qwen3.7-text-embedding-flash' &&
-      ![256, 512, 768, 1024].includes(c.EMBEDDING_DIMENSIONS))
+  if (
+    c.EMBEDDING_PROVIDER === 'dashscope' &&
+    c.EMBEDDING_MODEL === 'qwen3.7-text-embedding-flash' &&
+    ![256, 512, 768, 1024].includes(c.EMBEDDING_DIMENSIONS)
+  )
     throw new Error('qwen3.7-text-embedding-flash 仅支持 256、512、768、1024 维');
   c.RERANK_MODEL ||= 'qwen3.7-text-rerank';
   c.EMBEDDING_BASE_URL ||= 'https://dashscope.aliyuncs.com/compatible-mode/v1';
@@ -89,6 +99,8 @@ export function validateConfig(input: Record<string, unknown>): Record<string, a
     RAG_HISTORY_TOKENS: 2048,
     QUERY_PLAN_TOKEN_BUDGET: 4096,
     QUALITY_MODEL_TIMEOUT_MS: 20000,
+    VISION_TIMEOUT_MS: 180000,
+    VISION_OUTPUT_TOKENS: 8192,
   })) {
     c[key] = Number(c[key] ?? fallback);
     if (!Number.isSafeInteger(c[key]) || c[key] < 1)

@@ -23,7 +23,7 @@ Node.js >=22.21.1。API 与 Worker 共用代码、MySQL 和原件目录；Qdrant
 
     npm run migration:run
 
-旧文档仅保留了正文，迁移为 legacy 版本，激活时异步重建；无法恢复原件或 PDF 页码。重新上传原文件后可获得页码引用。既有 bcrypt 密码继续有效。
+旧文档仅保留了正文，迁移为 legacy 版本，无法恢复原件或 PDF 页码。启用视觉解析时，无原件的历史 PDF 需重新上传；关闭视觉解析仍可异步重建历史文字索引，但页码未知。既有 bcrypt 密码继续有效。
 
 ## 启动
 
@@ -36,7 +36,7 @@ Node.js >=22.21.1。API 与 Worker 共用代码、MySQL 和原件目录；Qdrant
     npm run start:dev
     npm run start:worker:dev
 
-生产环境先 npm run build，再分别执行 npm run start:prod 和 npm run start:worker。两进程必须使用相同数据库、模型配置、QUEUE_PREFIX、QDRANT_COLLECTION 和 ORIGINALS_DIR。默认开发脚本监视已编译输出；API 的编译监视会同步更新 Worker 所用代码。
+生产环境先 npm run build，再分别执行 npm run start:prod 和 npm run start:worker。两进程必须使用相同数据库、模型配置、QUEUE_PREFIX、QDRANT_COLLECTION、ORIGINALS_DIR 和 PAGE_ASSETS_DIR。默认开发脚本监视已编译输出；API 的编译监视会同步更新 Worker 所用代码。
 
 | 配置 | 默认值 / 说明 |
 | --- | --- |
@@ -71,7 +71,7 @@ MySQL 默认连接 127.0.0.1:3306/ai_rag，DB_USER、DB_PASSWORD 必填。聊天
 - 删除立即从新请求的检索范围移除，并删除关联摘要、闪卡及导图；后台等待保留窗口和进行中写任务结束后清理原件、片段和向量。历史聊天引用保留原文快照。删除库后原会话只读。
 - 新旧索引按用户、知识库、生效 revision 过滤后检索；小规模知识库使用 MySQL 返回的 revision 集合，不宣称适用于无限规模。
 - collection 名称包含模型、revision、维度、pooling 等配置指纹；配置不匹配的任务不会发布。更换 Embedding 模型需单独迁移全部向量，不属于本次升级。
-- 扫描 PDF 无 OCR，解析任务明确失败。片段位置基于 PDF 提取文本或 Markdown 正文，未实现 PDF 坐标高亮。
+- PDF 默认逐页调用视觉模型，补充扫描文字、表格与图解；需配置服务端 VISION_API_KEY 或 CHAT_API_KEY。问答命中视觉块时最多附三张原图核对，引用支持鉴权原图预览。详见 [PDF 视觉解析指南](../docs/pdf-vision.md)。片段位置仍基于增强后的正文，未实现 PDF 坐标高亮。
 
 ## 接口与前端
 

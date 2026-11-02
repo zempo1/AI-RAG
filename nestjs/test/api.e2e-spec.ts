@@ -11,7 +11,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { QaTasksService } from '../src/modules/tasks/qa-tasks.service';
 import { SummaryService } from '../src/modules/rag/summary.service';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { Store } from '../src/persistence/store';
+import { PageAssetsService } from '../src/modules/documents/page-assets.service';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IndexingService } from '../src/modules/documents/indexing.service';
@@ -36,6 +38,7 @@ describe('existing Vue API contract', () => {
     directory = await mkdtemp(join(tmpdir(), 'rag-api-e2e-'));
     process.env.UPLOAD_TEMP_DIR = join(directory, 'chunks');
     process.env.ORIGINALS_DIR = join(directory, 'originals');
+    process.env.PAGE_ASSETS_DIR = join(directory, 'pages');
     const { AppModule } = await import('../src/app.module');
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(TaskQueueRuntime)
@@ -594,5 +597,26 @@ describe('existing Vue API contract', () => {
     const answer = history.messages.find((m: any) => m.role === 'assistant');
     expect(answer.retrievalRunId).toBe(done.retrievalRunId);
     expect(answer.diagnostics.runId).toBe(done.retrievalRunId);
+  });
+
+  it('serves page images as authenticated binary responses and rejects deleted or foreign sources', async () => {
+    const uploaded = (await request(app.getHttpServer()).post('/api/upload').set(auth())
+      .attach('file', Buffer.from('页面测试正文'), 'page.md').expect(202)).body.data;
+    await app.get(IndexingService).process(uploaded.taskId);
+    const store = app.get(Store), document = (await store.get('documents', uploaded.documentId))!;
+    const owner = document.userId, versionId = document.activeVersionId, profile = 'a'.repeat(64);
+    const dir = app.get(PageAssetsService).directory({ userId: owner, documentId: document.id, versionId }, profile);
+    await mkdir(dir, { recursive: true });
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jvJkAAAAASUVORK5CYII=', 'base64');
+    await writeFile(join(dir, '1.png'), png);
+    const url = `/api/documents/${document.id}/versions/${versionId}/pages/1/image?profile=${profile}`;
+    const image = await request(app.getHttpServer()).get(url).set(auth()).expect(200).expect('Content-Type', /image\/png/);
+    expect(image.body).toEqual(png);
+    expect(image.headers['cache-control']).toBe('private, no-store');
+    await request(app.getHttpServer()).get(url).expect(401);
+    await request(app.getHttpServer()).get(url).set('Authorization', 'Bearer ' + other).expect(404);
+    await request(app.getHttpServer()).get(url.replace(profile, '..%2Foutside')).set(auth()).expect(400);
+    await store.save('documents', { id: document.id, deletedAt: 'deleted' });
+    await request(app.getHttpServer()).get(url).set(auth()).expect(404);
   });
 });

@@ -201,7 +201,7 @@
           {{
             selectedCitation.location?.paragraph
               ? "第 " + selectedCitation.location.paragraph + " 段"
-              : "历史片段，位置未知"
+              : selectedCitation.location?.pageImage ? "图片与图表内容" : selectedCitation.location?.page ? "本页文字" : "历史片段，位置未知"
           }}
           {{
             selectedCitation.location?.heading
@@ -221,7 +221,11 @@
           type="info"
           :closable="false"
         />
+        <p v-if="selectedCitation.location?.contentType" class="source-location">
+          {{ ({ native: '原生文字', ocr: '图片文字识别', table: '表格识别', figure: '模型生成的图解，请结合原图核对' })[selectedCitation.location.contentType] }}
+        </p>
         <pre class="source-text">{{ selectedCitation.text }}</pre>
+        <SourcePagePreview :source="selectedCitation" />
       </template>
     </el-drawer>
   </div>
@@ -242,6 +246,7 @@ import { getTask, type ProcessingTask } from "../../api/knowledge-bases";
 import QuestionSources from "./QuestionSources.vue";
 import GenerationStatus from "./GenerationStatus.vue";
 import RetrievalDebug from "./RetrievalDebug.vue";
+import SourcePagePreview from "./SourcePagePreview.vue";
 import { useToast } from "../../composables/useToast";
 import type { Citation } from "../../api/knowledge-bases";
 

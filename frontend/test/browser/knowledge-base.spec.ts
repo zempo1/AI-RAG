@@ -1,5 +1,29 @@
 import { test, expect, type Page } from "@playwright/test";
 
+test('first upload completes without navigation with a cold dependency cache', async ({ page }) => {
+  test.setTimeout(90000);
+  const { createServer } = await import('vite');
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cache = await mkdtemp(join(tmpdir(), 'rag-cold-vite-'));
+  const server = await createServer({ cacheDir: cache, server: { host: '127.0.0.1', port: 0, strictPort: false } });
+  try {
+    await server.listen();
+    const port = (server.httpServer!.address() as { port: number }).port;
+    const state = await fixture(page, false, false, `http://127.0.0.1:${port}`);
+    let navigations = 0;
+    page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations++; });
+    await page.getByRole('button', { name: '管理文档', exact: true }).click();
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: '上传文档', exact: true }).click();
+    await (await chooser).setFiles({ name: 'first.md', mimeType: 'text/markdown', buffer: Buffer.from('首次上传内容') });
+    await expect.poll(() => state.replacement, { timeout: 15000 }).toBe(true);
+    await expect(page.getByRole('button', { name: '上传文档', exact: true })).toBeEnabled();
+    expect(navigations).toBe(0);
+  } finally { await server.close(); await rm(cache, { recursive: true, force: true }); }
+});
+
 test("chat source selection and mode are sent independently from the workbench", async ({
   page,
 }) => {
@@ -271,7 +295,7 @@ test("delayed cleanup shows its reason, does not poll categories, and cannot be 
   ).toHaveCount(0);
 });
 
-async function fixture(page: Page, interrupted = false, historical = false) {
+async function fixture(page: Page, interrupted = false, historical = false, url = '/') {
   page.on("pageerror", (error) =>
     console.error("Browser page error:", error.message),
   );
@@ -459,7 +483,7 @@ async function fixture(page: Page, interrupted = false, historical = false) {
       return body([]);
     },
   );
-  await page.goto("/");
+  await page.goto(url);
   await expect(
     page.getByText("支持通用回答与知识库问答"),
   ).toBeVisible();
@@ -531,7 +555,7 @@ test("uses the same normalized partial answer and citations when the stream fail
   await expect(
     page.locator(".message-row.assistant .markdown-body"),
   ).toHaveText("结论[1]");
-  await expect(page.locator(".citation-list button")).toHaveCount(1);
+  await expect(page.locator(".message-row.assistant .inline-citation")).toHaveCount(1);
 });
 
 test("clears a previous library category before requesting documents from the next library", async ({
@@ -561,6 +585,11 @@ test("refreshes derived artifacts only after a replacement task has actually com
   page,
 }) => {
   const state = await fixture(page);
+  await page.getByRole("button", { name: "管理文档", exact: true }).click();
+  await page.getByRole("button", { name: "用于工作台", exact: true }).click();
+  await page.locator(".el-drawer__close-btn:visible").click();
+  await page.getByText("AI 摘要", { exact: true }).click();
+  await expect.poll(() => state.analysisRequests).toBeGreaterThan(0);
   await page.getByRole("button", { name: "管理文档", exact: true }).click();
   const baseline = state.analysisRequests;
   const file = page.waitForEvent("filechooser");
@@ -1032,4 +1061,38 @@ test('shows lightweight generation status', async ({ page }) => {
   await expect(page.locator('.citation-list')).toHaveCount(0);
   await page.screenshot({ path: 'test-results/generation-waiting.png' });
   await expect(page.locator('.generation-status')).toBeHidden();
+});
+
+test('visual citations load private page images and allow retry without losing recognized text', async ({ page }) => {
+  await fixture(page, false, true);
+  const source = { number: 1, documentId: 1, versionId: 2, knowledgeBaseId: 1, indexRevisionId: 3,
+    chunkId: 4, filename: '图示.pdf', text: '[模型生成的图解]\n申请 → 审核 → 发布', score: 1,
+    location: { page: 2, paragraph: null, heading: null, start: 0, end: 26, contentType: 'figure',
+      pageImage: { versionId: 2, page: 2, profile: 'a'.repeat(64) } } };
+  await page.route('**/api/chats/7', route => route.fulfill({ json: { data: {
+    id: 7, knowledgeBaseId: 1, readOnly: false, pendingTasks: [], messages: [
+      { role: 'user', content: '图中的步骤是什么？' },
+      { role: 'assistant', content: '申请后审核，再发布。[1]', citations: [source], generationStatus: 'completed' },
+    ],
+  } } }));
+  let available = false, authorization = '';
+  await page.route('**/api/documents/1/versions/2/pages/2/image?*', route => {
+    authorization = route.request().headers().authorization;
+    if (!available) return route.fulfill({ status: 503, json: { message: '暂时不可用' } });
+    return route.fulfill({ contentType: 'image/png', body: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jvJkAAAAASUVORK5CYII=', 'base64') });
+  });
+  await page.getByText('历史问答', { exact: true }).click();
+  await page.locator('[data-citation="1"]').first().click();
+  const drawer = page.locator('.citation-drawer');
+  await expect(drawer).toContainText('模型生成的图解，请结合原图核对');
+  await expect(drawer).toContainText('申请 → 审核 → 发布');
+  await expect(drawer).toContainText('页面原图暂不可用');
+  available = true;
+  await drawer.getByRole('button', { name: '重新加载原图' }).click();
+  const image = drawer.getByRole('img', { name: '图示.pdf 第 2 页原图' });
+  await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(1);
+  expect(authorization).toBe('Bearer test-token');
+  await expect(drawer.getByRole('link', { name: '查看完整页面原图（新窗口）' })).toHaveAttribute('href', /^blob:/);
 });

@@ -1,4 +1,12 @@
+export interface PageImageRef {
+  versionId: number;
+  page: number;
+  profile: string;
+}
+export type ContentType = 'native' | 'ocr' | 'table' | 'figure';
 export interface SourceLocation {
+  contentType?: ContentType;
+  pageImage?: PageImageRef;
   page: number | null;
   paragraph: number | null;
   heading: string | null;

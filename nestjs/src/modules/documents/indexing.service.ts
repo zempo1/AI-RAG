@@ -1,7 +1,7 @@
 /** 执行解析、分块、向量化、索引发布及旧版本清理任务。 */
 import { legacyModelProfile, ModelProfile, profileFingerprint } from '../embeddings/model-profile';
 import { TokenizerService } from '../embeddings/tokenizer.service';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { readFile, unlink } from 'node:fs/promises';
 import { join, basename } from 'node:path';
@@ -15,6 +15,7 @@ import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { VectorStore, Segment } from '../vector-store/vector-store.interface';
 import { embeddingFingerprint } from '../vector-store/qdrant-vector-store.service';
 import { TasksService, terminalTask } from '../tasks/tasks.service';
+import { PageAssetsService } from './page-assets.service';
 
 class Superseded extends Error {}
 class DependencyPending extends Error {}
@@ -30,6 +31,7 @@ export class IndexingService {
     private readonly vectors: VectorStore,
     private readonly tasks: TasksService,
     private readonly config: ConfigService,
+    @Optional() private readonly assets?: PageAssetsService,
   ) {}
 
   async process(id: number, attempt = 1, report?: (progress: object) => Promise<void>) {
@@ -178,7 +180,9 @@ export class IndexingService {
     const version = (await this.store.get('versions', revision.versionId))!;
     if (!version) throw new ApiError(400, '文档版本不存在');
     await this.store.save('indexRevisions', { id: revision.id, status: 'building' });
-    await this.progress(task, token, 'parsing', 0, null, report);
+    const parsingStage =
+      /\.pdf$/i.test(version.filename) && this.config.get('VISION_ENABLED') ? 'vision' : 'parsing';
+    await this.progress(task, token, parsingStage, 0, null, report);
     let parsed: ParsedDocument;
     if (version.originalPath) {
       if (basename(version.originalPath) !== version.originalPath)
@@ -186,10 +190,20 @@ export class IndexingService {
       const bytes = await readFile(
         join(this.config.getOrThrow('ORIGINALS_DIR'), version.originalPath),
       );
-      parsed = await this.parser.parseStructured(bytes, version.filename, (done, total) =>
-        this.progress(task, token, 'parsing', done, total, report),
+      parsed = await this.parser.parseStructured(
+        bytes,
+        version.filename,
+        (done, total) => this.progress(task, token, parsingStage, done, total, report),
+        {
+          userId: task.userId,
+          documentId: task.documentId,
+          versionId: version.id,
+          guard: () => this.guard(task, token),
+        },
       );
     } else {
+      if (/\.pdf$/i.test(version.filename) && this.config.get('VISION_ENABLED'))
+        throw new ApiError(400, '历史 PDF 没有保留原件，无法识别图片，请重新上传原 PDF');
       if (!version.content?.trim()) throw new ApiError(400, '历史文档无正文，请重新上传');
       parsed = {
         text: version.content,
@@ -348,6 +362,7 @@ export class IndexingService {
       );
       if (active) throw new DependencyPending('等待文档处理任务终止后清理');
       await this.vectors.removeDocument(task.documentId, task.userId);
+      await this.assets?.removeDocument(task.userId, task.documentId);
       for (const version of await this.store.list('versions', { documentId: task.documentId })) {
         if (version.originalPath) {
           if (basename(version.originalPath) !== version.originalPath)

@@ -8,6 +8,7 @@ describe('real LangChain HTTP adapter against a local OpenAI-compatible server',
   let llm: LlmService;
   let received: { auth?: string; body?: any };
   let failure = false;
+  let stall = false;
   beforeAll(async () => {
     server = createServer(async (req, res) => {
       const buffers: Buffer[] = [];
@@ -16,6 +17,7 @@ describe('real LangChain HTTP adapter against a local OpenAI-compatible server',
         auth: req.headers.authorization,
         body: JSON.parse(Buffer.concat(buffers).toString()),
       };
+      if (stall) return;
       if (failure) {
         res.writeHead(503, { 'Content-Type': 'application/json' });
         res.end(
@@ -79,11 +81,41 @@ describe('real LangChain HTTP adapter against a local OpenAI-compatible server',
     expect(tokens).toEqual(['中文', '答案']);
     expect(received.body.stream).toBe(true);
   });
+  it('sends labelled page images using the independently configured vision model and key', async () => {
+    const vision = new LlmService(new ConfigService({
+      CHAT_API_KEY: 'text-key', CHAT_MODEL: 'text-model',
+      CHAT_BASE_URL: 'http://127.0.0.1:1/v1',
+      VISION_API_KEY: 'vision-key', VISION_MODEL: 'qwen3.8-flash',
+      VISION_BASE_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
+    }));
+    const images = [{ dataUrl: 'data:image/png;base64,aGVsbG8=', label: '[1] 第2页' }];
+    expect(await (vision.complete as any)('检查原图', undefined, images)).toBe('模型答案');
+    expect(received.auth).toBe('Bearer vision-key');
+    expect(received.body.model).toBe('qwen3.8-flash');
+    expect(received.body.messages[0].content).toContainEqual({
+      type: 'image_url', image_url: { url: 'data:image/png;base64,aGVsbG8=' },
+    });
+    const tokens: string[] = [];
+    for await (const token of (vision.stream as any)('检查原图', undefined, undefined, images)) tokens.push(token);
+    expect(tokens.join('')).toBe('中文答案');
+    expect(received.body.model).toBe('qwen3.8-flash');
+  });
   it('surfaces provider failures and missing keys', async () => {
     failure = true;
     await expect(llm.complete('失败')).rejects.toThrow('provider unavailable');
     failure = false;
     const missing = new LlmService(new ConfigService({}));
     await expect(missing.complete('问题')).rejects.toThrow('CHAT_API_KEY');
+  });
+  it('bounds vision requests with the configured timeout', async () => {
+    stall = true;
+    try {
+      const bounded = new LlmService(new ConfigService({ VISION_API_KEY: 'test',
+        VISION_BASE_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`, VISION_TIMEOUT_MS: 50 }));
+      const started = Date.now();
+      await expect(bounded.complete('检查原图', undefined, [{ label: '第1页', dataUrl: 'data:image/png;base64,aA==' }]))
+        .rejects.toThrow();
+      expect(Date.now() - started).toBeLessThan(2000);
+    } finally { stall = false; }
   });
 });

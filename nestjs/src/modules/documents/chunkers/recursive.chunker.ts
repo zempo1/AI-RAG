@@ -19,6 +19,8 @@ export class RecursiveChunker {
         previous &&
         previous.location.page === block.location.page &&
         previous.location.heading === block.location.heading &&
+        previous.location.contentType === block.location.contentType &&
+        previous.location.pageImage?.profile === block.location.pageImage?.profile &&
         block.location.start >= previous.location.end
       ) {
         previous.location.end = block.location.end;

@@ -8,6 +8,7 @@ import {
   Post,
   Put,
   Query,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -19,6 +20,8 @@ import { DocumentUpdateDto } from '../knowledge-bases/dto/knowledge-base.dto';
 import { UserId } from '../auth/auth.guard';
 import { IdPipe } from '../../common/pipes/id.pipe';
 import { ApiError } from '../../common/api-error';
+import type { Response } from 'express';
+import { PageAssetsService } from './page-assets.service';
 
 const upload = FileInterceptor('file', {
   limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 12 },
@@ -29,6 +32,7 @@ export class DocumentsController {
   constructor(
     private readonly documents: DocumentsService,
     private readonly chunks: ChunkUploadService,
+    private readonly assets: PageAssetsService,
   ) {}
 
   @Post('upload')
@@ -61,6 +65,22 @@ export class DocumentsController {
   @Get('documents')
   list(@UserId() user: number) {
     return this.documents.list(user);
+  }
+
+  @Get('documents/:id/versions/:versionId/pages/:page/image')
+  async pageImage(
+    @Param('id', IdPipe) id: number,
+    @Param('versionId', IdPipe) versionId: number,
+    @Param('page', IdPipe) page: number,
+    @Query('profile') profile: string,
+    @UserId() user: number,
+    @Res() response: Response,
+  ) {
+    const bytes = await this.assets.image(user, id, { versionId, page, profile });
+    response.setHeader('Content-Type', 'image/png');
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.send(bytes);
   }
 
   @Get('documents/:id')

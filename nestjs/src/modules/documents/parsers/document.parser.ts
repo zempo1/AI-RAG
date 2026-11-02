@@ -1,10 +1,12 @@
 /** 从 PDF 文本层或 UTF-8 Markdown 提取带位置的文本块。 */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ApiError } from '../../../common/api-error';
 import { ParsedDocument, paragraphBlocks } from './parsed-document';
+import { PdfVisualService, ParseContext } from './pdf-visual.service';
 
 @Injectable()
 export class DocumentParser {
+  constructor(@Optional() private readonly visual?: PdfVisualService) {}
   validateFilename(filename: string): void {
     if (
       !filename ||
@@ -23,6 +25,7 @@ export class DocumentParser {
     bytes: Buffer,
     filename: string,
     progress?: (done: number, total: number) => void | Promise<void>,
+    context?: ParseContext,
   ): Promise<ParsedDocument> {
     this.validateFilename(filename);
     if (!bytes.length) throw new ApiError(400, '文件不能为空');
@@ -45,7 +48,7 @@ export class DocumentParser {
         const pages: string[] = [];
         for (let i = 1; i <= document.numPages; i++) {
           const page = await document.getPage(i);
-          // 只读取 PDF 文本层，不会识别图片；扫描页需要另接 OCR 才能进入检索。
+          // 保留原生文字，再逐页补充图片、扫描文字和图解。
           const content = await page.getTextContent();
           let previous: any;
           let pageText = '';
@@ -63,7 +66,42 @@ export class DocumentParser {
           }
           // 记录页码和全局文本偏移，后续切块与引用都能追溯到原文位置。
           const offset = pages.reduce((sum, p) => sum + p.length + 1, 0);
-          blocks.push(...paragraphBlocks(pageText, i, offset));
+          blocks.push(
+            ...paragraphBlocks(pageText, i, offset).map((b) => ({
+              ...b,
+              location: { ...b.location, contentType: 'native' as const },
+            })),
+          );
+          if (context && this.visual?.enabled) {
+            try {
+              const result = await this.visual.page(document, page, pageText, context);
+              for (const supplement of result.blocks) {
+                const labels = { ocr: '图片文字识别', table: '表格识别', figure: '模型生成的图解' };
+                const value = `[${labels[supplement.type]}]\n${supplement.text}`;
+                const separator = pageText ? '\n\n' : '';
+                const start = offset + pageText.length + separator.length;
+                blocks.push({
+                  text: value,
+                  location: {
+                    page: i,
+                    paragraph: null,
+                    heading: null,
+                    start,
+                    end: start + value.length,
+                    contentType: supplement.type,
+                    pageImage: result.image,
+                  },
+                });
+                pageText += separator + value;
+              }
+            } catch (error) {
+              // 保留取消/取代任务的错误类型，供索引执行器正确终止。
+              if (error instanceof Error)
+                error.message = `PDF 第${i}页视觉解析失败：${error.message}`;
+              progressError = error;
+              throw error;
+            }
+          }
           pages.push(pageText);
           page.cleanup();
           try {
@@ -83,7 +121,10 @@ export class DocumentParser {
         if (task) await task.destroy();
       }
       if (!text.trim())
-        throw new ApiError(400, 'PDF 中未提取到文字；扫描件需要 OCR，本项目不提供 OCR');
+        throw new ApiError(
+          400,
+          'PDF 中未提取到有效内容；扫描件请配置并启用视觉解析（OCR/图表）后重建索引',
+        );
     } else {
       try {
         text = new TextDecoder('utf-8', { fatal: true }).decode(bytes).replace(/\r\n?/g, '\n');

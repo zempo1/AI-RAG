@@ -10,9 +10,12 @@ import { KnowledgeBasesModule } from '../knowledge-bases/knowledge-bases.module'
 import { TasksModule } from '../tasks/tasks.module';
 import { IndexingService } from './indexing.service';
 import { KnowledgeBasesController } from '../knowledge-bases/knowledge-bases.controller';
+import { LlmModule } from '../llm/llm.module';
+import { PageAssetsService } from './page-assets.service';
+import { PdfVisualService } from './parsers/pdf-visual.service';
 
 @Module({
-  imports: [EmbeddingsModule, VectorStoreModule, KnowledgeBasesModule, TasksModule],
+  imports: [EmbeddingsModule, VectorStoreModule, KnowledgeBasesModule, TasksModule, LlmModule],
   controllers: [DocumentsController, KnowledgeBasesController],
   providers: [
     DocumentsService,
@@ -20,7 +23,9 @@ import { KnowledgeBasesController } from '../knowledge-bases/knowledge-bases.con
     RecursiveChunker,
     ChunkUploadService,
     IndexingService,
+    PageAssetsService,
+    PdfVisualService,
   ],
-  exports: [DocumentsService, IndexingService],
+  exports: [DocumentsService, IndexingService, PageAssetsService],
 })
 export class DocumentsModule {}

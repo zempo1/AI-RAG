@@ -15,8 +15,9 @@ describe('asynchronous activation reuse', () => {
       await p.cleanup();
     }
   });
-  it('coalesces concurrent legacy activations into one task and preserves unknown page numbers', async () => {
+  it('coalesces legacy activations and preserves unknown page numbers when vision is disabled', async () => {
     const p = await pipeline();
+    p.config.set('VISION_ENABLED', false);
     try {
       const legacy = await p.store.save('documents', {
         userId: 1,

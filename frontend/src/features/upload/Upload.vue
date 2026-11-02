@@ -441,6 +441,7 @@ let pendingActivation: { documentId: number; taskId: number } | null = null,
 const stageLabels: Record<string, string> = {
   queued: "排队中",
   parsing: "解析中",
+  vision: "识别页面文字与图表",
   chunking: "切分中",
   embedding: "向量化中",
   indexing: "写入索引",
