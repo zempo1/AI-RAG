@@ -1,3 +1,4 @@
+/** 实现业务处理；所属能力：文档上传、版本管理、解析、分块、建立索引及删除清理。 */
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'node:crypto';
@@ -61,6 +62,7 @@ export class DocumentsService {
       throw new ApiError(400, '替换文档不属于该知识库');
     const root = this.config.getOrThrow<string>('ORIGINALS_DIR');
     await mkdir(root, { recursive: true });
+    // 原件用服务端随机文件名保存，用户文件名只作为元数据，避免路径冲突。
     const originalPath = randomUUID() + (filename.toLowerCase().endsWith('.pdf') ? '.pdf' : '.md');
     await writeFile(join(root, originalPath), bytes, { flag: 'wx' });
     const sha256 = createHash('sha256').update(bytes).digest('hex');
@@ -73,6 +75,7 @@ export class DocumentsService {
               .update([userId, kb.id, options.documentId || 0, options.idempotencyKey].join('/'))
               .digest('hex')
           : null;
+        // 同一次上传的重复提交返回原任务；同标识对应不同内容时拒绝，防止误复用。
         if (key) {
           const previous = (await tx.list('tasks', { idempotencyKey: key }))[0];
           if (previous && !(await tx.get('documents', previous.documentId))?.deletedAt) {
@@ -106,6 +109,7 @@ export class DocumentsService {
             status: 'queued',
             deletedAt: null,
           });
+        // 接收上传时只保存版本并创建任务；解析和向量化由后台执行，避免请求长时间阻塞。
         const version = await tx.save('versions', {
           documentId: doc.id,
           filename,
@@ -119,6 +123,7 @@ export class DocumentsService {
         return this.accepted(doc, task.id);
       });
     } finally {
+      // 事务失败或命中已有提交时，新写出的原件没有被引用，需要清除。
       if (!used) await unlink(join(root, originalPath)).catch(() => undefined);
     }
   }
@@ -181,6 +186,7 @@ export class DocumentsService {
       kind: 'index',
       idempotencyKey,
     });
+    // 同一文档以最新目标索引为准；取消未完成的旧构建，防止旧结果晚到后覆盖新版本。
     for (const previous of await tx.list('tasks', { documentId: doc.id })) {
       if (previous.id !== task.id && previous.kind === 'index' && !terminalTask(previous.status))
         await tx.save('tasks', {

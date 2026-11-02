@@ -1,3 +1,4 @@
+/** 实现业务处理；所属能力：用户注册、登录、JWT 身份认证和账号资料管理。 */
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcryptjs';
@@ -21,6 +22,7 @@ export class AuthService {
   }
 
   async register(username: string, password: string) {
+    // 密码仅保存 bcrypt 哈希；登录用 compare 校验，不能通过数据库记录还原明文。
     if (await this.users.findOneBy({ username }))
       throw new ApiError(500, 'Registration failed: Username already exists');
     try {
@@ -55,6 +57,7 @@ export class AuthService {
     if (newUsername.trim().length < 2 || newUsername.length > 20)
       throw new ApiError(400, '用户名长度需要在2-20个字符之间');
     const taken = await this.users.findOneBy({ username: newUsername });
+    // 预检查改善错误提示；并发修改仍可能竞争，后面的数据库唯一约束异常也需处理。
     if (taken && taken.id !== userId) throw new ApiError(400, '用户名已被使用');
     try {
       await this.users.update(userId, { username: newUsername });

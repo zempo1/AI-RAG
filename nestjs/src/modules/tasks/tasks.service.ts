@@ -1,3 +1,4 @@
+/** 实现业务处理；所属能力：后台任务状态、队列调度、重试、索引及问答任务执行。 */
 import { Injectable } from '@nestjs/common';
 import { Store, Row, now } from '../../persistence/store';
 import { ApiError } from '../../common/api-error';
@@ -14,6 +15,7 @@ export class TasksService {
   ) {}
 
   private present(row: Row): Row {
+    // 对外隐藏执行令牌、幂等键；问答任务只返回展示所需字段，避免暴露加密凭据和证据快照。
     const { executionToken, idempotencyKey, ...result } = row;
     const raw = row.payload?.notBefore;
     const waitingUntil = raw ? (/[zZ]|[+-]\d\d:\d\d$/.test(raw) ? raw : raw + 'Z') : null;
@@ -189,6 +191,7 @@ export class TasksService {
   }
 
   private reset(tx: Store, task: Row) {
+    // 手动重试递增投递代数，让队列将其识别为新一轮执行，而非复用已失败的 job。
     return tx.save('tasks', {
       id: task.id,
       status: 'queued',
@@ -214,6 +217,7 @@ export class TasksService {
       if (!parent || parent.status === 'canceled') return;
       const children = await tx.list('tasks', { parentTaskId: parentId });
       const done = children.filter((c) => terminalTask(c.status)).length;
+      // 父重建任务本身不执行索引，根据所有子任务汇总进度与完整/部分失败状态。
       const failed = children.filter((c) => c.status === 'failed').length;
       const complete = done === children.length;
       const status = complete

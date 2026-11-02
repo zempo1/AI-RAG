@@ -1,3 +1,4 @@
+/** 实现业务处理；所属能力：生成并管理文档摘要、大纲和学习卡片等分析结果。 */
 import { Injectable } from '@nestjs/common';
 import { DocumentsService } from '../documents/documents.service';
 import { LlmService } from '../llm/llm.service';
@@ -16,10 +17,12 @@ export class AnalysisService {
   async generate(documentId: number, type: string, userId: number, apiKey?: string) {
     const doc = await this.documents.ready(documentId, userId);
     const result = (
+      // 当前工作台分析只使用正文前 20000 字符；完整长文问答走 RAG 的后台摘要流程。
       await this.llm.complete(analysisPrompt(type, doc.content.slice(0, 20000)), apiKey)
     ).trim();
     if (!result) throw new ApiError(500, '模型返回空内容');
     if (type === 'FLASHCARD') {
+      // 闪卡前端依赖结构化问答数组，保存前同时校验 JSON 语法和 q/a 字段。
       let cards: any;
       try {
         cards = JSON.parse(result);
@@ -36,6 +39,7 @@ export class AnalysisService {
     return publicRow(
       await this.store.transaction(async (tx) => {
         const kb = await tx.lock('knowledgeBases', doc.knowledgeBaseId);
+        // 模型生成期间文档可能被删除，落库前需重新确认来源仍存在且属于当前用户。
         const source = await tx.lock('documents', documentId);
         if (!kb || kb.deletedAt || !source || source.userId !== userId || source.deletedAt)
           throw new ApiError(500, 'Document not found: ' + documentId);

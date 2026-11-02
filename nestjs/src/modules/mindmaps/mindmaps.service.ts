@@ -1,3 +1,4 @@
+/** 实现业务处理；所属能力：生成、保存和更新思维导图。 */
 import { Injectable } from '@nestjs/common';
 import { DocumentsService } from '../documents/documents.service';
 import { LlmService } from '../llm/llm.service';

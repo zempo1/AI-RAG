@@ -1,3 +1,4 @@
+/** 实现业务处理；所属能力：知识库、分类、文档范围和所属用户校验。 */
 import { Injectable } from '@nestjs/common';
 import { Store, Row } from '../../persistence/store';
 import { ApiError } from '../../common/api-error';

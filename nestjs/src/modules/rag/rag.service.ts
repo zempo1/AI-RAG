@@ -1,3 +1,4 @@
+/** 编排问题路由、文档范围、检索、证据预算和提示词。 */
 import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
@@ -63,6 +64,7 @@ export class RagService {
     knowledgeBaseId?: number,
     options: RetrievalOptions = {},
   ): Promise<RetrievalResult> {
+    // 此方法准备证据和提示词；最终生成回答由 chat/llm 负责。
     const started = Date.now();
     const strategy = this.config?.get<string>('RAG_RETRIEVAL_STRATEGY') || 'hybrid-rerank';
     const kb = await this.libraries.resolve(userId, knowledgeBaseId);
@@ -79,6 +81,7 @@ export class RagService {
     if (['你好', '您好', '嗨', 'hello', 'hi', '早上好', '晚上好', '谢谢', '感谢', '再见'].includes(greeting))
       return general(/谢谢|感谢/.test(greeting) ? '不客气！还有什么可以帮你？' : greeting === '再见' ? '再见，随时可以继续提问。' : '你好！你可以直接向我提问，也可以让我帮你分析知识库中的文档。');
     if (options.mode === 'general') return general();
+    // 仅使用当前用户、当前知识库中已发布的索引，避免检索到其他用户或构建中的版本。
     const docs = (await this.store.list('documents', { userId, knowledgeBaseId: kb.id })).filter(
       (d) => !d.deletedAt && d.activeIndexRevisionId,
     );
@@ -111,6 +114,7 @@ export class RagService {
         Number(this.config?.get('RAG_HISTORY_TOKENS') || 2048)
     )
       history.shift();
+    // 先准备规则路由，辅助模型不可用或返回非法规划时仍可继续检索。
     const fallbackMode =
       options.mode && options.mode !== 'auto'
         ? options.mode
@@ -122,6 +126,7 @@ export class RagService {
     let mode = fallbackMode;
     let query = question;
     let clarification: string | undefined;
+    // 问题明确提到文件名时优先缩小范围，避免自动规划扩展到其他文件。
     const named = selected.filter((d) => question.includes(d.filename));
     if (named.length) selected = named;
     const originalSelection = selected;
@@ -197,6 +202,7 @@ export class RagService {
         .sort((a, b) => a.chunkIndex - b.chunkIndex);
       chunks.push(...rows);
     }
+    // 建立片段和文档映射，用于核验向量命中确实属于本次授权范围。
     const byChunk = new Map(chunks.map((c) => [c.id, c]));
     const byDoc = new Map(selected.map((d) => [d.id, d]));
     const citation = (chunk: Row, score: number): Citation =>
@@ -218,6 +224,7 @@ export class RagService {
         vector: Scored[] = [];
       let lexFailed = false,
         vecFailed = false;
+      // 两路检索互相补充；一路不可用时保留另一路结果，并将降级原因写入诊断。
       const outcomes = await Promise.allSettled([
         Promise.resolve().then(() => {
           const indexes: LexicalIndex[] = [];
@@ -280,6 +287,7 @@ export class RagService {
       if (vecFailed) diagnostics.degraded.push('vector_failed');
       diagnostics.candidates.lexical = lexical;
       diagnostics.candidates.vector = vector;
+      // 混合检索通过排名融合合并结果，避免直接相加两种不可比的原始分数。
       candidates = strategy === 'vector' ? vector.slice(0, 5) : fuse(vector, lexical).slice(0, 50);
       diagnostics.strategy = strategy;
       diagnostics.candidates.fused = candidates;
@@ -315,6 +323,7 @@ export class RagService {
     if (mode === 'overview') chunks.forEach((c) => add(c, 0));
     else {
       let chosen = candidates.slice(0, 8);
+      // 比较多个文档时先为各文档选一个候选，避免结果全被单份文档占满。
       if (mode === 'compare') {
         const firstByDoc = selected
           .map((d) => candidates.find((c) => byChunk.get(c.id)?.documentId === d.id))
@@ -331,6 +340,7 @@ export class RagService {
           continue;
         }
         const meta = chunk.retrievalMetadata;
+        // 子块命中后优先补充父块；旧片段无父块信息时补相邻片段，降低上下文缺失。
         if (meta?.parentId) {
           const parent = chunks.filter(
             (c) =>
@@ -376,12 +386,14 @@ export class RagService {
           ),
     );
     const renumber = (s: Citation[]) => s.map((c, i) => ({ ...c, number: i + 1 }));
+    // 证据预算还要扣除问题、历史、系统提示和输出空间，防止超过模型上下文。
     const budget = Number(this.config?.get('RAG_EVIDENCE_TOKENS') || 8000),
       window = Number(this.config?.get('CHAT_CONTEXT_TOKENS') || 32768),
       reserved = Number(this.config?.get('CHAT_OUTPUT_TOKENS') || 4096) + 512;
     const baseTokens = await this.count(this.promptFor(question, history, [], mode));
     const available = Math.max(0, Math.min(budget, window - reserved - baseTokens));
     const totalEvidence = await this.count(this.context(renumber(evidence)));
+    // 全文概览不能悄悄截断资料：证据放不进上下文时，交给后台任务分组摘要。
     const requiresAsync = mode === 'overview' && totalEvidence > available && !clarification;
     const snapshot: EvidenceSnapshot = {
       userId,
@@ -434,6 +446,7 @@ export class RagService {
         '部分目标文档缺少足够证据或超出上下文预算，无法完整比较；请缩小比较范围或指定章节。';
     diagnostics.timings.totalMs = Date.now() - started;
     options.onProgress?.('organizing');
+    // 保存候选、预算与最终证据，供前端“查看检索过程”排查漏检或降级。
     const run = await this.store.save('retrievalRuns', {
       userId,
       knowledgeBaseId: kb.id,

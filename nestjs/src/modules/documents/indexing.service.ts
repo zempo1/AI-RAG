@@ -1,3 +1,4 @@
+/** 执行解析、分块、向量化、索引发布及旧版本清理任务。 */
 import { legacyModelProfile, ModelProfile, profileFingerprint } from '../embeddings/model-profile';
 import { TokenizerService } from '../embeddings/tokenizer.service';
 import { Injectable } from '@nestjs/common';
@@ -43,6 +44,7 @@ export class IndexingService {
       await this.tasks.refreshParent(task.parentTaskId);
       return;
     }
+    // 每次执行领取独立令牌；后续写状态前核对令牌，防止旧 Worker 覆盖新执行结果。
     const token = randomUUID();
     try {
       await this.store.transaction(async (tx) => {
@@ -78,6 +80,7 @@ export class IndexingService {
         return 'waiting' as const;
       }
       const canceled = error instanceof Superseded;
+      // 参数或文档本身的问题无需自动重试；临时故障最多尝试三次。
       const fatal = error instanceof ApiError && error.getStatus() < 500;
       await this.store.transaction(async (tx) => {
         await tx.lock('knowledgeBases', task!.knowledgeBaseId);
@@ -129,6 +132,7 @@ export class IndexingService {
     }
   }
 
+  // 统一检查文档是否删除、目标版本是否变更、任务是否取消；耗时步骤之间也要检查。
   private async guard(task: Row, token?: string, tx = this.store) {
     const doc = await tx.get('documents', task.documentId);
     const kb = await tx.get('knowledgeBases', task.knowledgeBaseId);
@@ -196,6 +200,7 @@ export class IndexingService {
       };
       await this.progress(task, token, 'parsing', 1, 1, report);
     }
+    // 新索引按模型 token 上限分块；历史索引保留旧分块方式以兼容既有数据。
     const blocks = revision.modelProfile
       ? await this.chunker.splitTokenStructured(parsed, new TokenizerService(this.config), profile)
       : this.chunker.splitStructured(parsed);
@@ -207,6 +212,7 @@ export class IndexingService {
       await tx.lock('tasks', task.id);
       const doc = await this.guard(task, token, tx);
       await tx.save('versions', { id: version.id, content: parsed.text });
+      // 重试时按片段序号复用已有记录，避免同一索引生成重复片段。
       const existing = new Map(
         (await tx.list('chunks', { indexRevisionId: revision.id })).map((c) => [c.chunkIndex, c]),
       );
@@ -234,6 +240,7 @@ export class IndexingService {
       }
       return segments;
     });
+    // 分批生成并写入向量，控制模型调用规模；每批更新进度并核对任务仍有效。
     for (let offset = 0; offset < segments.length; offset += 16) {
       await this.progress(task, token, 'embedding', offset, segments.length, report);
       const batch = segments.slice(offset, offset + 16);
@@ -250,6 +257,7 @@ export class IndexingService {
       await this.vectors.addAll(vectors, batch, profile);
       await this.progress(task, token, 'indexing', offset + batch.length, segments.length, report);
       if (offset + batch.length === segments.length) {
+        // 发布前实际查询一次新索引，避免数据库显示就绪但向量尚不可检索。
         const check = await this.vectors.search(vectors[0], 1, 0, {
           userId: task.userId,
           knowledgeBaseId: task.knowledgeBaseId,
@@ -264,6 +272,7 @@ export class IndexingService {
       await tx.lock('documents', task.documentId);
       await tx.lock('tasks', task.id);
       const doc = await this.guard(task, token, tx);
+      // 新版本可查询后才切换生效指针；旧版本延迟清理，为已经开始的问答保留证据。
       if (doc.activeIndexRevisionId && doc.activeIndexRevisionId !== revision.id) {
         await tx.save('indexRevisions', {
           id: doc.activeIndexRevisionId,
@@ -306,6 +315,7 @@ export class IndexingService {
     });
   }
 
+  // 清理必须等待保留期和写入任务结束，否则可能删掉正在使用或刚写入的索引。
   private async cleanup(task: Row, token: string) {
     if (task.payload?.notBefore && wallTime(task.payload.notBefore) > wallTime(now()))
       throw new DependencyPending('索引仍在请求快照保留窗口');

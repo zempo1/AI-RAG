@@ -36,6 +36,7 @@ export class ChatController {
     if (!body.question?.trim()) throw new ApiError(400, 'Question is required.');
     const fingerprint = this.fingerprint(body),
       requestId = body.requestId || randomUUID();
+    // 后台问答通过请求标识和内容指纹去重；重发请求直接返回原任务。
     const existing = body.requestId ? await this.qa.lookup(user, requestId, fingerprint) : null;
     if (existing) return { accepted: existing };
     const chat =
@@ -54,6 +55,7 @@ export class ChatController {
       apiKey,
       onProgress,
     });
+    // 全文证据超出上下文时转为后台任务，HTTP/SSE 返回受理信息，前端随后轮询。
     if (context.requiresAsync) {
       const accepted = await this.qa.enqueue(
         user,
@@ -136,6 +138,7 @@ export class ChatController {
       res.end();
       return;
     }
+    // 把客户端断开与模型取消信号关联，停止继续向已断开的连接生成内容。
     const abort = new AbortController();
     const closed = () => abort.abort(new Error('Client disconnected'));
     res.on('close', closed);

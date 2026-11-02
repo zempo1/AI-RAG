@@ -1,3 +1,4 @@
+/** 按配置统计或估算模型输入的 token 数量。 */
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { existsSync } from 'node:fs';

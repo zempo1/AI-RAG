@@ -1,3 +1,4 @@
+/** 调用辅助模型规划查询并对检索候选重排。 */
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiError } from '../../common/api-error';
@@ -46,6 +47,7 @@ export class QualityModelsService {
       ],
     });
     const text = response.choices?.[0]?.message?.content;
+    // 模型生成的 JSON 也必须校验结构；具体文档 ID 的权限还会由 RagService 再核对。
     const plan = JSON.parse(text);
     if (
       (plan.route !== undefined && !['general', 'document'].includes(plan.route)) ||
@@ -89,6 +91,7 @@ export class QualityModelsService {
     const rows = response.output?.results || response.results;
     if (!Array.isArray(rows) || (texts.length > 0 && rows.length === 0))
       throw new Error('Invalid rerank response');
+    // 重排结果通过原候选下标回填，拒绝重复、越界和非法分数，避免引用错位。
     const seen = new Set<number>();
     return rows
       .map((r: any) => {

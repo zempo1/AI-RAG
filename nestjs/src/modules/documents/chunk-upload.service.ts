@@ -1,3 +1,4 @@
+/** 接收分片、检查上传状态并合并原始文件。 */
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'node:crypto';
@@ -36,6 +37,7 @@ export class ChunkUploadService {
       dto.documentId,
     );
     const session = dto.uploadId || dto.md5.toLowerCase();
+    // 上传目录同时绑定用户、知识库、目标文档及文件指纹，隔离不同上传会话。
     const key = createHash('sha256')
       .update(
         JSON.stringify([
@@ -55,6 +57,7 @@ export class ChunkUploadService {
     };
   }
   private async locked<T>(key: string, work: () => Promise<T>): Promise<T> {
+    // 同一进程内，同一上传会话串行读写；前一次失败不会阻塞后续重试。
     const previous = this.locks.get(key) || Promise.resolve();
     const pending = previous.catch(() => undefined).then(work);
     this.locks.set(key, pending);
@@ -104,6 +107,7 @@ export class ChunkUploadService {
         if (error.code !== 'ENOENT') throw error;
         await writeFile(path, JSON.stringify({ totalChunks: dto.totalChunks }));
       }
+      // 先写临时文件再重命名，避免状态检查把尚未写完的分片当成已上传。
       const temporary = join(scope.dir, 'pending_' + randomUUID());
       try {
         await writeFile(temporary, file.buffer, { flag: 'wx' });
@@ -126,6 +130,7 @@ export class ChunkUploadService {
         scope.key,
       );
       if (previous) return previous;
+      // 先检查分片齐全和总大小，再合并，避免缺片或超大文件进入解析流程。
       let total = 0;
       for (let i = 0; i < dto.totalChunks; i++) {
         try {
@@ -144,6 +149,7 @@ export class ChunkUploadService {
         throw new ApiError(400, '分片总数不一致');
       const merged = join(scope.dir, 'merge_' + randomUUID());
       const output = await open(merged, 'wx');
+      // 按序流式拼接并计算整文件指纹，校验顺序与内容；MD5 在这里用于上传完整性检查。
       const hash = createHash('md5');
       try {
         for (let i = 0; i < dto.totalChunks; i++)

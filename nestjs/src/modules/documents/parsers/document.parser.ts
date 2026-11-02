@@ -1,3 +1,4 @@
+/** 从 PDF 文本层或 UTF-8 Markdown 提取带位置的文本块。 */
 import { Injectable } from '@nestjs/common';
 import { ApiError } from '../../../common/api-error';
 import { ParsedDocument, paragraphBlocks } from './parsed-document';
@@ -44,11 +45,13 @@ export class DocumentParser {
         const pages: string[] = [];
         for (let i = 1; i <= document.numPages; i++) {
           const page = await document.getPage(i);
+          // 只读取 PDF 文本层，不会识别图片；扫描页需要另接 OCR 才能进入检索。
           const content = await page.getTextContent();
           let previous: any;
           let pageText = '';
           for (const item of content.items as any[]) {
             if (!('str' in item)) continue;
+            // 根据文字纵向位置推断段落边界，减少 PDF 提取后所有内容粘成一段的问题。
             if (
               previous &&
               Math.abs(previous.transform[5] - item.transform[5]) >
@@ -58,6 +61,7 @@ export class DocumentParser {
             pageText += item.str + (item.hasEOL ? '\n' : '');
             previous = item;
           }
+          // 记录页码和全局文本偏移，后续切块与引用都能追溯到原文位置。
           const offset = pages.reduce((sum, p) => sum + p.length + 1, 0);
           blocks.push(...paragraphBlocks(pageText, i, offset));
           pages.push(pageText);

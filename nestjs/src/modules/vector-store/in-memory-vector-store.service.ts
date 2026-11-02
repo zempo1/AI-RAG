@@ -1,3 +1,4 @@
+/** 实现内存向量存储与相似度检索。 */
 import { Injectable } from '@nestjs/common';
 import { VectorStore, Segment, Match, SearchScope } from './vector-store.interface';
 import { pointId } from './point-id';

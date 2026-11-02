@@ -1,3 +1,4 @@
+/** 对超出上下文预算的证据分组摘要、缓存并合并回答。 */
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
@@ -44,6 +45,7 @@ export class SummaryService {
         Number(this.config.get('CHAT_OUTPUT_TOKENS') || 4096) -
         1024,
     );
+    // 按文档、章节和 token 预算分组，分别总结后再合并，避免一次塞入全文。
     const sections: Citation[][] = [];
     for (const source of snapshot.sources) {
       const previous = sections.at(-1);
@@ -69,6 +71,7 @@ export class SummaryService {
           '\n</原文>';
         if ((await this.count(prompt)) > budget + 512)
           throw new Error('section_exceeds_token_budget');
+        // 缓存绑定版本、模型、问题和原文；文档更新或问题改变后不会误用旧摘要。
         const cacheKey = createHash('sha256')
           .update(
             JSON.stringify([
@@ -132,6 +135,7 @@ export class SummaryService {
     }
     if (!completed.length) throw new Error('所有章节总结失败，请稍后重试');
     let summaries = completed;
+    // 分层压缩章节摘要；最多八层，无法继续缩小时返回部分结果而非无限递归。
     for (let depth = 0; summaries.length > 1 && depth < 8; depth++) {
       const batches: string[][] = [];
       for (const text of summaries) {
@@ -165,6 +169,7 @@ export class SummaryService {
     const candidate = normalizeCitations(summaries.join('\n\n'), snapshot.sources);
     // Summaries are navigation, not evidence. Verify final factual paragraphs against
     // original cited text before publishing; model/verification failures are partial.
+    // 摘要不能替代原始证据；发布前逐段用原文核查，缺引用或核查失败的结论不发布。
     const verified: string[] = [];
     for (const paragraph of candidate.answer.split(/\n\s*\n/)) {
       if (!paragraph.trim()) continue;
@@ -203,6 +208,7 @@ export class SummaryService {
       notice + (verified.join('\n\n') || '未能生成通过原文核查的总结，请缩小范围或按章节提问。'),
       snapshot.sources,
     );
+    // 将覆盖范围和失败章节一起返回，前端能区分完整完成与部分失败。
     const coverage = {
       totalSections: sections.length,
       completedSections: sections.length - failures.filter((f) => f.section > 0).length,

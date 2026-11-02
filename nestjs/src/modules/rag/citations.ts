@@ -1,3 +1,4 @@
+/** 定义引用结构并清除答案中无效的引用编号。 */
 import { SourceLocation } from '../documents/parsers/parsed-document';
 
 export interface Citation {

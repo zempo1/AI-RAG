@@ -1,3 +1,4 @@
+/** 实现业务处理；所属能力：将文本转换为向量，管理模型配置和 token 计数。 */
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -24,6 +25,7 @@ export class EmbeddingsService implements OnModuleDestroy {
   }
 
   private load(): Promise<any> {
+    // 延迟加载并复用模型；加载失败清空 Promise，让下一次请求可以重新尝试。
     if (!this.extractor)
       this.extractor = (async () => {
         const { env, pipeline } = await import('@huggingface/transformers');
@@ -65,6 +67,7 @@ export class EmbeddingsService implements OnModuleDestroy {
       }
       return vectors;
     };
+    // 本地模型推理串行执行以控制资源；失败被吸收后不影响后续请求继续排队。
     const pending = this.queue.then(run, run);
     this.queue = pending.catch(() => undefined);
     return pending;
@@ -78,6 +81,7 @@ export class EmbeddingsService implements OnModuleDestroy {
     if (!texts.length) return [];
     const key = this.config.get<string>('EMBEDDING_API_KEY') || this.config.get<string>('CHAT_API_KEY');
     if (!key) throw new Error('请配置 EMBEDDING_API_KEY 或 CHAT_API_KEY');
+    // 调用前检查输入长度，拒绝静默截断，保证向量代表完整片段。
     const tokenizer = new TokenizerService(this.config);
     for (const text of texts)
       if ((await tokenizer.count(text, profile.tokenizer)) > 8192)
@@ -104,6 +108,7 @@ export class EmbeddingsService implements OnModuleDestroy {
       );
       if (!response.ok) throw new Error('Embedding API HTTP ' + response.status);
       const body: any = await response.json();
+      // 按返回下标恢复输入顺序，再校验维度与数值，防止向量和原文对应错误。
       const rows = [...(body.data || [])].sort((a, b) => a.index - b.index);
       if (
         rows.length !== input.length ||

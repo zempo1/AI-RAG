@@ -1,3 +1,4 @@
+/** 将解析内容切为检索片段并保留上下文元数据。 */
 import { Injectable } from '@nestjs/common';
 import { ParsedBlock, ParsedDocument } from '../parsers/parsed-document';
 import { TokenizerService } from '../../embeddings/tokenizer.service';
@@ -10,6 +11,7 @@ export class RecursiveChunker {
     tokenizer: TokenizerService,
     profile: ModelProfile,
   ) {
+    // 先合并同页、同标题下的顺序段落，保留章节边界，避免跨页混合上下文。
     const groups: ParsedBlock[] = [];
     for (const block of document.blocks) {
       const previous = groups.at(-1);
@@ -25,6 +27,7 @@ export class RecursiveChunker {
     }
     const output: (ParsedBlock & { retrievalMetadata: Record<string, unknown> })[] = [];
     for (const group of groups) {
+      // 父块保留较完整上下文；子块负责精确检索，命中后可展开父块补足语义。
       for (const parent of await tokenizer.windows(group.text, 1536, 0, profile.tokenizer)) {
         const parentStart = group.location.start + parent.start;
         const parentLocation = {
@@ -33,6 +36,7 @@ export class RecursiveChunker {
           end: group.location.start + parent.end,
         };
         const parentId = `${parentLocation.page ?? 'legacy'}:${parentLocation.start}:${parentLocation.end}`;
+        // 子块保留 token 重叠，减少句子在切块边缘被截断而导致漏检。
         for (const child of await tokenizer.windows(parent.text, 384, 64, profile.tokenizer)) {
           if (!child.text.trim()) continue;
           const start = parentStart + child.start,
@@ -40,6 +44,7 @@ export class RecursiveChunker {
           const initialBlock = [...document.blocks]
             .reverse()
             .find((b) => b.location.start <= start && b.location.page === group.location.page);
+          // 将词频随片段保存，构建关键词索引时可直接复用，减少重复分词。
           const terms: Record<string, number> = {};
           const normalized = child.text.normalize('NFKC').toLowerCase();
           const words = [...new Intl.Segmenter('zh', { granularity: 'word' }).segment(normalized)]

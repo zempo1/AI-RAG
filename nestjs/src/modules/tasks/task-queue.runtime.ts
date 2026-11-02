@@ -1,3 +1,4 @@
+/** 以数据库任务为准，将任务 ID 投递到队列并组织消费。 */
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy, Optional } from '@nestjs/common';
 import { QaTasksService } from './qa-tasks.service';
 import { ConfigService } from '@nestjs/config';
@@ -34,6 +35,7 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
         });
         queue.on('error', () => this.logger.warn('Redis 暂不可用，任务保留在 MySQL 等待补投'));
         this.queues.set(name, queue);
+        // API 进程负责接收和投递；独立 Worker 进程负责消费，避免每个 API 实例都执行任务。
         if (process.env.PROCESS_ROLE === 'worker') {
           const worker = new Worker(
             name,
@@ -44,6 +46,7 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
                   job.attemptsMade + 1,
                   (progress) => job.updateProgress(progress),
                 );
+                // 依赖未就绪属于等待而非失败，延迟再处理，不消耗普通错误重试逻辑。
                 if (result === 'waiting') {
                   await job.moveToDelayed(Date.now() + 2000, job.token);
                   throw new DelayedError();
@@ -95,6 +98,7 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
     if (this.busy || this.stopping) return;
     this.busy = true;
     try {
+      // 每轮从数据库补投未完成任务，因此 Redis 短暂不可用不会丢失业务任务记录。
       const pending = (await this.store.list('tasks'))
         .filter(
           (t) =>
@@ -123,6 +127,7 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
             task.kind === 'qa' ? 'qa' : task.kind === 'index' ? 'documents' : 'cleanup',
           );
           if (!queue) continue;
+          // 任务 ID 加投递代数构成队列标识，普通补投可去重，手动重试可创建新一代队列任务。
           const jobId = 'task-' + task.id + '-' + task.dispatchGeneration;
           const existing = await queue.getJob(jobId);
           if (existing) {
@@ -155,6 +160,7 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    // 关闭时先停分发，再等待正在投递的操作，最后关闭消费者和队列连接。
     this.stopping = true;
     if (this.timer) clearInterval(this.timer);
     await this.activeDispatch;

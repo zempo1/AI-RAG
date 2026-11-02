@@ -1,3 +1,4 @@
+/** 实现业务处理；所属能力：会话与消息历史保存、读取及引用状态补充。 */
 import { Injectable } from '@nestjs/common';
 import { Store, publicRow } from '../../persistence/store';
 import { ApiError } from '../../common/api-error';
@@ -24,6 +25,7 @@ export class HistoryService {
       (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id - b.id,
     );
     const messages = await Promise.all(
+      // 引用保存的是回答时的原文快照；读取时仅补充来源删除/过期标记，不替换历史原文。
       rows.map(async (row) => {
         const citations = await Promise.all(
           ((row.citations || []) as Citation[]).map(async (citation) => {
@@ -63,6 +65,7 @@ export class HistoryService {
   }
 
   async writable(id: number, userId: number, knowledgeBaseId?: number) {
+    // 历史可以查看，但知识库删除后不允许继续提问；跨知识库提问需要新建会话。
     const chat = await this.get(id, userId);
     if (chat.readOnly) throw new ApiError(409, '知识库已删除，此会话仅可查看');
     if (knowledgeBaseId != null && chat.knowledgeBaseId !== knowledgeBaseId)

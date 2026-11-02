@@ -1,8 +1,10 @@
+/** 实现关键词索引、关键词评分及多路结果融合。 */
 export interface Scored {
   id: number;
   score: number;
 }
 export function tokenize(text: string): string[] {
+  // 统一全半角与大小写；英文保留标识符形式，中文使用分词，兼顾代码和自然语言。
   const normalized = text.normalize('NFKC').toLowerCase();
   const words: string[] = normalized.match(/[a-z0-9][a-z0-9_.:/-]*/g) || [];
   const segmenter = new Intl.Segmenter('zh', { granularity: 'word' });
@@ -45,6 +47,7 @@ export function searchLexical(
   indexes: LexicalIndex[],
   authorized: Set<number>,
 ): Scored[] {
+  // 评分统计只计算本次授权的片段，其他范围的数据不参与文档频率与长度计算。
   const lengths = new Map<number, number>();
   for (const index of indexes)
     for (const [id, length] of index.lengths) if (authorized.has(id)) lengths.set(id, length);
@@ -91,6 +94,7 @@ export function bm25(query: string, documents: LexicalDocument[]): Scored[] {
     .filter((d) => d.score > 0)
     .sort((a, b) => b.score - a.score || a.id - b.id);
 }
+// 使用 RRF 按名次融合多路检索；同一片段在多路排名靠前时会获得更高综合分。
 export function fuse(...rankings: Scored[][]): Scored[] {
   const scores = new Map<number, number>();
   for (const ranking of rankings)

@@ -1,3 +1,4 @@
+/** 执行后台长文问答任务，保存结果并更新任务进度。 */
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -19,6 +20,7 @@ export class QaTasksService {
       .update(this.config.getOrThrow<string>('JWT_SECRET') + '/qa-credential')
       .digest();
   }
+  // 后台任务需要稍后调用模型，临时凭据加密存储；加密密钥由 JWT_SECRET 派生。
   private seal(value?: string) {
     if (!value) return null;
     const iv = randomBytes(12),
@@ -109,6 +111,7 @@ export class QaTasksService {
     const task = await this.store.transaction(async (tx) => {
       const row = await tx.lock('tasks', id);
       if (!row || row.kind !== 'qa' || ended(row.status)) return null;
+      // 有效租约内不重复领取；租约过期后允许恢复，令牌用于阻止旧执行者提交结果。
       if (row.executionToken && row.payload?.leaseUntil > Date.now()) return null;
       return tx.save('tasks', {
         id,
@@ -136,6 +139,7 @@ export class QaTasksService {
       });
       await report?.({ completed, total, stage: 'summarizing' });
     };
+    // 长摘要可能超过单次租约，定期续租，避免仍在执行的任务被其他 Worker 接管。
     const heartbeat = setInterval(() => {
       void this.store
         .transaction(async (tx) => {
@@ -181,6 +185,7 @@ export class QaTasksService {
             result.diagnostics?.runId || task.payload.snapshot.diagnostics?.runId || null,
           diagnostics: { ...result.diagnostics, coverage: result.coverage },
         });
+        // 部分章节失败仍保存可用答案，并标记 partial_failed，供用户识别覆盖不足和重试。
         const complete = result.coverage?.complete !== false;
         await tx.save('tasks', {
           id,

@@ -1,3 +1,4 @@
+/** 实现 Qdrant 向量读写、检索及范围过滤。 */
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { QdrantClient } from '@qdrant/js-client-rest';
