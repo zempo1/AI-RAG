@@ -90,6 +90,9 @@ export function validateConfig(input: Record<string, unknown>): Record<string, a
       throw new Error(key + ' 协议无效');
   }
   c.MAX_DOCUMENT_BYTES = Number(c.MAX_DOCUMENT_BYTES || 128 * 1024 * 1024);
+  c.VISION_CONCURRENCY = Number(c.VISION_CONCURRENCY ?? 3);
+  if (!Number.isInteger(c.VISION_CONCURRENCY) || c.VISION_CONCURRENCY < 1 || c.VISION_CONCURRENCY > 8)
+    throw new Error('VISION_CONCURRENCY must be an integer within [1,8]');
   if (!Number.isSafeInteger(c.MAX_DOCUMENT_BYTES) || c.MAX_DOCUMENT_BYTES < 1)
     throw new Error('MAX_DOCUMENT_BYTES must be a positive integer');
   for (const [key, fallback] of Object.entries({

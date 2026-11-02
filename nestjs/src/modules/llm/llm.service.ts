@@ -75,7 +75,7 @@ export class LlmService {
       JSON.stringify({
         event: 'vision_usage',
         model: this.config.get('VISION_MODEL') || 'qwen3.8-flash',
-      images: images.length,
+        images: images.length,
         inputTokens: usage?.input_tokens ?? null,
         outputTokens: usage?.output_tokens ?? null,
         totalTokens: usage?.total_tokens ?? null,
@@ -83,10 +83,15 @@ export class LlmService {
     );
   }
 
-  async complete(prompt: string, apiKey?: string, images: VisionImage[] = []): Promise<string> {
+  async complete(
+    prompt: string,
+    apiKey?: string,
+    images: VisionImage[] = [],
+    signal?: AbortSignal,
+  ): Promise<string> {
     const message = await (
       await this.model(apiKey, false, images.length > 0)
-    ).invoke(this.input(prompt, images));
+    ).invoke(this.input(prompt, images), { signal });
     this.reportUsage(message, images);
     // 输出被长度限制截断时显式失败，避免把不完整回答当成正常完成。
     if (message.response_metadata?.finish_reason === 'length')

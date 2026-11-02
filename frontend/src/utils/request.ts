@@ -1,5 +1,8 @@
 import axios from "axios";
 import { toast } from "../composables/useToast";
+declare module "axios" {
+  interface AxiosRequestConfig { silentError?: boolean }
+}
 
 let authExpiredNotified = false;
 
@@ -57,7 +60,7 @@ service.interceptors.response.use(
           }, 3000);
         }
       }
-    } else {
+    } else if (!error.config?.silentError) {
       const msg = error.response?.data?.message || error.message || "请求错误";
       toast.error(msg);
     }

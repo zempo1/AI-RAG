@@ -53,6 +53,11 @@
             :stroke-width="4"
             :show-text="false"
           />
+          <div v-else-if="doc.task?.status === 'running'" class="index-progress-unknown"
+            role="progressbar" aria-label="文档解析进度"
+            :aria-valuetext="doc.task.stage === 'vision' ? `已识别 ${doc.task.completed} 个区域，总量统计中` : '正在处理，总量统计中'">
+            <span></span>
+          </div>
           <div v-if="doc.task?.error" class="error-text">
             {{ doc.task.error }}
           </div>
@@ -148,3 +153,10 @@ const emit = defineEmits<{
 const terminal = (status: string) =>
   ["completed", "failed", "partial_failed", "canceled"].includes(status);
 </script>
+
+<style scoped>
+.index-progress-unknown { height: 4px; overflow: hidden; border-radius: 4px; background: var(--el-fill-color-light); position: relative; margin-top: 8px; }
+.index-progress-unknown span { position: absolute; height: 100%; width: 35%; border-radius: inherit; background: var(--el-color-primary); animation: index-progress 1.6s linear infinite; }
+@keyframes index-progress { from { left: -35%; } to { left: 100%; } }
+@media (prefers-reduced-motion: reduce) { .index-progress-unknown span { animation: none; left: 32%; } }
+</style>

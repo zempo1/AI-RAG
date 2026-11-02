@@ -124,6 +124,7 @@ describe('rendered PDF vision pipeline with real HTTP and persistent page cache'
     }),
   ) {
     const assets = new PageAssetsService(config, store);
+    config.set('VISION_CONCURRENCY', 1);
     return {
       assets,
       config,

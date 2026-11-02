@@ -104,10 +104,11 @@ export const deleteCategory = (kbId: number, id: number) =>
 export const listLibraryDocuments = (
   id: number,
   params: Record<string, unknown>,
+  silentError = false,
 ) =>
   request.get<any, { items: ManagedDocument[]; total: number }>(
     "/api/knowledge-bases/" + id + "/documents",
-    { params },
+    { params, silentError },
   );
 export const updateDocument = (
   id: number,
@@ -125,9 +126,9 @@ export const reindexKnowledgeBase = (id: number) =>
   );
 export const getTask = (id: number) =>
   request.get<any, ProcessingTask>("/api/tasks/" + id);
-export const listTasks = (knowledgeBaseId: number) =>
+export const listTasks = (knowledgeBaseId: number, silentError = false) =>
   request.get<any, ProcessingTask[]>("/api/tasks", {
-    params: { knowledgeBaseId },
+    params: { knowledgeBaseId }, silentError,
   });
 export const retryTask = (id: number) =>
   request.post("/api/tasks/" + id + "/retry");

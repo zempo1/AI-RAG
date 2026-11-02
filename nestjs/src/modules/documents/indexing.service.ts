@@ -198,7 +198,7 @@ export class IndexingService {
           documentId: task.documentId,
           versionId: version.id,
           guard: () => this.guard(task, token),
-          stage: (stage, page, total) => this.progress(task, token, stage, page - 1, total, report),
+          stage: (stage, completed, total) => this.progress(task, token, stage, completed, total, report),
         },
       );
     } else {

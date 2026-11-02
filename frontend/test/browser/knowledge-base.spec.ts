@@ -1,5 +1,40 @@
 import { test, expect, type Page } from "@playwright/test";
 
+test('document polling recovers from backend failures without refresh or repeated error toasts', async ({page}) => {
+  await fixture(page);
+  let failed=true,requests=0;
+  await page.route('**/api/knowledge-bases/1/documents?*',route=>{
+    requests++;
+    return failed ? route.fulfill({status:500,json:{message:'temporary backend outage'}}) : route.fulfill({json:{data:{items:[],total:0}}});
+  });
+  await page.route('**/api/tasks?*',route=>failed ? route.fulfill({status:500,json:{message:'temporary backend outage'}}) : route.fulfill({json:{data:[]}}));
+  let navigations=0;page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigations++;});
+  await page.getByRole('button',{name:'管理文档',exact:true}).click();
+  await expect(page.locator('.load-error')).toContainText('自动重试');
+  await expect.poll(()=>requests,{timeout:15000}).toBeGreaterThan(1);
+  await expect(page.getByText('temporary backend outage',{exact:true})).toHaveCount(0);
+  failed=false;
+  await expect(page.locator('.load-error')).toHaveCount(0,{timeout:20000});
+  expect(navigations).toBe(0);
+});
+
+test('visual indexing shows activity and completed count before the total is known', async ({page}) => {
+  await fixture(page);
+  let completed=5,total:number|null=null;
+  await page.route('**/api/knowledge-bases/1/documents?*',route=>route.fulfill({json:{data:{items:[{
+    id:1,filename:'物理层.pdf',knowledgeBaseId:1,categoryId:null,status:'queued',activeIndexRevisionId:null,
+    activeVersionId:null,latestTaskId:2,task:{id:2,kind:'index',status:'running',stage:'vision',completed,total,retryable:1},
+  }],total:1}}}));
+  await page.getByRole('button',{name:'管理文档',exact:true}).click();
+  const card=page.locator('.document-card');
+  await expect(card).toContainText('已识别 5 个区域');
+  const bar=card.getByRole('progressbar');await expect(bar).toBeVisible();
+  await expect(bar).not.toHaveAttribute('aria-valuenow');
+  completed=8;await expect(card).toContainText('已识别 8 个区域',{timeout:10000});
+  total=10;await expect(card).toContainText('8/10',{timeout:10000});
+  await expect(bar).toHaveAttribute('aria-valuenow','80');
+});
+
 test('first upload completes without navigation with a cold dependency cache', async ({ page }) => {
   test.setTimeout(90000);
   const { createServer } = await import('vite');

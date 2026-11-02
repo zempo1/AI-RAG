@@ -92,14 +92,16 @@ describe('content-aware PDF regions', () => {
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
   });
-  function setup(response = [{ type: 'figure', text: 'Review leads to Publish IMAGE42' }]) {
+  function setup(
+    response: unknown = [{ type: 'figure', text: 'Review leads to Publish IMAGE42' }],
+  ) {
     const calls: { width: number; height: number; prompt: string }[] = [];
     const config = new ConfigService({ PAGE_ASSETS_DIR: dir, VISION_ENABLED: true });
     const llm: any = {
       complete: async (prompt: string, _: unknown, images: any[]) => {
         const image = await loadImage(Buffer.from(images[0].dataUrl.split(',')[1], 'base64'));
         calls.push({ width: image.width, height: image.height, prompt });
-        return JSON.stringify({ blocks: response });
+        return JSON.stringify({ blocks: typeof response === 'function' ? response() : response });
       },
     };
     const visual = new PdfVisualService(
@@ -110,6 +112,26 @@ describe('content-aware PDF regions', () => {
     return { calls, parser: new DocumentParser(visual) };
   }
   const scope = { userId: 1, documentId: 1, versionId: 1 };
+  it('repairs a malformed region once and caches only the valid result', async () => {
+    let attempt = 0;
+    const p = setup(() =>
+      ++attempt === 1 ? [{ type: 'unknown', text: 'bad' }] : [{ type: 'figure', text: 'A → B' }],
+    );
+    const bytes = await fixture('mixed');
+    const parsed = await p.parser.parseStructured(bytes, 'a.pdf', undefined, scope);
+    expect(p.calls).toHaveLength(2);
+    expect(parsed.text).toContain('A → B');
+    expect(p.calls[1].prompt).toContain('上次输出格式校验失败');
+    expect(await p.parser.parseStructured(bytes, 'a.pdf', undefined, scope)).toEqual(parsed);
+    expect(p.calls).toHaveLength(2);
+  });
+  it('fails clearly after one unsuccessful format repair', async () => {
+    const p = setup([{ type: 'unknown', text: 'bad' }]);
+    await expect(
+      p.parser.parseStructured(await fixture('mixed'), 'a.pdf', undefined, scope),
+    ).rejects.toThrow('blocks[0].type');
+    expect(p.calls).toHaveLength(2);
+  });
   it('never calls vision for a native text page', async () => {
     const p = setup();
     const parsed = await p.parser.parseStructured(await fixture('text'), 'a.pdf', undefined, scope);

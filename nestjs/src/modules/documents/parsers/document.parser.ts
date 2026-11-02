@@ -2,7 +2,8 @@
 import { Injectable, Optional, Logger } from '@nestjs/common';
 import { ApiError } from '../../../common/api-error';
 import { ParsedDocument, paragraphBlocks } from './parsed-document';
-import { PdfVisualService, ParseContext } from './pdf-visual.service';
+import { PdfVisualService, ParseContext, markPdfFailure } from './pdf-visual.service';
+import { localRendering } from './vision-scheduler';
 import { textPositions } from './pdf-layout';
 
 @Injectable()
@@ -48,8 +49,87 @@ export class DocumentParser {
         });
         document = await task.promise;
         const pages: string[] = [];
+        const controller = new AbortController();
+        const originalContext = context;
+        let firstFailure: unknown,
+          cancellation: unknown,
+          checking = false;
+        let finished = 0;
+        let reporting = Promise.resolve();
+        let regionTotal = 0,
+          regionDone = 0,
+          prepared = 0;
+        let polling = Promise.resolve();
+        let lastReport = 0;
+        const reportRegions = () => {
+          const final = prepared === document.numPages && regionDone === regionTotal;
+          if (!final && Date.now() - lastReport < 500) return reporting;
+          lastReport = Date.now();
+          const done = regionDone,
+            total = prepared === document.numPages ? regionTotal : null;
+          reporting = reporting.then(async () => {
+            try {
+              await originalContext?.stage?.('vision', done, total);
+            } catch (error) {
+              progressError = error;
+              throw error;
+            }
+          });
+          return reporting;
+        };
+        const check = async () => {
+          if (cancellation) throw cancellation;
+          try {
+            await originalContext?.guard?.();
+            originalContext?.signal?.throwIfAborted();
+          } catch (error) {
+            cancellation ||= error;
+            controller.abort(error);
+            throw error;
+          }
+        };
+        context = originalContext
+          ? {
+              ...originalContext,
+              signal: controller.signal,
+              guard: check,
+              stage: async () => {},
+              beforeRequest: () => {
+                if (cancellation || firstFailure) throw cancellation || firstFailure;
+              },
+              failed: (error) => {
+                firstFailure ||= error;
+              },
+              discovered: (count) => {
+                regionTotal += count;
+                prepared++;
+                return reportRegions();
+              },
+              completed: async () => {
+                regionDone++;
+                await reportRegions();
+              },
+            }
+          : undefined;
+        const poll = setInterval(() => {
+          if (checking) return;
+          checking = true;
+          polling = check()
+            .catch(() => {})
+            .finally(() => {
+              checking = false;
+            });
+        }, 1000);
+        const results: {
+          text: string;
+          blocks: ParsedDocument['blocks'];
+          counts: Record<string, number>;
+        }[] = [];
         const counts = { textPages: 0, regions: 0, scanPages: 0, fallbackPages: 0 };
-        for (let i = 1; i <= document.numPages; i++) {
+        const processPage = async (i: number) => {
+          const blocks: ParsedDocument['blocks'] = [];
+          const pages: string[] = [];
+          const counts = { textPages: 0, regions: 0, scanPages: 0, fallbackPages: 0 };
           const page = await document.getPage(i);
           try {
             await context?.guard?.();
@@ -59,7 +139,10 @@ export class DocumentParser {
             throw error;
           }
           // 保留原生文字，再逐页补充图片、扫描文字和图解。
-          const content = await page.getTextContent();
+          const content: any = await localRendering.run(
+            () => page.getTextContent(),
+            context?.signal,
+          );
           let previous: any;
           let pageText = '';
           const itemRanges: { start: number; end: number }[] = [];
@@ -150,8 +233,7 @@ export class DocumentParser {
               }
             } catch (error) {
               // 保留取消/取代任务的错误类型，供索引执行器正确终止。
-              if (error instanceof Error)
-                error.message = `PDF 第${i}页视觉解析失败：${error.message}`;
+              markPdfFailure(error, i);
               progressError = error;
               throw error;
             }
@@ -168,12 +250,57 @@ export class DocumentParser {
           }
           pages.push(pageText);
           page.cleanup();
-          try {
-            await progress?.(i, document.numPages);
-          } catch (error) {
-            progressError = error;
-            throw error;
+          return { text: pageText, blocks, counts };
+        };
+        let next = 1;
+        const worker = async () => {
+          while (next <= document.numPages && !firstFailure && !cancellation) {
+            const number = next++;
+            try {
+              results[number - 1] = await processPage(number);
+              const done = ++finished;
+              if (!(context && this.visual?.enabled && originalContext?.stage))
+                reporting = reporting.then(async () => {
+                  await progress?.(done, document.numPages);
+                });
+              await reporting;
+            } catch (error) {
+              firstFailure ||= error;
+            }
           }
+        };
+        try {
+          await Promise.all(
+            Array.from(
+              { length: context && this.visual?.enabled ? this.visual.concurrency || 1 : 1 },
+              worker,
+            ),
+          );
+          if (cancellation || firstFailure) {
+            progressError = cancellation || firstFailure;
+            throw progressError;
+          }
+          if (context && this.visual?.enabled) await reportRegions();
+          let offset = 0;
+          for (const result of results) {
+            pages.push(result.text);
+            for (const block of result.blocks)
+              blocks.push({
+                ...block,
+                location: {
+                  ...block.location,
+                  start: block.location.start + offset,
+                  end: block.location.end + offset,
+                },
+              });
+            offset += result.text.length + 1;
+            for (const key of Object.keys(counts) as (keyof typeof counts)[])
+              counts[key] += result.counts[key];
+          }
+        } finally {
+          clearInterval(poll);
+          await polling;
+          await reporting.catch(() => {});
         }
         text = pages.join('\n');
         if (context && this.visual?.enabled)

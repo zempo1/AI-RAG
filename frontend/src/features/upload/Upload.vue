@@ -282,7 +282,7 @@
                     task.waitingReason || stageLabels[task.stage] || task.stage
                   }}
                   {{
-                    task.total != null ? task.completed + "/" + task.total : ""
+                    task.total != null ? task.completed + "/" + task.total : task.stage === 'vision' ? `已识别 ${task.completed} 个区域（总量统计中）` : ""
                   }}</span
                 >
                 <span v-if="task.waitingUntil" class="muted"
@@ -475,7 +475,7 @@ function stateLabel(doc: ManagedDocument) {
       (stageLabels[doc.task.stage] || doc.task.stage) +
       (doc.task.total != null
         ? " " + doc.task.completed + "/" + doc.task.total
-        : "")
+        : doc.task.stage === 'vision' ? ` · 已识别 ${doc.task.completed} 个区域（总量统计中）` : "")
     );
   return (
     (
@@ -499,17 +499,22 @@ async function fetchDocuments(pollOnly = false) {
   const id = props.knowledgeBaseId;
   if (!id || !currentLibrary.value || disposed) return;
   const sequence = ++requestSequence;
-  const [result, taskList, categoryList] = await Promise.all([
+  const [documentResult, taskResult, categoryResult] = await Promise.allSettled([
     api.listLibraryDocuments(id, {
       page: page.value,
       pageSize: 20,
       name: keyword.value || undefined,
       status: statusFilter.value || undefined,
       categoryId: categoryFilter.value,
-    }),
-    api.listTasks(id),
+    }, true),
+    api.listTasks(id, true),
     pollOnly ? Promise.resolve(categories.value) : api.listCategories(id),
   ]);
+  // 一轮请求全部收敛后再重试，避免其中一个快速失败时其他请求持续堆积。
+  if (documentResult.status === 'rejected') throw documentResult.reason;
+  if (taskResult.status === 'rejected') throw taskResult.reason;
+  if (categoryResult.status === 'rejected') throw categoryResult.reason;
+  const result = documentResult.value, taskList = taskResult.value, categoryList = categoryResult.value;
   if (disposed || sequence !== requestSequence || id !== props.knowledgeBaseId)
     return;
   documents.value = result.items;
@@ -548,6 +553,7 @@ async function refresh() {
   nextPollAt = 0;
   await refreshData();
 }
+let pollFailures = 0;
 async function refreshData(pollOnly = false) {
   const id = props.knowledgeBaseId;
   loading.value = true;
@@ -556,10 +562,16 @@ async function refreshData(pollOnly = false) {
     if (id === props.knowledgeBaseId) {
       loaded.value = true;
       loadError.value = "";
+      pollFailures = 0;
     }
+    return true;
   } catch {
-    if (id === props.knowledgeBaseId)
-      loadError.value = "暂时无法更新文档，请重试。";
+    if (id === props.knowledgeBaseId) {
+      loadError.value = "暂时无法获取文档和任务进度，正在自动重试。";
+      pollFailures++;
+      nextPollAt = Date.now() + Math.min(10000, 2000 * 2 ** Math.min(pollFailures - 1, 3));
+    }
+    return false;
   } finally {
     loading.value = false;
   }
@@ -962,7 +974,7 @@ onMounted(async () => {
       return;
     polling = true;
     try {
-      await refreshData(true);
+      if (!(await refreshData(true))) return;
       const active = tasks.value.filter((t) => !isTerminal(t.status));
       const onlyDelayed =
         !pendingActivation &&
