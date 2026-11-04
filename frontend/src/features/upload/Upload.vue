@@ -140,26 +140,23 @@
           </div>
           <div class="category-row">
             <span class="muted">分类</span>
-            <div
-              v-for="category in categories"
-              :key="category.id"
-              class="category-chip"
+            <el-select
+              :model-value="managedCategory?.id"
+              @update:model-value="managedCategoryId = $event"
+              class="category-manager-select"
+              placeholder="暂无分类"
+              aria-label="选择要管理的分类"
+              :disabled="!categories.length"
+              popper-class="knowledge-theme knowledge-popper"
             >
-              <span :title="category.name">{{ category.name }}</span
-              ><button
-                :aria-label="'编辑分类' + category.name"
-                title="编辑分类"
-                @click="renameCategory(category)"
-              >
-                <el-icon><EditPen /></el-icon></button
-              ><button
-                :aria-label="'删除分类' + category.name"
-                title="删除分类"
-                @click="removeCategory(category)"
-              >
-                <el-icon><Close /></el-icon>
-              </button>
-            </div>
+              <el-option v-for="category in categories" :key="category.id" :label="category.name" :value="category.id" />
+            </el-select>
+            <el-button class="icon-button" :disabled="!managedCategory" :aria-label="'编辑分类' + (managedCategory?.name || '')" title="编辑分类" @click="managedCategory && renameCategory(managedCategory)">
+              <el-icon><EditPen /></el-icon>
+            </el-button>
+            <el-button class="icon-button" :disabled="!managedCategory" :aria-label="'删除分类' + (managedCategory?.name || '')" title="删除分类" @click="managedCategory && removeCategory(managedCategory)">
+              <el-icon><Close /></el-icon>
+            </el-button>
             <el-button link @click="addCategory"
               ><el-icon><Plus /></el-icon>添加分类</el-button
             >
@@ -422,6 +419,8 @@ const visible = ref(false),
   statusFilter = ref<string>(),
   page = ref(1),
   total = ref(0);
+const managedCategoryId = ref<number>();
+const managedCategory = computed(() => categories.value.find(c => c.id === managedCategoryId.value) || categories.value[0]);
 const currentLibrary = computed(() =>
   libraries.value.find((kb) => kb.id === props.knowledgeBaseId),
 );

@@ -877,6 +877,9 @@ test("creates a library and saves name and description together", async ({
   const edit = page.getByRole("dialog", { name: "编辑知识库", exact: true });
   await edit.getByLabel("名称", { exact: true }).fill("毕业设计");
   await edit.getByLabel("描述", { exact: true }).fill("收集答辩资料");
+  await expect(edit.getByLabel('描述', { exact: true })).toHaveCSS('outline-style', 'none');
+  await edit.evaluate(async el => { await Promise.all(el.getAnimations({ subtree: true }).map(a => a.finished.catch(() => {}))); });
+  await page.screenshot({ path: 'test-results/knowledge-description-focus.png' });
   await edit.getByRole("button", { name: "保存", exact: true }).click();
   await expect(edit).not.toBeVisible();
   expect(lastBody).toEqual({ name: "毕业设计", description: "收集答辩资料" });
@@ -955,6 +958,9 @@ test("category forms and document deletion use themed confirmations", async ({
   const add = page.getByRole("dialog", { name: "添加分类", exact: true });
   await add.getByLabel("名称", { exact: true }).fill("研究资料");
   await add.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(add).not.toBeVisible();
+  await page.locator('.category-manager-select .el-select__wrapper').click();
+  await page.getByRole('option', { name: '研究资料', exact: true }).click();
   await expect(
     page.getByRole("button", { name: "编辑分类研究资料" }),
   ).toBeVisible();
