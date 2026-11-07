@@ -31,8 +31,12 @@ export class TasksService {
               qaResult: row.payload?.qaResult,
             },
             qaResult: row.payload?.qaResult,
+            ...(row.payload?.engine === 'agentic-v1' ? { agentProgress: row.payload?.agentProgress,
+              retrievalRunId: row.payload?.retrievalRunId } : {}),
           }
         : {}),
+      ...(row.kind === 'qa' && row.payload?.engine === 'agentic-v1'
+        ? { agentProgress: row.payload?.agentProgress, retrievalRunId: row.payload?.retrievalRunId } : {}),
       canDismiss: terminalTask(row.status) && !executionToken && !row.parentTaskId,
       waitingUntil: delayed ? waitingUntil : null,
       waitingReason: delayed

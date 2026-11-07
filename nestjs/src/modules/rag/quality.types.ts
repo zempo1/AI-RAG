@@ -7,6 +7,7 @@ export interface HistoryTurn {
   retrievalContext?: unknown;
 }
 export interface RetrievalOptions {
+  signal?: AbortSignal;
   onProgress?: (stage: string) => void;
   documentIds?: number[];
   mode?: QueryMode;

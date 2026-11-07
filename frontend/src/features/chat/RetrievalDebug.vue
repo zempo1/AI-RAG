@@ -15,6 +15,16 @@
       {{ error }} <el-button @click="load">重新加载</el-button>
     </div>
     <template v-else-if="data">
+      <section v-if="agent" class="debug-section">
+        <h3>Agent 任务规划</h3>
+        <p>问题类型：{{ agent.plan?.intent || '未知' }} · 复杂度：{{ agent.plan?.complexity || '未知' }}</p>
+        <ol aria-label="子任务"><li v-for="(question, index) in agent.plan?.subQuestions || []" :key="index">{{ question }}</li></ol>
+        <AgentTimeline :steps="agent.steps" />
+        <p v-if="agent.status">执行状态：{{ agent.status }}</p>
+        <p v-if="agent.stopReason">停止原因：{{ agent.stopReason }}</p>
+        <h3>Agent 耗时 / Token 与预算</h3>
+        <pre>{{ display(agent.budget) }}</pre>
+      </section>
       <section
         v-for="section in sections"
         :key="section.key"
@@ -23,15 +33,14 @@
         <h3>{{ section.label }}</h3>
         <pre>{{ display(section.value) }}</pre>
       </section>
-      <details class="debug-section">
-        <summary>完整诊断记录</summary>
-        <pre>{{ display(data) }}</pre>
-      </details>
+
     </template>
   </el-drawer>
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import AgentTimeline from "./AgentTimeline.vue";
+import { getAgentProgress } from "../../utils/agent-progress";
 import { getRetrievalRun } from "../../api/chat";
 const props = defineProps<{ runId: number | null }>();
 const emit = defineEmits<{ (e: "close"): void }>();
@@ -39,6 +48,7 @@ const data = ref<Record<string, any> | null>(null),
   loading = ref(false),
   error = ref("");
 let sequence = 0;
+const agent = computed(() => getAgentProgress(data.value));
 const sections = computed(() => {
   const d = data.value || {};
   return [

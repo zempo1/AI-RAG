@@ -6,6 +6,8 @@ PDF.js 在本地提取正文和位置，并检查图片及矢量绘图操作。�
 
 ## 配置与运行
 
+本地版面/OCR与性能实测参见 [混合解析部署说明](pdf-hybrid.md)。默认兼容流程同样已修复非绘制裁剪路径造成的正文误图，升级后重建索引即可应用；API/Worker需加载更新后的代码。
+
 ```dotenv
 VISION_ENABLED=true
 VISION_CONCURRENCY=3
@@ -17,7 +19,7 @@ VISION_OUTPUT_TOKENS=8192
 PAGE_ASSETS_DIR=.data/pages
 ```
 
-地址和密钥为空时分别继承服务端 `CHAT_BASE_URL`、`CHAT_API_KEY`。API 与 Worker 共享持久化的 `PAGE_ASSETS_DIR` 和 `ORIGINALS_DIR`，使用一致配置。更新代码后构建并重启两者。沿用现有 PDF.js 与 `@napi-rs/canvas`，无需部署独立 OCR。
+地址和密钥为空时分别继承服务端 `CHAT_BASE_URL`、`CHAT_API_KEY`。API 与 Worker 共享持久化的 `PAGE_ASSETS_DIR` 和 `ORIGINALS_DIR`，使用一致配置。更新代码后构建并重启两者。默认 `legacy` 沿用现有 PDF.js 与 `@napi-rs/canvas`，不依赖独立 OCR；可按下文部署 `hybrid` 服务。
 
 本地可能渲染混排页以获取准确图形边界；正常情况下只上传裁剪区域。重复水印依据本地图片内容、位置、透明度和跨页重复情况判断；重复页边装饰不单独触发识别。复杂版面仍可能整页兜底，不能保证每份资料都减少调用次数。
 

@@ -103,6 +103,8 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
         .filter(
           (t) =>
             t.kind !== 'rebuild' &&
+            !(t.payload?.engine === 'agentic-v1' && t.payload?.foreground &&
+              t.status === 'running' && t.payload?.leaseUntil > Date.now()) &&
             (!terminalTask(t.status) || (t.status === 'canceled' && t.executionToken)),
         )
         .sort((a, b) => a.id - b.id);

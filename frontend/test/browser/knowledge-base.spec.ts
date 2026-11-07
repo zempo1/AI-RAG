@@ -18,12 +18,13 @@ test('document polling recovers from backend failures without refresh or repeate
   expect(navigations).toBe(0);
 });
 
-test('visual indexing shows activity and completed count before the total is known', async ({page}) => {
+for (const stage of ['vision', 'ocr']) {
+test(`${stage} indexing shows activity and completed count before the total is known`, async ({page}) => {
   await fixture(page);
   let completed=5,total:number|null=null;
   await page.route('**/api/knowledge-bases/1/documents?*',route=>route.fulfill({json:{data:{items:[{
     id:1,filename:'物理层.pdf',knowledgeBaseId:1,categoryId:null,status:'queued',activeIndexRevisionId:null,
-    activeVersionId:null,latestTaskId:2,task:{id:2,kind:'index',status:'running',stage:'vision',completed,total,retryable:1},
+    activeVersionId:null,latestTaskId:2,task:{id:2,kind:'index',status:'running',stage,completed,total,retryable:1},
   }],total:1}}}));
   await page.getByRole('button',{name:'管理文档',exact:true}).click();
   const card=page.locator('.document-card');
@@ -34,6 +35,7 @@ test('visual indexing shows activity and completed count before the total is kno
   total=10;await expect(card).toContainText('8/10',{timeout:10000});
   await expect(bar).toHaveAttribute('aria-valuenow','80');
 });
+}
 
 test('first upload completes without navigation with a cold dependency cache', async ({ page }) => {
   test.setTimeout(90000);

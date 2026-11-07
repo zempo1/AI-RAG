@@ -7,12 +7,16 @@ export interface TextPosition {
   index: number;
 }
 export interface PdfRegion {
+  /** Original graphic bounds, before nearby text/caption expansion. */
+  inkBox?: RegionBox;
   bbox: RegionBox;
   kind: 'region' | 'scan' | 'fallback';
   reason?: string;
   context: string;
   textIndexes: number[];
   scaleLimit?: number;
+  recognition?: 'ocr' | 'vision';
+  analysisProfile?: string;
 }
 const area = (b: RegionBox) => Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
 const union = (a: RegionBox, b: RegionBox): RegionBox => [
@@ -33,6 +37,17 @@ const imageNames = [
   'paintImageMaskXObjectGroup',
   'paintInlineImageXObjectGroup',
 ];
+
+/** PDF.js packs the terminating paint operation into constructPath[0].
+ * endPath only installs a clip; its recorded bounds may include dependent text.
+ */
+export function hasPdfGraphics(list: any, ops: any): boolean {
+  const painted = new Set([...imageNames.map((n) => ops[n]), ops.shadingFill]);
+  return list.fnArray.some(
+    (op: number, i: number) =>
+      painted.has(op) || (op === ops.constructPath && list.argsArray[i]?.[0] !== ops.endPath),
+  );
+}
 const decorationCache = new WeakMap<object, Promise<Set<string>>>();
 const imageHashes = new WeakMap<object, string>();
 
@@ -186,7 +201,7 @@ export async function locateRegions(
   const list = await page.getOperatorList();
   const images = new Set(imageNames.map((n) => ops[n]));
   const graphics = new Set([...images, ops.constructPath, ops.shadingFill]);
-  const hasGraphics = list.fnArray.some((op: number) => graphics.has(op));
+  const hasGraphics = hasPdfGraphics(list, ops);
   const corrupt =
     /\uFFFD/.test(native) ||
     (native.length > 20 && (native.match(/[\x00-\x08]/g)?.length || 0) > native.length / 10);
@@ -226,7 +241,8 @@ export async function locateRegions(
   let missing = false;
   for (let i = 0; i < list.fnArray.length; i++) {
     const op = list.fnArray[i];
-    if (!graphics.has(op)) continue;
+    if (!graphics.has(op) || (op === ops.constructPath && list.argsArray[i]?.[0] === ops.endPath))
+      continue;
     if (reader.isEmpty(i)) {
       if (images.has(op) || op === ops.shadingFill) missing = true;
       continue;
@@ -323,6 +339,7 @@ export async function locateRegions(
       );
     });
     result.push({
+      inkBox: b,
       bbox,
       kind: 'region',
       scaleLimit: candidate.scaleLimit,

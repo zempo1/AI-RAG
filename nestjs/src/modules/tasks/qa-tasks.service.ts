@@ -1,10 +1,12 @@
 /** 执行后台长文问答任务，保存结果并更新任务进度。 */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { Store, now, Row } from '../../persistence/store';
 import { ApiError } from '../../common/api-error';
 import { SummaryService } from '../rag/summary.service';
+import { AgentQaTasksService } from './agent-qa.service';
+import { sealQaCredential, openQaCredential } from './qa-credentials';
 
 const ended = (s: string) => ['completed', 'failed', 'partial_failed', 'canceled'].includes(s);
 
@@ -14,26 +16,14 @@ export class QaTasksService {
     private readonly store: Store,
     private readonly summary: SummaryService,
     private readonly config: ConfigService,
+    @Optional() private readonly agentTasks?: AgentQaTasksService,
   ) {}
-  private key() {
-    return createHash('sha256')
-      .update(this.config.getOrThrow<string>('JWT_SECRET') + '/qa-credential')
-      .digest();
-  }
   // 后台任务需要稍后调用模型，临时凭据加密存储；加密密钥由 JWT_SECRET 派生。
   private seal(value?: string) {
-    if (!value) return null;
-    const iv = randomBytes(12),
-      cipher = createCipheriv('aes-256-gcm', this.key(), iv);
-    const bytes = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
-    return [iv, cipher.getAuthTag(), bytes].map((b) => b.toString('base64')).join('.');
+    return sealQaCredential(this.config.getOrThrow('JWT_SECRET'), value);
   }
   private open(value?: string) {
-    if (!value) return undefined;
-    const [iv, tag, bytes] = value.split('.').map((s) => Buffer.from(s, 'base64'));
-    const cipher = createDecipheriv('aes-256-gcm', this.key(), iv);
-    cipher.setAuthTag(tag);
-    return Buffer.concat([cipher.update(bytes), cipher.final()]).toString('utf8');
+    return openQaCredential(this.config.getOrThrow('JWT_SECRET'), value);
   }
   private accepted(task: Row) {
     return {
@@ -107,6 +97,11 @@ export class QaTasksService {
     return this.accepted(accepted);
   }
   async process(id: number, attempt = 1, report?: (progress: object) => Promise<void>) {
+    const current = await this.store.get('tasks', id);
+    if (current?.payload?.engine === 'agentic-v1') {
+      if (!this.agentTasks) throw new ApiError(503, 'Agent执行服务尚未加载');
+      return this.agentTasks.process(id, attempt, report);
+    }
     const token = randomUUID();
     const task = await this.store.transaction(async (tx) => {
       const row = await tx.lock('tasks', id);

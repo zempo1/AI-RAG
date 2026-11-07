@@ -1,5 +1,6 @@
 import request from "../utils/request";
 import { SseDecoder, type SseEvent } from "../utils/sse";
+import { dispatchChatEvent, type StreamChatCallbacks } from "../utils/chat-stream";
 import type { Citation } from "./knowledge-bases";
 
 export const getChatHistory = (id: number) => request.get("/api/chats/" + id);
@@ -9,6 +10,7 @@ export interface RetrievalContext {
   mode?: QaMode;
 }
 export interface AcceptedAnswer {
+  retrievalRunId?: number;
   taskId: number;
   chatId: number;
   requestId: string;
@@ -34,17 +36,7 @@ export interface FinalAnswer {
 
 export async function sendStreamChat(
   params: StreamChatParams,
-  callbacks: {
-    onMessage: (text: string) => void;
-    onChatId: (id: number) => void;
-    onSources?: (sources: Citation[]) => void;
-    onStatus?: (stage: string) => void;
-    onAccepted?: (accepted: AcceptedAnswer) => void;
-    onCitations?: (citations: Citation[]) => void;
-    onDone: (answer: FinalAnswer) => void;
-    onError: (error: unknown) => void;
-    onFinish: () => void;
-  },
+  callbacks: StreamChatCallbacks,
   signal?: AbortSignal,
 ) {
   let completed = false;
@@ -72,21 +64,7 @@ export async function sendStreamChat(
     const reader = response.body.getReader(),
       decoder = new SseDecoder();
     const handle = (frame: SseEvent) => {
-      const value = JSON.parse(frame.data);
-      if (frame.event === "status") callbacks.onStatus?.(String(value.stage));
-      else if (frame.event === "chatId") callbacks.onChatId(Number(value));
-      else if (frame.event === "accepted") {
-        completed = true;
-        callbacks.onAccepted?.(value);
-      } else if (frame.event === "sources") callbacks.onSources?.(value);
-      else if (frame.event === "citations") callbacks.onCitations?.(value);
-      else if (frame.event === "done") {
-        completed = true;
-        callbacks.onDone(value);
-      } else if (frame.event === "error") {
-        if (typeof value.answer === "string") callbacks.onDone(value);
-        throw new Error(value.message || "生成失败");
-      } else if (frame.event === "message") callbacks.onMessage(String(value));
+      if (dispatchChatEvent(frame, callbacks)) completed = true;
     };
     try {
       while (true) {

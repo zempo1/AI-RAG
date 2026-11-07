@@ -1,0 +1,12 @@
+{
+  "description": "用户课件的局部验收锚点；不分发含版权的原PDF，不将未标注页当作已验证。",
+  "documents": [
+    {"filename": "CH3-6ed 数据链路层.pdf", "pages": [
+      {"page": 39, "expectedVisionCalls": 0, "reason": "FCS/CRC正文，排除文字描边和装饰"},
+      {"page": 74, "expectedFigureGroups": 1, "requiredContent": ["底部完整时隙图", "图内标注与连线"], "reason": "TDM/FDM及正文数字不能各自成为图表"}
+    ]},
+    {"filename": "CH2-6ed 物理层.pdf", "pages": [
+      {"page": 23, "requiredContent": ["光纤结构", "高低折射率", "全反射关系"]}
+    ]}
+  ]
+}

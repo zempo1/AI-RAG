@@ -4,13 +4,17 @@ import { IsInt, Min } from 'class-validator';
 import { TasksService } from './tasks.service';
 import { UserId } from '../auth/auth.guard';
 import { IdPipe } from '../../common/pipes/id.pipe';
+import { AgentQaTasksService } from './agent-qa.service';
 
 class TasksQuery {
   @Type(() => Number) @IsInt() @Min(1) knowledgeBaseId: number;
 }
 @Controller('api/tasks')
 export class TasksController {
-  constructor(private readonly tasks: TasksService) {}
+  constructor(private readonly tasks: TasksService, private readonly agentTasks: AgentQaTasksService) {}
+  @Post(':id/cancel') cancel(@UserId() user: number, @Param('id', IdPipe) id: number) {
+    return this.agentTasks.cancel(id, user);
+  }
   @Delete() clear(@UserId() user: number, @Query() query: TasksQuery) {
     return this.tasks.clearCompleted(user, query.knowledgeBaseId);
   }

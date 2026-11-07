@@ -29,6 +29,19 @@ export function validateConfig(input: Record<string, unknown>): Record<string, a
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('CHAT_BASE_URL must be HTTP(S)');
   c.CHAT_MODEL ||= 'qwen3.8-flash';
   c.VISION_MODEL ||= 'qwen3.8-flash';
+  c.PDF_ANALYSIS_MODE ??= 'legacy';
+  if (c.PDF_ANALYSIS_NATIVE_FAST_PATH !== undefined &&
+    ![true, false, 'true', 'false'].includes(c.PDF_ANALYSIS_NATIVE_FAST_PATH))
+    throw new Error('PDF_ANALYSIS_NATIVE_FAST_PATH must be true or false');
+  c.PDF_ANALYSIS_NATIVE_FAST_PATH = c.PDF_ANALYSIS_NATIVE_FAST_PATH !== false && c.PDF_ANALYSIS_NATIVE_FAST_PATH !== 'false';
+  if (!['legacy', 'hybrid'].includes(c.PDF_ANALYSIS_MODE))
+    throw new Error('PDF_ANALYSIS_MODE must be legacy or hybrid');
+  c.PDF_ANALYSIS_URL ||= 'http://127.0.0.1:8091';
+  if (!['http:', 'https:'].includes(new URL(c.PDF_ANALYSIS_URL).protocol))
+    throw new Error('PDF_ANALYSIS_URL must be HTTP(S)');
+  c.PDF_ANALYSIS_TIMEOUT_MS = Number(c.PDF_ANALYSIS_TIMEOUT_MS ?? 95000);
+  if (!Number.isSafeInteger(c.PDF_ANALYSIS_TIMEOUT_MS) || c.PDF_ANALYSIS_TIMEOUT_MS < 1 || c.PDF_ANALYSIS_TIMEOUT_MS > 600000)
+    throw new Error('PDF_ANALYSIS_TIMEOUT_MS must be within [1,600000]');
   c.VISION_BASE_URL ||= c.CHAT_BASE_URL;
   if (!['http:', 'https:'].includes(new URL(c.VISION_BASE_URL).protocol))
     throw new Error('VISION_BASE_URL must be HTTP(S)');
@@ -111,6 +124,33 @@ export function validateConfig(input: Record<string, unknown>): Record<string, a
   }
   if (c.CHAT_CONTEXT_TOKENS <= c.CHAT_OUTPUT_TOKENS + 512)
     throw new Error('CHAT_CONTEXT_TOKENS must leave room for input and safety reserve');
+  c.AGENT_MODEL ||= c.CHAT_MODEL;
+  if (typeof c.AGENT_MODEL !== 'string' || !c.AGENT_MODEL.trim())
+    throw new Error('AGENT_MODEL must be a nonempty model name');
+  const agentLimits: Record<string, [number, number, number]> = {
+    AGENT_DECISIONS: [6, 1, 32],
+    AGENT_TOOLS: [8, 1, 64],
+    AGENT_TOOL_CONCURRENCY: [2, 1, 8],
+    AGENT_ASSESSMENTS: [2, 1, 8],
+    AGENT_MODEL_CALLS: [32, 2, 128],
+    AGENT_TOKEN_BUDGET: [100000, 2048, 2000000],
+    AGENT_ACTIVE_MS: [600000, 1000, 3600000],
+    AGENT_SYNC_MS: [30000, 1, 600000],
+    AGENT_TOOL_TOKENS: [2000, 128, 16000],
+  };
+  for (const [key, [fallback, min, max]] of Object.entries(agentLimits)) {
+    const value = c[key] === undefined ? fallback : c[key];
+    if ((typeof value !== 'number' && (typeof value !== 'string' || !/^\d+$/.test(value))) ||
+      !Number.isSafeInteger(Number(value)) || Number(value) < min || Number(value) > max)
+      throw new Error(`${key} must be an integer within [${min},${max}]`);
+    c[key] = Number(value);
+  }
+  if (c.AGENT_TOOL_CONCURRENCY > c.AGENT_TOOLS)
+    throw new Error('AGENT_TOOL_CONCURRENCY must not exceed AGENT_TOOLS');
+  if (c.AGENT_SYNC_MS > c.AGENT_ACTIVE_MS)
+    throw new Error('AGENT_SYNC_MS must not exceed AGENT_ACTIVE_MS');
+  if (c.AGENT_TOKEN_BUDGET < c.CHAT_CONTEXT_TOKENS + 1024)
+    throw new Error('AGENT_TOKEN_BUDGET must reserve CHAT_CONTEXT_TOKENS for final generation and 1024 for preparation');
   c.RERANK_MIN_SCORE = Number(c.RERANK_MIN_SCORE ?? 0);
   if (!Number.isFinite(c.RERANK_MIN_SCORE) || c.RERANK_MIN_SCORE < 0 || c.RERANK_MIN_SCORE > 1)
     throw new Error('RERANK_MIN_SCORE must be within [0,1]');

@@ -1,0 +1,1119 @@
+[
+  {
+    "id": "agent-exact-1",
+    "split": "tune",
+    "type": "exact",
+    "question": "TS-999 的含义和处理方法是什么？",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "缓存版本不兼容",
+      "清理本地缓存"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "错误码 TS-999 表示缓存版本不兼容，应清理本地缓存。"
+      }
+    ],
+    "preferredTools": [
+      "keyword_search"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-exact-2",
+    "split": "acceptance",
+    "type": "exact",
+    "question": "AX-204 的工作电压和采样频率是多少？",
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "5 V",
+      "100 Hz"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "型号 AX-204 的工作电压为 5 V，采样频率为 100 Hz。"
+      }
+    ],
+    "preferredTools": [
+      "keyword_search"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-exact-3",
+    "split": "tune",
+    "type": "exact",
+    "question": "AX-205 的工作电压和采样频率是多少？",
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "12 V",
+      "250 Hz"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "型号 AX-205 的工作电压为 12 V，采样频率为 250 Hz。"
+      }
+    ],
+    "preferredTools": [
+      "keyword_search"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-exact-4",
+    "split": "acceptance",
+    "type": "exact",
+    "question": "E-17 状态码应该怎么处理？",
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "温度过高",
+      "停止采样",
+      "检查通风"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "状态码 E-17 表示温度过高，应停止采样并检查通风。"
+      }
+    ],
+    "preferredTools": [
+      "keyword_search"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-exact-5",
+    "split": "tune",
+    "type": "exact",
+    "question": "刷新令牌应调用 POST 的哪个接口？",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "POST /v2/session/refresh"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "POST /v2/session/refresh 用于刷新令牌。"
+      }
+    ],
+    "preferredTools": [
+      "keyword_search"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-exact-6",
+    "split": "acceptance",
+    "type": "exact",
+    "question": "请求遗漏 X-Tenant-ID 时，网关会返回什么状态码？",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "HTTP 400"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "请求头必须携带 X-Tenant-ID。"
+      },
+      {
+        "document": "api",
+        "text": "网关拒绝缺少租户标识的请求，返回 HTTP 400。"
+      }
+    ],
+    "preferredTools": [
+      "keyword_search"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-exact-7",
+    "split": "tune",
+    "type": "exact",
+    "question": "固件 v3.2 的升级接口和断电要求是什么？",
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "USB-C",
+      "禁止断电"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "固件 v3.2 使用 USB-C 接口升级，升级期间禁止断电。"
+      }
+    ],
+    "preferredTools": [
+      "keyword_search"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-exact-8",
+    "split": "acceptance",
+    "type": "exact",
+    "question": "复合索引 (tenant_id, created_at) 按什么规则使用？",
+    "documentIds": [
+      "textbook"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "最左前缀"
+    ],
+    "evidence": [
+      {
+        "document": "textbook",
+        "text": "复合索引 (tenant_id, created_at) 通常按最左前缀使用。"
+      }
+    ],
+    "preferredTools": [
+      "keyword_search"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-multi_hop-1",
+    "split": "tune",
+    "type": "multi_hop",
+    "question": "结合错误码和修复记录，说明缓存不兼容的处理方式，以及哪个版本修复了租户切换后的缓存污染。",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "清理本地缓存",
+      "v2.4.1",
+      "租户切换"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "错误码 TS-999 表示缓存版本不兼容，应清理本地缓存。"
+      },
+      {
+        "document": "api",
+        "text": "版本 v2.4.1 修复了租户切换后缓存污染的问题。"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-multi_hop-2",
+    "split": "acceptance",
+    "type": "multi_hop",
+    "question": "分别说明原子性和 MVCC 的作用，不要把两者当作同一个机制。",
+    "documentIds": [
+      "textbook"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "全部成功或全部撤销",
+      "多个数据版本",
+      "并发读取"
+    ],
+    "evidence": [
+      {
+        "document": "textbook",
+        "text": "原子性要求事务中的操作全部成功或全部撤销。"
+      },
+      {
+        "document": "textbook",
+        "text": "MVCC 通过多个数据版本改善并发读取。"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-multi_hop-3",
+    "split": "tune",
+    "type": "multi_hop",
+    "question": "设备校准多久一次、校准前准备多久，日常使用的环境温度范围又是多少？",
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "90 天",
+      "10 分钟",
+      "0 至 45"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "校准周期为 90 天，校准前设备需要预热 10 分钟。"
+      },
+      {
+        "document": "manual",
+        "text": "设备应在 0 至 45 摄氏度环境下使用。"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-multi_hop-4",
+    "split": "acceptance",
+    "type": "multi_hop",
+    "question": "访问令牌和刷新令牌分别多久过期，刷新时调用哪个接口？",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "30 分钟",
+      "7 天",
+      "POST /v2/session/refresh"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "访问令牌有效期为 30 分钟，刷新令牌有效期为 7 天。"
+      },
+      {
+        "document": "api",
+        "text": "POST /v2/session/refresh 用于刷新令牌。"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-multi_hop-5",
+    "split": "tune",
+    "type": "multi_hop",
+    "question": "访客进入实验室需要什么条件，实验室在什么时候开放？",
+    "documentIds": [
+      "policy"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "教师陪同",
+      "登记姓名和访问时间",
+      "08:30 至 18:00"
+    ],
+    "evidence": [
+      {
+        "document": "policy",
+        "text": "访客须由教师陪同，并登记姓名和访问时间。"
+      },
+      {
+        "document": "policy",
+        "text": "实验室开放时间为工作日 08:30 至 18:00。"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-multi_hop-6",
+    "split": "acceptance",
+    "type": "multi_hop",
+    "question": "文中的检索实验固定了哪些条件，哪些文档内容又没有被实验覆盖？",
+    "documentIds": [
+      "paper"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "模型版本",
+      "分块规则",
+      "不包含扫描件",
+      "简单文本表格"
+    ],
+    "evidence": [
+      {
+        "document": "paper",
+        "text": "实验固定模型版本和分块规则，仅改变检索方法。"
+      },
+      {
+        "document": "paper",
+        "text": "实验不包含扫描件，表格仅采用简单文本表格。"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-multi_hop-7",
+    "split": "tune",
+    "type": "multi_hop",
+    "question": "Worker 和 Indexer 各自的超时、重试及端口是什么，并说明超时单位。",
+    "documentIds": [
+      "table"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "30",
+      "3",
+      "8081",
+      "60",
+      "1",
+      "8082",
+      "seconds"
+    ],
+    "evidence": [
+      {
+        "document": "table",
+        "text": "Worker | 30 | 3 | 8081"
+      },
+      {
+        "document": "table",
+        "text": "Indexer | 60 | 1 | 8082"
+      },
+      {
+        "document": "table",
+        "text": "Units: timeout is measured in seconds."
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-multi_hop-8",
+    "split": "acceptance",
+    "type": "multi_hop",
+    "question": "借用设备要提前多久、由谁审批，发生设备故障后的正确处置又是什么？",
+    "documentIds": [
+      "policy"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "提前 2 天",
+      "实验室管理员",
+      "先断电",
+      "禁止自行拆机"
+    ],
+    "evidence": [
+      {
+        "document": "policy",
+        "text": "设备借用必须提前 2 天申请，由实验室管理员审批。"
+      },
+      {
+        "document": "policy",
+        "text": "发生设备故障时先断电，再联系管理员，禁止自行拆机。"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-compare-1",
+    "split": "tune",
+    "type": "compare",
+    "question": "对照 API 文档和服务配置表，网关的超时与最大重试次数是否一致？",
+    "documentIds": [
+      "api",
+      "table"
+    ],
+    "mode": "compare",
+    "expectedPoints": [
+      "12",
+      "2"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "默认连接超时为 12 秒，最多重试 2 次。"
+      },
+      {
+        "document": "table",
+        "text": "Gateway | 12 | 2 | 8080"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-compare-2",
+    "split": "acceptance",
+    "type": "compare",
+    "question": "比较 API 网关和服务表中的 Worker：两者的超时和重试次数分别是什么？",
+    "documentIds": [
+      "api",
+      "table"
+    ],
+    "mode": "compare",
+    "expectedPoints": [
+      "12",
+      "2",
+      "30",
+      "3"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "默认连接超时为 12 秒，最多重试 2 次。"
+      },
+      {
+        "document": "table",
+        "text": "Worker | 30 | 3 | 8081"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-compare-3",
+    "split": "tune",
+    "type": "compare",
+    "question": "分别列出传感器手册中的过热处理与实验室制度中的设备故障处理，不混同两种场景。",
+    "documentIds": [
+      "manual",
+      "policy"
+    ],
+    "mode": "compare",
+    "expectedPoints": [
+      "停止采样",
+      "检查通风",
+      "先断电",
+      "联系管理员"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "状态码 E-17 表示温度过高，应停止采样并检查通风。"
+      },
+      {
+        "document": "policy",
+        "text": "发生设备故障时先断电，再联系管理员，禁止自行拆机。"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-compare-4",
+    "split": "acceptance",
+    "type": "compare",
+    "question": "比较实验室原始数据保留时间和传感器校准周期，分别引用来源。",
+    "documentIds": [
+      "policy",
+      "manual"
+    ],
+    "mode": "compare",
+    "expectedPoints": [
+      "60 天",
+      "90 天"
+    ],
+    "evidence": [
+      {
+        "document": "policy",
+        "text": "原始实验数据保留 60 天，审批记录保留 180 天。"
+      },
+      {
+        "document": "manual",
+        "text": "校准周期为 90 天，校准前设备需要预热 10 分钟。"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-compare-5",
+    "split": "tune",
+    "type": "compare",
+    "question": "数据库教材和检索实验报告对性能优化前的测量或控制条件分别怎么说？",
+    "documentIds": [
+      "textbook",
+      "paper"
+    ],
+    "mode": "compare",
+    "expectedPoints": [
+      "测量查询计划",
+      "固定模型版本",
+      "分块规则"
+    ],
+    "evidence": [
+      {
+        "document": "textbook",
+        "text": "本教材推荐先测量查询计划，再决定是否增加索引。"
+      },
+      {
+        "document": "paper",
+        "text": "实验固定模型版本和分块规则，仅改变检索方法。"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-compare-6",
+    "split": "acceptance",
+    "type": "compare",
+    "question": "传感器手册和 API 文档各提到哪个版本及对应操作或修复？",
+    "documentIds": [
+      "manual",
+      "api"
+    ],
+    "mode": "compare",
+    "expectedPoints": [
+      "v3.2",
+      "USB-C",
+      "v2.4.1",
+      "缓存污染"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "固件 v3.2 使用 USB-C 接口升级，升级期间禁止断电。"
+      },
+      {
+        "document": "api",
+        "text": "版本 v2.4.1 修复了租户切换后缓存污染的问题。"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-compare-7",
+    "split": "tune",
+    "type": "compare",
+    "question": "比较 API 文档的访问令牌有效期和实验室审批记录保留期，明确单位和含义。",
+    "documentIds": [
+      "api",
+      "policy"
+    ],
+    "mode": "compare",
+    "expectedPoints": [
+      "30 分钟",
+      "180 天"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "访问令牌有效期为 30 分钟，刷新令牌有效期为 7 天。"
+      },
+      {
+        "document": "policy",
+        "text": "原始实验数据保留 60 天，审批记录保留 180 天。"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-compare-8",
+    "split": "acceptance",
+    "type": "compare",
+    "question": "分别给出服务配置表的传输协议和传感器固件的升级接口，不把它们当作同类参数。",
+    "documentIds": [
+      "table",
+      "manual"
+    ],
+    "mode": "compare",
+    "expectedPoints": [
+      "TCP",
+      "USB-C"
+    ],
+    "evidence": [
+      {
+        "document": "table",
+        "text": "Protocol: TCP"
+      },
+      {
+        "document": "manual",
+        "text": "固件 v3.2 使用 USB-C 接口升级，升级期间禁止断电。"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-overview-1",
+    "split": "tune",
+    "type": "overview",
+    "question": "请完整概览实验室制度，覆盖开放、记录保留、借用、访客及安全要求。",
+    "documentIds": [
+      "policy"
+    ],
+    "mode": "overview",
+    "expectedPoints": [
+      "08:30 至 18:00",
+      "60 天",
+      "180 天",
+      "提前 2 天",
+      "教师陪同",
+      "先断电"
+    ],
+    "evidence": [
+      {
+        "document": "policy",
+        "text": "实验室开放时间为工作日 08:30 至 18:00。"
+      },
+      {
+        "document": "policy",
+        "text": "原始实验数据保留 60 天，审批记录保留 180 天。"
+      },
+      {
+        "document": "policy",
+        "text": "设备借用必须提前 2 天申请，由实验室管理员审批。"
+      },
+      {
+        "document": "policy",
+        "text": "访客须由教师陪同，并登记姓名和访问时间。"
+      },
+      {
+        "document": "policy",
+        "text": "每周五 17:00 检查消防通道，不得堆放设备。"
+      },
+      {
+        "document": "policy",
+        "text": "发生设备故障时先断电，再联系管理员，禁止自行拆机。"
+      }
+    ],
+    "preferredTools": [
+      "summarize_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-overview-2",
+    "split": "acceptance",
+    "type": "overview",
+    "question": "总结 API 文档的认证、租户标识、错误处理及版本修复要求。",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "overview",
+    "expectedPoints": [
+      "30 分钟",
+      "7 天",
+      "X-Tenant-ID",
+      "TS-999",
+      "v2.4.1"
+    ],
+    "evidence": [
+      {
+        "document": "api",
+        "text": "访问令牌有效期为 30 分钟，刷新令牌有效期为 7 天。"
+      },
+      {
+        "document": "api",
+        "text": "POST /v2/session/refresh 用于刷新令牌。请求头必须携带 X-Tenant-ID。"
+      },
+      {
+        "document": "api",
+        "text": "错误码 TS-999 表示缓存版本不兼容，应清理本地缓存。"
+      },
+      {
+        "document": "api",
+        "text": "版本 v2.4.1 修复了租户切换后缓存污染的问题。"
+      }
+    ],
+    "preferredTools": [
+      "summarize_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-overview-3",
+    "split": "tune",
+    "type": "overview",
+    "question": "概览数据库教材的主要内容，并保留各概念之间的区别。",
+    "documentIds": [
+      "textbook"
+    ],
+    "mode": "overview",
+    "expectedPoints": [
+      "原子性",
+      "一致性",
+      "隔离性",
+      "持久性",
+      "B+ 树",
+      "MVCC",
+      "最左前缀"
+    ],
+    "evidence": [
+      {
+        "document": "textbook",
+        "text": "事务的四个特性是原子性、一致性、隔离性、持久性。"
+      },
+      {
+        "document": "textbook",
+        "text": "B+ 树的叶子节点保存索引数据，并通过链表连接。"
+      },
+      {
+        "document": "textbook",
+        "text": "复合索引 (tenant_id, created_at) 通常按最左前缀使用。"
+      },
+      {
+        "document": "textbook",
+        "text": "MVCC 通过多个数据版本改善并发读取。"
+      }
+    ],
+    "preferredTools": [
+      "summarize_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-overview-4",
+    "split": "acceptance",
+    "type": "overview",
+    "question": "概括传感器手册的型号参数、环境限制与维护要求。",
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "overview",
+    "expectedPoints": [
+      "AX-204",
+      "AX-205",
+      "0 至 45",
+      "90 天",
+      "10 分钟",
+      "禁止断电"
+    ],
+    "evidence": [
+      {
+        "document": "manual",
+        "text": "型号 AX-204 的工作电压为 5 V，采样频率为 100 Hz。"
+      },
+      {
+        "document": "manual",
+        "text": "型号 AX-205 的工作电压为 12 V，采样频率为 250 Hz。"
+      },
+      {
+        "document": "manual",
+        "text": "设备应在 0 至 45 摄氏度环境下使用。"
+      },
+      {
+        "document": "manual",
+        "text": "校准周期为 90 天，校准前设备需要预热 10 分钟。"
+      },
+      {
+        "document": "manual",
+        "text": "固件 v3.2 使用 USB-C 接口升级，升级期间禁止断电。"
+      }
+    ],
+    "preferredTools": [
+      "summarize_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-overview-5",
+    "split": "tune",
+    "type": "overview",
+    "question": "概览检索实验报告的对照方法、条件、结果和适用限制。",
+    "documentIds": [
+      "paper"
+    ],
+    "mode": "overview",
+    "expectedPoints": [
+      "向量检索",
+      "混合检索",
+      "重排",
+      "72%",
+      "84%",
+      "89%",
+      "不能直接推广"
+    ],
+    "evidence": [
+      {
+        "document": "paper",
+        "text": "研究比较向量检索、混合检索、混合加重排三种方法。"
+      },
+      {
+        "document": "paper",
+        "text": "实验固定模型版本和分块规则，仅改变检索方法。"
+      },
+      {
+        "document": "paper",
+        "text": "向量检索召回率为 72%，混合检索为 84%，加入重排为 89%。"
+      },
+      {
+        "document": "paper",
+        "text": "研究指出这些数字只属于本实验，不能直接推广到所有知识库。"
+      }
+    ],
+    "preferredTools": [
+      "summarize_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-overview-6",
+    "split": "acceptance",
+    "type": "overview",
+    "question": "完整概述服务配置表，保留各服务参数、协议、单位和零重试的含义。",
+    "documentIds": [
+      "table"
+    ],
+    "mode": "overview",
+    "expectedPoints": [
+      "Gateway",
+      "Worker",
+      "Indexer",
+      "TCP",
+      "seconds",
+      "disables automatic retries"
+    ],
+    "evidence": [
+      {
+        "document": "table",
+        "text": "Gateway | 12 | 2 | 8080"
+      },
+      {
+        "document": "table",
+        "text": "Worker | 30 | 3 | 8081"
+      },
+      {
+        "document": "table",
+        "text": "Indexer | 60 | 1 | 8082"
+      },
+      {
+        "document": "table",
+        "text": "Protocol: TCP"
+      },
+      {
+        "document": "table",
+        "text": "Units: timeout is measured in seconds."
+      },
+      {
+        "document": "table",
+        "text": "A zero retry value disables automatic retries."
+      }
+    ],
+    "preferredTools": [
+      "summarize_document"
+    ],
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-insufficient-1",
+    "split": "tune",
+    "type": "insufficient",
+    "question": "手册中 AX-206 型号的工作电压是多少？",
+    "documentIds": [
+      "manual"
+    ],
+    "mode": "auto",
+    "expectedPoints": [],
+    "evidence": [],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "expectedAbstention": true,
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-insufficient-2",
+    "split": "acceptance",
+    "type": "insufficient",
+    "question": "这份研究在纯扫描 PDF 上测得的准确率是多少？",
+    "documentIds": [
+      "paper"
+    ],
+    "mode": "auto",
+    "expectedPoints": [
+      "不包含扫描件"
+    ],
+    "evidence": [
+      {
+        "document": "paper",
+        "text": "实验不包含扫描件，表格仅采用简单文本表格。"
+      }
+    ],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "expectedAbstention": true,
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-insufficient-3",
+    "split": "tune",
+    "type": "insufficient",
+    "question": "实验室管理员的手机号是多少？",
+    "documentIds": [
+      "policy"
+    ],
+    "mode": "auto",
+    "expectedPoints": [],
+    "evidence": [],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "expectedAbstention": true,
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-insufficient-4",
+    "split": "acceptance",
+    "type": "insufficient",
+    "question": "API 网关 v2.4.2 修复了哪些缺陷？",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "auto",
+    "expectedPoints": [],
+    "evidence": [],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "expectedAbstention": true,
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-insufficient-5",
+    "split": "tune",
+    "type": "insufficient",
+    "question": "网关 TLS 证书的有效期是多少天？",
+    "documentIds": [
+      "api",
+      "table"
+    ],
+    "mode": "auto",
+    "expectedPoints": [],
+    "evidence": [],
+    "preferredTools": [
+      "knowledge_search",
+      "read_document"
+    ],
+    "expectedAbstention": true,
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-clarification-1",
+    "split": "acceptance",
+    "type": "clarification",
+    "question": "请完整总结这份文档。",
+    "documentIds": [],
+    "mode": "auto",
+    "expectedPoints": [],
+    "evidence": [],
+    "preferredTools": [],
+    "expectedClarification": true,
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-clarification-2",
+    "split": "tune",
+    "type": "clarification",
+    "question": "它的有效期是多少？",
+    "documentIds": [
+      "api"
+    ],
+    "mode": "auto",
+    "expectedPoints": [],
+    "evidence": [],
+    "preferredTools": [],
+    "expectedClarification": true,
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-clarification-3",
+    "split": "acceptance",
+    "type": "clarification",
+    "question": "它们之间有什么差别？",
+    "documentIds": [],
+    "mode": "auto",
+    "expectedPoints": [],
+    "evidence": [],
+    "preferredTools": [],
+    "expectedClarification": true,
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-clarification-4",
+    "split": "tune",
+    "type": "clarification",
+    "question": "继续上次的比较，把两者的限制条件补全。",
+    "documentIds": [],
+    "mode": "auto",
+    "expectedPoints": [],
+    "evidence": [],
+    "preferredTools": [],
+    "expectedClarification": true,
+    "annotationStatus": "authored_requires_human_review"
+  },
+  {
+    "id": "agent-clarification-5",
+    "split": "acceptance",
+    "type": "clarification",
+    "question": "请列出所有资料里的全部术语，并给出精确总数。",
+    "documentIds": [],
+    "mode": "auto",
+    "expectedPoints": [],
+    "evidence": [],
+    "preferredTools": [],
+    "expectedClarification": true,
+    "annotationStatus": "authored_requires_human_review"
+  }
+]

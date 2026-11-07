@@ -61,15 +61,17 @@ export class DocumentParser {
           prepared = 0;
         let polling = Promise.resolve();
         let lastReport = 0;
-        const reportRegions = () => {
+        let recognitionStage: 'ocr' | 'vision' = this.visual?.hybrid ? 'ocr' : 'vision';
+        const reportRegions = (force = false) => {
           const final = prepared === document.numPages && regionDone === regionTotal;
-          if (!final && Date.now() - lastReport < 500) return reporting;
+          if (!force && !final && Date.now() - lastReport < 500) return reporting;
           lastReport = Date.now();
-          const done = regionDone,
+          const stage = recognitionStage,
+            done = regionDone,
             total = prepared === document.numPages ? regionTotal : null;
           reporting = reporting.then(async () => {
             try {
-              await originalContext?.stage?.('vision', done, total);
+              await originalContext?.stage?.(stage, done, total);
             } catch (error) {
               progressError = error;
               throw error;
@@ -93,7 +95,15 @@ export class DocumentParser {
               ...originalContext,
               signal: controller.signal,
               guard: check,
-              stage: async () => {},
+              stage: async (stage) => {
+                // Layout/parsing use page coordinates. Recognition always uses
+                // completed regions, including OCR and cache hits. Once vision
+                // starts, a slower OCR region must not move the stage backwards.
+                if (this.visual?.hybrid && stage === 'vision' && recognitionStage !== 'vision') {
+                  recognitionStage = 'vision';
+                  await reportRegions(true);
+                }
+              },
               beforeRequest: () => {
                 if (cancellation || firstFailure) throw cancellation || firstFailure;
               },

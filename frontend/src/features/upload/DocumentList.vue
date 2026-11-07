@@ -55,7 +55,7 @@
           />
           <div v-else-if="doc.task?.status === 'running'" class="index-progress-unknown"
             role="progressbar" aria-label="文档解析进度"
-            :aria-valuetext="doc.task.stage === 'vision' ? `已识别 ${doc.task.completed} 个区域，总量统计中` : '正在处理，总量统计中'">
+            :aria-valuetext="['vision', 'ocr'].includes(doc.task.stage) ? `已识别 ${doc.task.completed} 个区域，总量统计中` : '正在处理，总量统计中'">
             <span></span>
           </div>
           <div v-if="doc.task?.error" class="error-text">

@@ -45,18 +45,24 @@ export class EmbeddingsService implements OnModuleDestroy {
   async embedDocuments(
     texts: string[],
     profile: ModelProfile = this.currentProfile(),
+    signal?: AbortSignal,
   ): Promise<number[][]> {
+    signal?.throwIfAborted();
     assertTokenizerProfile(profile);
-    if (profile.provider === 'dashscope') return this.remote(texts, profile);
+    if (profile.provider === 'dashscope') return this.remote(texts, profile, signal);
     if (!texts.length) return [];
     const run = async () => {
+      signal?.throwIfAborted();
       const extractor = await this.load();
+      signal?.throwIfAborted();
       const vectors: number[][] = [];
       for (let i = 0; i < texts.length; i += 16) {
+        signal?.throwIfAborted();
         const tensor = await extractor(texts.slice(i, i + 16), {
           pooling: 'mean',
           normalize: true,
         });
+        signal?.throwIfAborted();
         const batch = tensor.tolist() as number[][];
         if (
           batch.length !== Math.min(16, texts.length - i) ||
@@ -73,11 +79,11 @@ export class EmbeddingsService implements OnModuleDestroy {
     return pending;
   }
 
-  async embedQuery(text: string, profile: ModelProfile = this.currentProfile()): Promise<number[]> {
-    return (await this.embedDocuments([text], profile))[0];
+  async embedQuery(text: string, profile: ModelProfile = this.currentProfile(), signal?: AbortSignal): Promise<number[]> {
+    return (await this.embedDocuments([text], profile, signal))[0];
   }
 
-  private async remote(texts: string[], profile: ModelProfile): Promise<number[][]> {
+  private async remote(texts: string[], profile: ModelProfile, signal?: AbortSignal): Promise<number[][]> {
     if (!texts.length) return [];
     const key = this.config.get<string>('EMBEDDING_API_KEY') || this.config.get<string>('CHAT_API_KEY');
     if (!key) throw new Error('请配置 EMBEDDING_API_KEY 或 CHAT_API_KEY');
@@ -88,6 +94,7 @@ export class EmbeddingsService implements OnModuleDestroy {
         throw new Error('Embedding 输入超过模型 token 上限，拒绝静默截断');
     const all: number[][] = [];
     for (let i = 0; i < texts.length; i += 10) {
+      signal?.throwIfAborted();
       const input = texts.slice(i, i + 10);
       const response = await fetch(
         (
@@ -103,7 +110,7 @@ export class EmbeddingsService implements OnModuleDestroy {
             dimensions: profile.dimensions,
             encoding_format: 'float',
           }),
-          signal: AbortSignal.timeout(30000),
+          signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
         },
       );
       if (!response.ok) throw new Error('Embedding API HTTP ' + response.status);

@@ -1,5 +1,15 @@
 name: ai-rag
 services:
+  pdf-analysis:
+    profiles: ["pdf-analysis"]
+    build: ./services/pdf-analysis
+    ports: ["127.0.0.1:8091:8091"]
+    environment:
+      PDF_ANALYSIS_HOST: "0.0.0.0"
+      PDF_ANALYSIS_PORT: "8091"
+      PDF_ANALYSIS_MODEL_DIR: "/models"
+    volumes: ["pdf-analysis-models:/models"]
+    restart: unless-stopped
   redis:
     image: redis:7.4-alpine
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
@@ -38,5 +48,6 @@ services:
     profiles: ["test"]
     ports: ["127.0.0.1:16333:6333"]
 volumes:
+  pdf-analysis-models:
   redis-data:
   qdrant-data:

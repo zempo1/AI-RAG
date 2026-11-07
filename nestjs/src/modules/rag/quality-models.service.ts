@@ -7,13 +7,14 @@ import { QueryMode, HistoryTurn } from './quality.types';
 @Injectable()
 export class QualityModelsService {
   constructor(private readonly config: ConfigService) {}
-  private async request(url: string, key: string | undefined, payload: unknown) {
+  private async request(url: string, key: string | undefined, payload: unknown, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     if (!key || !url) throw new ApiError(503, '检索模型服务尚未配置');
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(Number(this.config.get('QUALITY_MODEL_TIMEOUT_MS') || 20000)),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(Number(this.config.get('QUALITY_MODEL_TIMEOUT_MS') || 20000))]) : AbortSignal.timeout(Number(this.config.get('QUALITY_MODEL_TIMEOUT_MS') || 20000)),
     });
     if (!response.ok) throw new ApiError(503, '检索模型服务不可用（HTTP ' + response.status + '）');
     return response.json() as Promise<any>;
@@ -22,6 +23,7 @@ export class QualityModelsService {
     question: string,
     history: HistoryTurn[],
     documents: { id: number; filename: string }[],
+    signal?: AbortSignal,
   ) {
     const base =
       this.config.get<string>('QUERY_PLAN_BASE_URL') ||
@@ -45,7 +47,7 @@ export class QualityModelsService {
         },
         { role: 'user', content: JSON.stringify({ question, history, documents }) },
       ],
-    });
+    }, signal);
     const text = response.choices?.[0]?.message?.content;
     // 模型生成的 JSON 也必须校验结构；具体文档 ID 的权限还会由 RagService 再核对。
     const plan = JSON.parse(text);
@@ -71,7 +73,7 @@ export class QualityModelsService {
       ambiguous: boolean;
     };
   }
-  async rerank(question: string, texts: string[]) {
+  async rerank(question: string, texts: string[], signal?: AbortSignal) {
     const url =
       this.config.get<string>('RERANK_URL') ||
       'https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank';
@@ -87,6 +89,7 @@ export class QualityModelsService {
         input: { query: question, documents: texts },
         parameters,
       },
+      signal,
     );
     const rows = response.output?.results || response.results;
     if (!Array.isArray(rows) || (texts.length > 0 && rows.length === 0))

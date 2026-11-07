@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IndexingService } from '../src/modules/documents/indexing.service';
 import { TaskQueueRuntime } from '../src/modules/tasks/task-queue.runtime';
+import { agentLlmFixture } from './helpers/agent-llm.fixture';
 
 describe('existing Vue API contract', () => {
   let app: INestApplication;
@@ -28,6 +29,7 @@ describe('existing Vue API contract', () => {
   let failLlm = false;
   let slowStream = false;
   let observeAbort: () => void = () => undefined;
+  let finalCalls = 0;
   const auth = () => ({ Authorization: `Bearer ${token}` });
   beforeAll(async () => {
     process.env.STORAGE_DRIVER = 'memory';
@@ -49,12 +51,13 @@ describe('existing Vue API contract', () => {
         embedQuery: async () => [1, 0],
       })
       .overrideProvider(LlmService)
-      .useValue({
+      .useValue(agentLlmFixture({
         complete: async (prompt: string) => {
           if (failLlm) throw new Error('upstream unavailable');
           if (prompt.startsWith('Generate a mind map'))
             return '{"root":{"data":{"text":"测试"},"children":[]}}';
           if (prompt.includes('Flashcard')) return '[{"q":"问题","a":"答案"}]';
+          finalCalls++;
           return '根据文档回答';
         },
         stream: async function* (_prompt: string, _key: string, signal: AbortSignal) {
@@ -73,7 +76,7 @@ describe('existing Vue API contract', () => {
           if (failLlm) throw new Error('upstream unavailable');
           yield '答案';
         },
-      })
+      }))
       .compile();
     app = module.createNestApplication();
     configureApp(app);
@@ -144,6 +147,18 @@ describe('existing Vue API contract', () => {
       .post('/api/documents/' + doc + '/activate')
       .set(auth())
       .expect(200);
+  });
+  it('deduplicates synchronous request IDs before any additional model generation', async () => {
+    const body = { question: '内容是什么', requestId: randomUUID(), documentIds: [doc] };
+    const before = finalCalls;
+    const responses = await Promise.all([0, 1].map(() => request(app.getHttpServer()).post('/api/chat').set(auth()).send(body)));
+    expect(responses.map(r => r.status).sort()).toEqual([200, 202]);
+    expect(finalCalls - before).toBe(1);
+    const chatId = responses.find(r => r.status === 200)!.body.data.chatId;
+    const history = (await request(app.getHttpServer()).get('/api/chats/' + chatId).set(auth()).expect(200)).body.data;
+    expect(history.messages.map((m: any) => m.role)).toEqual(['user', 'assistant']);
+    await request(app.getHttpServer()).post('/api/chat').set(auth()).send(body).expect(202);
+    expect(finalCalls - before).toBe(1);
   });
   it('rejects invalid, empty and oversized files and missing questions', async () => {
     await request(app.getHttpServer())
@@ -300,6 +315,10 @@ describe('existing Vue API contract', () => {
     expect(interrupted.answer).toBe('中文\\路径\n"[1]');
     expect(interrupted.citations).toHaveLength(1);
     expect(interrupted.generationStatus).toBe('interrupted');
+    const history = (await request(app.getHttpServer()).get('/api/chats/' + interrupted.chatId).set(auth()).expect(200)).body.data;
+    expect(history.messages.find((m: any) => m.role === 'assistant')).toMatchObject({
+      content: interrupted.answer, citations: interrupted.citations, generationStatus: 'interrupted',
+    });
     failLlm = false;
   });
   it('cancels the upstream generation when the browser disconnects', async () => {
@@ -481,13 +500,11 @@ describe('existing Vue API contract', () => {
       previousBudget = config.get('RAG_EVIDENCE_TOKENS');
     config.set('RAG_EVIDENCE_TOKENS', 300);
     const summary = app.get(SummaryService),
-      original = summary.summarize.bind(summary);
-    summary.summarize = async (snapshot: any) =>
+      original = summary.summarizeAgent.bind(summary);
+    summary.summarizeAgent = async (sources: any[]) =>
       ({
-        answer: '完整总结[1]',
-        citations: snapshot.sources.slice(0, 1),
+        groups: [{ summary: '完整总结[1]', refs: { '1': sources[0].evidenceId } }],
         coverage: { complete: true },
-        diagnostics: snapshot.diagnostics,
       }) as any;
     try {
       const upload = await request(app.getHttpServer())
@@ -565,8 +582,32 @@ describe('existing Vue API contract', () => {
         .expect(409);
     } finally {
       config.set('RAG_EVIDENCE_TOKENS', previousBudget);
-      summary.summarize = original;
+      summary.summarizeAgent = original;
     }
+  });
+
+  it('cancels only the owning queued Agent task and makes canceled history dismissible', async () => {
+    const config = app.get(ConfigService), previous = config.get('RAG_EVIDENCE_TOKENS');
+    config.set('RAG_EVIDENCE_TOKENS', 300);
+    try {
+      const upload = (await request(app.getHttpServer()).post('/api/upload').set(auth())
+        .attach('file', Buffer.from('# 取消\n' + '取消测试原文。'.repeat(400)), 'cancel-agent.md').expect(202)).body.data;
+      await app.get(IndexingService).process(upload.taskId);
+      const accepted = (await request(app.getHttpServer()).post('/api/chat').set(auth()).send({
+        question: '总结全文', mode: 'overview', documentIds: [upload.documentId], requestId: randomUUID(),
+      }).expect(202)).body.data;
+      await request(app.getHttpServer()).post('/api/tasks/' + accepted.taskId + '/cancel')
+        .set('Authorization', 'Bearer ' + other).expect(404);
+      await request(app.getHttpServer()).post('/api/tasks/' + accepted.taskId + '/cancel').set(auth()).expect(200);
+      await app.get(QaTasksService).process(accepted.taskId);
+      const task = (await request(app.getHttpServer()).get('/api/tasks/' + accepted.taskId).set(auth()).expect(200)).body.data;
+      expect(task).toMatchObject({ status: 'canceled', canDismiss: true });
+      const history = (await request(app.getHttpServer()).get('/api/chats/' + accepted.chatId).set(auth()).expect(200)).body.data;
+      expect(history.pendingTasks).toHaveLength(0);
+      expect(history.messages.filter((m: any) => m.role === 'assistant')).toEqual([
+        expect.objectContaining({ generationStatus: 'interrupted' }),
+      ]);
+    } finally { config.set('RAG_EVIDENCE_TOKENS', previous); }
   });
 
   it('keeps streamed retrieval diagnostics after history reload', async () => {

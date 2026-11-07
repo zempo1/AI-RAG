@@ -4,7 +4,7 @@ import { RagService } from '../src/modules/rag/rag.service';
 import { ChatService } from '../src/modules/chat/chat.service';
 const make = () => {
  const store = { save: async (_table: string, row: any) => ({ ...row, id: 1 }), list: jest.fn(async () => []) };
- const rag = new RagService({} as any, {} as any, store as any, { resolve: async () => ({ id: 1 }) } as any, undefined, undefined, new ConfigService({ STORAGE_DRIVER: 'memory' }));
+ const rag = new RagService({} as any, {} as any, store as any, { resolve: async () => ({ id: 1 }), owned: async () => ({ id: 1 }) } as any, undefined, undefined, new ConfigService({ STORAGE_DRIVER: 'memory' }));
  return { rag, store };
 };
 it('answers greetings without accessing document chunks or models', async () => {
@@ -31,7 +31,7 @@ it('does not mistake a greeting followed by a document request for small talk', 
 it('routes an unrelated question through the planner without retrieving vectors', async () => {
  const embedQuery = jest.fn();
  const rag = new RagService({ embedQuery } as any, {} as any,
-   { list: async () => [] } as any, { resolve: async () => ({ id: 1 }) } as any,
+   { list: async () => [] } as any, { resolve: async () => ({ id: 1 }), owned: async () => ({ id: 1 }) } as any,
    undefined, { plan: async () => ({ route: 'general', query: '什么是Vue', mode: 'search', keywords: [], documentIds: [], ambiguous: false }) } as any,
    new ConfigService({ STORAGE_DRIVER: 'mysql' }));
  const result = await rag.prepare('什么是Vue', 1, 1);

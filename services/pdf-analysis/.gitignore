@@ -1,0 +1,7 @@
+.venv/
+.test-deps/
+.model-deps/
+.package-check/
+__pycache__/
+.pytest_cache/
+models/

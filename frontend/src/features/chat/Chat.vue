@@ -14,13 +14,17 @@
       v-model:mode="mode"
       :disabled="loading || readOnly"
     />
-    <div v-if="activeTask" class="qa-task-status" role="status">
+    <div v-if="activeTask" class="qa-task-status">
       <strong>后台问答处理中</strong><span>{{ taskLabel(activeTask) }}</span
       ><small>可离开页面，任务完成后会保存到当前会话。</small>
     </div>
     <div v-if="taskConnectionError" class="qa-task-status" role="status">
       暂时无法更新后台任务，正在重试…
     </div>
+    <div v-if="cancelError" class="qa-task-status" role="alert">{{ cancelError }}</div>
+    <button v-if="loading && (!activeTask || canCancelTask)" class="debug-trigger stop-task" type="button" :disabled="canceling || stopRequested" @click="stopGeneration">
+      {{ activeTask ? (stopRequested ? '正在停止…' : '停止后台任务') : '停止生成' }}
+    </button>
     <div class="messages-viewport">
       <div
         class="messages-container"
@@ -59,6 +63,8 @@
                   class="markdown-body"
                 ></div>
 
+                <AgentTimeline v-if="messageSteps(msg).length" :steps="messageSteps(msg)" :active="msg.loading" />
+                <p v-if="msg.cancelNotice" class="interrupted-label" role="status">{{ msg.cancelNotice }}</p>
                 <details v-if="msg.sources?.length" class="retrieved-sources">
                   <summary>检索到的参考资料（{{ msg.sources.length }}）</summary>
                   <button
@@ -232,7 +238,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, watch, onMounted, onBeforeUnmount } from "vue";
+import { computed, ref, nextTick, watch, onMounted, onBeforeUnmount } from "vue";
 import { Bottom, Promotion, Key, Lock } from "@element-plus/icons-vue";
 import { renderMarkdown } from "../../utils/markdown";
 import {
@@ -242,7 +248,9 @@ import {
   type RetrievalContext,
   type AcceptedAnswer,
 } from "../../api/chat";
-import { getTask, type ProcessingTask } from "../../api/knowledge-bases";
+import { getTask, cancelTask, type ProcessingTask } from "../../api/knowledge-bases";
+import AgentTimeline from "./AgentTimeline.vue";
+import { getAgentProgress, mergeAgentSteps, type AgentStep } from "../../utils/agent-progress";
 import QuestionSources from "./QuestionSources.vue";
 import GenerationStatus from "./GenerationStatus.vue";
 import RetrievalDebug from "./RetrievalDebug.vue";
@@ -251,6 +259,8 @@ import { useToast } from "../../composables/useToast";
 import type { Citation } from "../../api/knowledge-bases";
 
 interface Message {
+  agentSteps?: AgentStep[];
+  cancelNotice?: string;
   role: "user" | "assistant";
   content: string;
   loading?: boolean;
@@ -271,6 +281,9 @@ const selectedDocumentIds = ref<number[]>([]),
   debugRunId = ref<number | null>(null);
 const activeTask = ref<ProcessingTask | null>(null),
   taskConnectionError = ref(false);
+const canceling = ref(false), stopRequested = ref(false), cancelError = ref("");
+const messageSteps = (message: Message) => getAgentProgress(message.diagnostics)?.steps ?? message.agentSteps ?? [];
+const canCancelTask = computed(() => !!activeTask.value?.agentProgress || !!messages.value.at(-1)?.retrievalRunId || !!messageSteps(messages.value.at(-1) || { role: 'assistant', content: '' }).length);
 let taskTimer: ReturnType<typeof setTimeout> | undefined;
 const modeLabels: Record<QaMode, string> = {
   auto: "自动判断",
@@ -311,14 +324,29 @@ function pollTask(
   taskChatId: number,
   currentEpoch: number,
 ) {
+  canceling.value = false;
+  stopRequested.value = false;
+  cancelError.value = "";
   activeTask.value = task;
   loading.value = true;
+  if (!messages.value.at(-1)?.loading) messages.value.push({ role: "assistant", content: "正在后台处理问答任务…", loading: true });
+  const applyProgress = (result: ProcessingTask) => {
+    const message = messages.value.at(-1);
+    if (message?.role !== 'assistant') return;
+    if (result.agentProgress) {
+      message.agentSteps = mergeAgentSteps(message.agentSteps || [], result.agentProgress.steps || []);
+      message.diagnostics = { ...message.diagnostics, agent: { ...result.agentProgress, steps: message.agentSteps } };
+    }
+    if (result.qaResult?.retrievalRunId) message.retrievalRunId = result.qaResult.retrievalRunId;
+  };
+  applyProgress(task);
   const tick = async () => {
     if (currentEpoch !== epoch) return;
     try {
       const result = await getTask(task.id);
       if (currentEpoch !== epoch) return;
       activeTask.value = result;
+      applyProgress(result);
       taskConnectionError.value = false;
       if (["completed", "partial_failed"].includes(result.status)) {
         const history: any = await getChatHistory(taskChatId);
@@ -336,11 +364,14 @@ function pollTask(
       if (["failed", "canceled"].includes(result.status)) {
         const message = messages.value.at(-1);
         if (message?.role === "assistant" && message.loading) {
-          message.content = result.error || "后台问答任务未完成，可稍后重试。";
+          if (result.status === 'canceled') {
+            message.cancelNotice = "后台任务已停止，已获取的来源仍可查看。";
+            if (message.content.startsWith('正在后台')) message.content = '';
+          } else message.content = result.error || "后台问答任务未完成，可稍后重试。";
           message.loading = false;
           message.generationStatus = "interrupted";
         }
-        toast.error(result.error || "后台问答任务未完成");
+        if (result.status !== "canceled") toast.error(result.error || "后台问答任务未完成");
         stopTaskPolling();
         loading.value = false;
         return;
@@ -358,6 +389,35 @@ function pollTask(
     if (currentEpoch === epoch) taskTimer = setTimeout(tick, 2000);
   };
   void tick();
+}
+async function stopGeneration() {
+  if (canceling.value || stopRequested.value) return;
+  const currentEpoch = epoch;
+  const task = activeTask.value;
+  if (!task) {
+    streamAbort?.abort();
+    const message = messages.value.at(-1);
+    if (message?.role === 'assistant') {
+      message.loading = false;
+      message.generationStatus = 'interrupted';
+      message.cancelNotice = '已停止生成，已获取的来源仍可查看。';
+    }
+    loading.value = false;
+    return;
+  }
+  canceling.value = true;
+  cancelError.value = '';
+  try {
+    await cancelTask(task.id);
+    if (currentEpoch !== epoch || activeTask.value?.id !== task.id) return;
+    stopRequested.value = true;
+    const message = messages.value.at(-1);
+    if (message) message.cancelNotice = '已请求停止，正在确认后台任务状态…';
+  } catch {
+    if (currentEpoch === epoch) cancelError.value = '停止失败，后台任务仍在运行，可重试。';
+  } finally {
+    if (currentEpoch === epoch) canceling.value = false;
+  }
 }
 const selectedCitation = ref<Citation | null>(null);
 let streamAbort: AbortController | undefined;
@@ -453,6 +513,7 @@ const loadHistory = async (id: number) => {
   streamAbort?.abort();
   stopTaskPolling();
   const currentEpoch = ++epoch;
+  canceling.value = false; stopRequested.value = false; cancelError.value = "";
   chatId.value = id;
   loading.value = true;
   messages.value = [];
@@ -477,6 +538,7 @@ const loadHistory = async (id: number) => {
 const reset = () => {
   streamAbort?.abort();
   epoch++;
+  canceling.value = false; stopRequested.value = false; cancelError.value = "";
   stopTaskPolling();
   selectedDocumentIds.value = [];
   mode.value = "auto";
@@ -514,6 +576,9 @@ const sendMessage = async () => {
     return;
   const currentEpoch = ++epoch;
   streamAbort = new AbortController();
+  canceling.value = false;
+  stopRequested.value = false;
+  cancelError.value = "";
 
   const question = input.value;
   const retrievalContext: RetrievalContext = {
@@ -542,6 +607,13 @@ const sendMessage = async () => {
       requestId: crypto.randomUUID(),
     },
     {
+      onAgentStep: (step) => {
+        if (currentEpoch !== epoch) return;
+        const message = messages.value[aiMsgIndex];
+        message.agentSteps = mergeAgentSteps(message.agentSteps || [], [step]);
+        message.retrievalRunId = step.runId;
+        void scrollToBottom(true, false);
+      },
       onStatus: (stage) => {
         if (currentEpoch === epoch) messages.value[aiMsgIndex].stage = stage;
       },
@@ -559,7 +631,8 @@ const sendMessage = async () => {
         if (currentEpoch !== epoch) return;
         chatId.value = accepted.chatId;
         emit("chat-created", accepted.chatId);
-        messages.value[aiMsgIndex].content = "正在后台逐章节处理文档…";
+        messages.value[aiMsgIndex].content = "正在后台处理问答任务…";
+        messages.value[aiMsgIndex].retrievalRunId = accepted.retrievalRunId || messages.value[aiMsgIndex].retrievalRunId;
         pollTask(
           {
             id: accepted.taskId,
@@ -575,6 +648,9 @@ const sendMessage = async () => {
       onSources: (sources) => {
         if (currentEpoch === epoch)
           messages.value[aiMsgIndex].sources = sources;
+      },
+      onCitations: (citations) => {
+        if (currentEpoch === epoch) messages.value[aiMsgIndex].citations = citations;
       },
       onDone: (final) => {
         if (currentEpoch !== epoch) return;

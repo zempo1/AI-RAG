@@ -22,11 +22,13 @@
     "format:check": "prettier --check .",
     "schema:upgrade": "npm run build && node scripts/upgrade-schema.cjs",
     "eval:quality": "npm run build && node scripts/evaluate-quality.cjs",
+    "eval:agentic": "node scripts/evaluate-agentic.cjs",
     "quality:preflight": "npm run build && node scripts/quality-preflight.cjs"
   },
   "dependencies": {
     "@huggingface/transformers": "4.3.2",
-    "@langchain/core": "1.3.1",
+    "@langchain/core": "1.3.4",
+    "@langchain/langgraph": "1.7.1",
     "@langchain/openai": "1.8.0",
     "@napi-rs/canvas": "1.0.13",
     "@nestjs/common": "12.3.2",

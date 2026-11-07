@@ -11,7 +11,7 @@ describe('scoped retrieval and citation snapshots', () => {
   afterEach(async () => {
     await p.cleanup();
   });
-  it('retains a deleted revision long enough for a request that already selected its snapshot', async () => {
+  it('stops an in-flight request when its frozen document is deleted even while the revision is retained', async () => {
     p.config.set('INDEX_RETENTION_MS', 600000);
     const uploaded = await p.documents.ingest(Buffer.from('删除前的原文'), 'a.md', 1);
     await p.indexing.process(uploaded.taskId);
@@ -38,8 +38,10 @@ describe('scoped retrieval and citation snapshots', () => {
     await started;
     const deletion = await p.documents.delete(uploaded.documentId, 1);
     expect(await p.indexing.process(deletion.taskId)).toBe('waiting');
+    const rejected = expect(snapshot).rejects.toMatchObject({ status: 404 });
     release();
-    expect((await snapshot).sources[0].text).toBe('删除前的原文');
+    await rejected;
+    expect(await p.store.list('retrievalRuns')).toEqual([]);
     expect(
       (
         await new RagService(p.embeddings as any, p.vectors, p.store, p.libraries).prepare(

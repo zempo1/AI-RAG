@@ -1,4 +1,5 @@
 import request from "../utils/request";
+import { requestTaskCancellation, type AgentProgress } from "../utils/agent-progress";
 
 export interface KnowledgeBase {
   id: number;
@@ -12,6 +13,8 @@ export interface Category {
   knowledgeBaseId: number;
 }
 export interface ProcessingTask {
+  agentProgress?: AgentProgress;
+  qaResult?: { retrievalRunId?: number };
   canDismiss?: boolean;
   waitingUntil?: string | null;
   waitingReason?: string | null;
@@ -135,3 +138,6 @@ export const retryTask = (id: number) =>
 export const dismissTask = (id: number) => request.delete("/api/tasks/" + id);
 export const clearCompletedTasks = (knowledgeBaseId: number) =>
   request.delete("/api/tasks", { params: { knowledgeBaseId } });
+
+export const cancelTask = (id: number) =>
+  requestTaskCancellation(id, (url) => request.post(url));

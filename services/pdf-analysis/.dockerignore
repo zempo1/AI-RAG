@@ -1,0 +1,8 @@
+.venv
+.test-deps
+.model-deps
+.package-check
+models
+__pycache__
+.pytest_cache
+tests

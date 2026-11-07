@@ -1,3 +1,4 @@
+import { agentLlmFixture } from './helpers/agent-llm.fixture';
 import 'reflect-metadata';
 import { createConnection } from 'mysql2/promise';
 import { DataSource } from 'typeorm';
@@ -166,12 +167,12 @@ const enabled = process.env.MYSQL_INTEGRATION === '1';
         embedQuery: async () => [1, 0],
       })
       .overrideProvider(LlmService)
-      .useValue({
+      .useValue(agentLlmFixture({
         complete: async () => '持久化回答',
         stream: async function* () {
           yield '持久化回答';
         },
-      })
+      }))
       .compile();
     const app = module.createNestApplication();
     configureApp(app);

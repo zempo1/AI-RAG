@@ -279,7 +279,7 @@
                     task.waitingReason || stageLabels[task.stage] || task.stage
                   }}
                   {{
-                    task.total != null ? task.completed + "/" + task.total : task.stage === 'vision' ? `已识别 ${task.completed} 个区域（总量统计中）` : ""
+                    task.total != null ? task.completed + "/" + task.total : ['vision', 'ocr'].includes(task.stage) ? `已识别 ${task.completed} 个区域（总量统计中）` : ""
                   }}</span
                 >
                 <span v-if="task.waitingUntil" class="muted"
@@ -441,6 +441,7 @@ const stageLabels: Record<string, string> = {
   queued: "排队中",
   parsing: "解析中",
   vision: "识别图片与图表区域",
+  ocr: "识别扫描文字与图片文字",
   layout: "定位图片与图表区域",
   chunking: "切分中",
   embedding: "向量化中",
@@ -474,7 +475,7 @@ function stateLabel(doc: ManagedDocument) {
       (stageLabels[doc.task.stage] || doc.task.stage) +
       (doc.task.total != null
         ? " " + doc.task.completed + "/" + doc.task.total
-        : doc.task.stage === 'vision' ? ` · 已识别 ${doc.task.completed} 个区域（总量统计中）` : "")
+        : ['vision', 'ocr'].includes(doc.task.stage) ? ` · 已识别 ${doc.task.completed} 个区域（总量统计中）` : "")
     );
   return (
     (

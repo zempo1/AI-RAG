@@ -1,3 +1,4 @@
+import { agentLlmFixture } from './helpers/agent-llm.fixture';
 import 'reflect-metadata';
 import { createConnection } from 'mysql2/promise';
 import { DataSource } from 'typeorm';
@@ -107,13 +108,13 @@ const enabled = process.env.RAG_INTEGRATION === '1';
           embedQuery: async () => [1, ...Array(383).fill(0)],
         })
         .overrideProvider(LlmService)
-        .useValue({
+        .useValue(agentLlmFixture({
           complete: async () => '引用事实[1]，虚构编号[999]',
           stream: async function* () {
             yield '引用事实[1]';
             yield '，虚构编号[999]';
           },
-        })
+        }))
         .compile();
       app = module.createNestApplication();
       configureApp(app);

@@ -1,6 +1,6 @@
 /** 实现业务处理；所属能力：接收问答请求，连接 RAG 与模型，发送流式事件并保存会话。 */
-import { Injectable } from '@nestjs/common';
-import { RagService } from '../rag/rag.service';
+import { Injectable, Inject } from '@nestjs/common';
+import { AgentService } from '../agent/agent.service';
 import { LlmService } from '../llm/llm.service';
 import { Citation, normalizeCitations, NO_CONTEXT_ANSWER } from '../rag/citations';
 export type AnswerEvent =
@@ -16,7 +16,7 @@ export type AnswerEvent =
 @Injectable()
 export class ChatService {
   constructor(
-    private readonly rag: RagService,
+    @Inject(AgentService) private readonly rag: Pick<AgentService, 'prepare'>,
     private readonly llm: LlmService,
   ) {}
   async prepare(question: string, userId: number, kbId?: number, options?: any) {
@@ -33,7 +33,9 @@ export class ChatService {
       ? { retrievalRunId: context.diagnostics.runId, diagnostics: context.diagnostics }
       : {};
   }
-  async answerPrepared(context: any, apiKey?: string) {
+  async answerPrepared(context: any, apiKey?: string, signal?: AbortSignal) {
+    if (context.engine === 'agentic-v1')
+      return (this.rag as AgentService).answerPrepared(context, apiKey, signal);
     // 文档问答没有证据时直接说明不足；通用问答允许模型使用自身知识回答。
     const answer =
       context.directAnswer ||
@@ -51,6 +53,10 @@ export class ChatService {
     signal?: AbortSignal,
   ): AsyncGenerator<AnswerEvent> {
     if (signal?.aborted) return;
+    if (context.engine === 'agentic-v1') {
+      yield* (this.rag as AgentService).streamPrepared(context, apiKey, signal);
+      return;
+    }
     yield { type: 'sources', sources: context.sources };
     let answer = '';
     if (
