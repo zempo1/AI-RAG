@@ -167,6 +167,50 @@ it('uses bounded original evidence for a grounded answer when the assessment can
   expect(p.llm.complete).toHaveBeenCalledTimes(3);
 });
 
+it.each([
+  'CSMA/CD协议的工作流程是什么',
+  '总结这份文档中的CSMA/CD协议工作流程',
+])('answers %s from page 102 even when the planner proposes a full overview', async (question) => {
+  const p = setup();
+  const source = {
+    ...evidence,
+    text: 'CSMA/CD协议工作流程：封装成帧、侦听信道、检测冲突、退避重传。',
+    location: { page: 102, start: 0, end: 30 },
+  };
+  p.retrieval.search = async () => ({ evidence: [source] });
+  p.retrieval.open = async () => ({
+    scope,
+    chunks: [
+      { id: 5, documentId: 3, location: source.location },
+      { id: 6, documentId: 3, text: '其他章节' },
+    ],
+  });
+  p.llm.complete = jest.fn(async (prompt: string) => {
+    if (prompt.startsWith('分析用户问题'))
+      return JSON.stringify({
+        intent: 'overview',
+        complexity: 'simple',
+        subQuestions: ['CSMA/CD的定义是什么', question],
+        ambiguous: false,
+      });
+    if (prompt.startsWith('检查原文'))
+      return JSON.stringify({
+        supported: true,
+        subQuestions: [{ question, status: 'supported', evidenceIds: ['ev1'] }],
+      });
+    expect(prompt).toContain(source.text);
+    return '先封装成帧，侦听信道，检测冲突后退避重传[1]。';
+  });
+  const result = await p.service.prepare(question, 1, 2, { documentIds: [3] });
+  expect(result.diagnostics.agent.plan).toMatchObject({
+    intent: 'search',
+    subQuestions: [question],
+  });
+  const answer = await p.service.answerPrepared(result);
+  expect(answer.answer).toContain('退避重传');
+  expect(answer.citations[0].location?.page).toBe(102);
+});
+
 it('does not count time spent paused in a queue as active execution', async () => {
   const p = setup();
   const snapshot: any = {
@@ -226,7 +270,10 @@ it('returns verified summary sections with original citations and an explicit pa
   expect(context.coverageComplete).toBe(false);
 });
 
-it('does not equate packed search hits with complete overview coverage of two target documents', async () => {
+it.each([
+  { question: '概览全部文件', mode: 'auto' },
+  { question: '给我看一下', mode: 'overview' },
+] as const)('requires full coverage for an overview requested with $mode mode', async ({ question, mode }) => {
   const p = setup();
   const second = { documentId: 9, filename: '第二份', indexRevisionId: 10 };
   p.retrieval.createScope = async () => ({ ...scope, documents: [...scope.documents, second] });
@@ -255,7 +302,8 @@ it('does not equate packed search hits with complete overview coverage of two ta
           supported: true,
           subQuestions: [{ question: 'CRC作用', status: 'supported', evidenceIds: ['ev1'] }],
         });
-  const context = await p.service.prepare('概览全部文件', 1, 2, { evaluation: 'single-round' });
+  const context = await p.service.prepare(question, 1, 2, { evaluation: 'single-round', mode });
+  expect(context.diagnostics.agent.plan.intent).toBe('overview');
   expect(context.coverageComplete).toBe(false);
   expect(context.directAnswer).toContain('不足');
 });

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { LlmService } from '../../llm/llm.service';
 import { PageAssetsService, ParseScope } from '../page-assets.service';
 import { ContentType, PageImageRef, RegionImageRef } from './parsed-document';
-import { locateRegions, PdfRegion } from './pdf-layout';
+import { groupLegacyCrops, locateRegions, PdfRegion } from './pdf-layout';
 import { localRendering, visionPool } from './vision-scheduler';
 import { VisionScheduler } from './vision-scheduler';
 import { PdfAnalysisClient, OcrResult, validateOcr } from './pdf-analysis.client';
@@ -153,26 +153,23 @@ export class PdfVisualService {
     await scope.guard?.();
     await scope.stage?.('layout', page.pageNumber, document.numPages);
     const started = Date.now();
-    const regions = await localRendering.run(
+    const located = await localRendering.run(
       async () => locateRegions(document, page, native, content || (await page.getTextContent())),
       scope.signal,
     );
+    const viewport = page.getViewport({ scale: 1 });
+    const regions = groupLegacyCrops(located, ([x0, y0, x1, y1], limit) =>
+      pdfRegionScale(viewport.width * (x1 - x0), viewport.height * (y1 - y0), limit),
+    );
     await scope.discovered?.(regions.length);
-    const profile = this.profile();
-    const blocks: VisualBlock[] = [];
-    let failure: unknown;
-    for (let index = 0; index < regions.length; index++) {
-      await scope.guard?.();
-      try {
-        blocks.push(
-          ...(await this.region(document, page, native, scope, profile, regions[index], index + 1)),
-        );
-      } catch (error) {
-        await scope.guard?.();
-        markPdfFailure(error, page.pageNumber, index + 1);
-        failure ||= error;
-      }
-    }
+    const blocks = await this.recognizeRegions(
+      document,
+      page,
+      native,
+      scope,
+      this.profile(),
+      regions,
+    );
     this.logger.log(
       JSON.stringify({
         event: 'pdf-page-layout',
@@ -184,7 +181,6 @@ export class PdfVisualService {
         elapsedMs: Date.now() - started,
       }),
     );
-    if (failure) throw failure;
     return {
       blocks,
       stats: {
@@ -224,6 +220,40 @@ export class PdfVisualService {
         JSON.stringify({ profiles: [...new Set(regions.map((r) => r.analysisProfile))].sort() }),
       ),
     );
+    const blocks = await this.recognizeRegions(document, page, native, scope, profile, regions);
+    this.logger.log(
+      JSON.stringify({
+        event: 'pdf-page-layout',
+        mode: 'hybrid',
+        page: page.pageNumber,
+        textOnly: regions.length === 0,
+        regions: regions.length,
+        ocrRegions: regions.filter((r) => r.recognition === 'ocr').length,
+        fullPages: regions.filter((r) => r.kind !== 'region').length,
+        fallbackReasons: regions.filter((r) => r.reason).map((r) => r.reason),
+        layoutMs,
+        elapsedMs: Date.now() - started,
+      }),
+    );
+    return {
+      blocks,
+      stats: {
+        textPages: regions.length ? 0 : 1,
+        regions: regions.length,
+        scanPages: regions.some((r) => r.kind === 'scan') ? 1 : 0,
+        fallbackPages: regions.some((r) => r.kind === 'fallback') ? 1 : 0,
+      },
+    };
+  }
+
+  private async recognizeRegions(
+    document: any,
+    page: any,
+    native: string,
+    scope: ParseContext,
+    profile: string,
+    regions: PdfRegion[],
+  ): Promise<VisualBlock[]> {
     const output: VisualBlock[][] = new Array(regions.length);
     let next = 0,
       failure: unknown;
@@ -251,30 +281,8 @@ export class PdfVisualService {
     };
     await Promise.all(Array.from({ length: Math.min(this.concurrency, regions.length) }, worker));
     await scope.guard?.();
-    this.logger.log(
-      JSON.stringify({
-        event: 'pdf-page-layout',
-        mode: 'hybrid',
-        page: page.pageNumber,
-        textOnly: regions.length === 0,
-        regions: regions.length,
-        ocrRegions: regions.filter((r) => r.recognition === 'ocr').length,
-        fullPages: regions.filter((r) => r.kind !== 'region').length,
-        fallbackReasons: regions.filter((r) => r.reason).map((r) => r.reason),
-        layoutMs,
-        elapsedMs: Date.now() - started,
-      }),
-    );
     if (failure) throw failure;
-    return {
-      blocks: output.flat(),
-      stats: {
-        textPages: regions.length ? 0 : 1,
-        regions: regions.length,
-        scanPages: regions.some((r) => r.kind === 'scan') ? 1 : 0,
-        fallbackPages: regions.some((r) => r.kind === 'fallback') ? 1 : 0,
-      },
-    };
+    return output.flat();
   }
 
   private deduplicate(parsed: VisualBlock[], native: string) {
@@ -806,13 +814,7 @@ export class PdfVisualService {
       const [x0, y0, x1, y1] = region.bbox;
       const width = base.width * (x1 - x0),
         height = base.height * (y1 - y0);
-      const reduction = Math.min(
-        1,
-        region.scaleLimit ? region.scaleLimit / 2 : 1,
-        Math.sqrt(8000000 / (width * height * 4)),
-        4096 / (Math.max(width, height) * 2),
-      );
-      const scale = 2 * reduction;
+      const scale = pdfRegionScale(width, height, region.scaleLimit);
       const viewport = page.getViewport({ scale });
       const releaseRendering = await localRendering.acquire(scope.signal);
       let bytes: Buffer;

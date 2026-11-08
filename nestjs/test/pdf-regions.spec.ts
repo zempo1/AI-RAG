@@ -10,7 +10,8 @@ import { PageAssetsService } from '../src/modules/documents/page-assets.service'
 import { MemoryStore } from '../src/persistence/memory.store';
 import { RecursiveChunker } from '../src/modules/documents/chunkers/recursive.chunker';
 import { TokenizerService } from '../src/modules/embeddings/tokenizer.service';
-import { locateRegions } from '../src/modules/documents/parsers/pdf-layout';
+import { groupLegacyCrops, locateRegions, PdfRegion } from '../src/modules/documents/parsers/pdf-layout';
+import { pdfRegionScale } from '../src/modules/documents/parsers/pdf-render-cache';
 
 async function fixture(
   kind:
@@ -22,6 +23,7 @@ async function fixture(
     | 'columns'
     | 'rotated'
     | 'narrow'
+    | 'sidebar'
     | 'whitespace',
 ) {
   const doc = new PDFDocument({ size: [600, 800] });
@@ -46,6 +48,11 @@ async function fixture(
     doc.text('RIGHT context', 350, 60, { width: 180 });
     doc.rect(50, 130, 180, 100).stroke();
     doc.rect(350, 130, 180, 100).stroke();
+  }
+  if (kind === 'sidebar') {
+    doc.rect(40, 150, 135, 100).stroke();
+    doc.rect(43, 322, 135, 100).stroke();
+    doc.rect(355, 150, 135, 100).stroke();
   }
   if (kind === 'watermark') {
     const image = createCanvas(300, 100);
@@ -112,6 +119,55 @@ describe('content-aware PDF regions', () => {
     return { calls, parser: new DocumentParser(visual) };
   }
   const scope = { userId: 1, documentId: 1, versionId: 1 };
+  it('shares one vision request for nearby regions in a narrow column and keeps the other column separate', async () => {
+    const p = setup();
+    const parsed = await p.parser.parseStructured(await fixture('sidebar'), 'a.pdf', undefined, scope);
+    const boxes = parsed.blocks.flatMap((block) =>
+      block.location.regionImage ? [block.location.regionImage.bbox] : [],
+    );
+    expect(p.calls).toHaveLength(2);
+    expect(boxes).toHaveLength(2);
+    expect(boxes.find((box) => box[0] < 0.1)?.[3]).toBeGreaterThan(0.5);
+    expect(boxes.some((box) => box[0] > 0.5)).toBe(true);
+  });
+  it('keeps separate crops when grouping would reduce either image resolution', () => {
+    const regions: PdfRegion[] = [
+      { kind: 'region', bbox: [0.1, 0.2, 0.3, 0.42], textIndexes: [], context: '' },
+      { kind: 'region', bbox: [0.1, 0.46, 0.3, 0.68], textIndexes: [], context: '' },
+    ];
+    const grouped = groupLegacyCrops(regions, ([x0, y0, x1, y1], limit) =>
+      pdfRegionScale(1200 * (x1 - x0), 10000 * (y1 - y0), limit),
+    );
+    expect(grouped).toEqual(regions);
+  });
+  it('fills the vision slots from multiple regions on a single legacy PDF page', async () => {
+    const config = new ConfigService({ PAGE_ASSETS_DIR: dir, VISION_CONCURRENCY: 3 });
+    let active = 0;
+    let peak = 0;
+    let calls = 0;
+    const visual = new PdfVisualService(
+      config,
+      {
+        complete: async () => {
+          calls++;
+          peak = Math.max(peak, ++active);
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          active--;
+          return JSON.stringify({ blocks: [{ type: 'figure', text: 'diagram' }] });
+        },
+      } as any,
+      new PageAssetsService(config, new MemoryStore()),
+    );
+    const parser = new DocumentParser(visual);
+    const bytes = await fixture('columns');
+    const parsed = await parser.parseStructured(bytes, 'a.pdf', undefined, scope);
+    const boxes = parsed.blocks.flatMap((block) => block.location.regionImage?.bbox[0] ?? []);
+    expect(peak).toBe(2);
+    expect(boxes).toHaveLength(2);
+    expect(boxes[0]).toBeLessThan(boxes[1]);
+    expect(await parser.parseStructured(bytes, 'a.pdf', undefined, scope)).toEqual(parsed);
+    expect(calls).toBe(2);
+  });
   it('repairs a malformed region once and caches only the valid result', async () => {
     let attempt = 0;
     const p = setup(() =>

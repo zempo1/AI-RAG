@@ -18,6 +18,50 @@ export interface PdfRegion {
   recognition?: 'ocr' | 'vision';
   analysisProfile?: string;
 }
+
+/** Consolidate adjacent, already-expanded crops within one narrow column. */
+export function groupLegacyCrops(
+  regions: PdfRegion[],
+  scale: (box: RegionBox, limit?: number) => number,
+): PdfRegion[] {
+  const grouped: PdfRegion[] = [];
+  for (const region of regions) {
+    if (region.kind !== 'region') {
+      grouped.push(region);
+      continue;
+    }
+    const b = region.bbox;
+    const index = grouped.findIndex((item) => {
+      if (item.kind !== 'region' || item.scaleLimit !== region.scaleLimit) return false;
+      const a = item.bbox;
+      const merged = union(a, b);
+      const horizontalOverlap = Math.min(a[2], b[2]) - Math.max(a[0], b[0]);
+      return (
+        merged[2] - merged[0] <= 1 / 3 &&
+        horizontalOverlap >= 0.6 * Math.min(a[2] - a[0], b[2] - b[0]) &&
+        b[1] - a[3] <= 0.06 &&
+        area(merged) <= 1.25 * (area(a) + area(b)) &&
+        scale(merged, item.scaleLimit) >= Math.max(scale(a, item.scaleLimit), scale(b, region.scaleLimit))
+      );
+    });
+    if (index < 0) {
+      grouped.push(region);
+      continue;
+    }
+    const item = grouped[index];
+    grouped[index] = {
+      ...item,
+      inkBox: union(item.inkBox ?? item.bbox, region.inkBox ?? b),
+      bbox: union(item.bbox, b),
+      context: [...new Set([...item.context.split('\n'), ...region.context.split('\n')])]
+        .filter(Boolean)
+        .join('\n')
+        .slice(0, 4000),
+      textIndexes: [...new Set([...item.textIndexes, ...region.textIndexes])].sort((a, b) => a - b),
+    };
+  }
+  return grouped;
+}
 const area = (b: RegionBox) => Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
 const union = (a: RegionBox, b: RegionBox): RegionBox => [
   Math.min(a[0], b[0]),
