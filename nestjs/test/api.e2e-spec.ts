@@ -640,6 +640,27 @@ describe('existing Vue API contract', () => {
     expect(answer.diagnostics.runId).toBe(done.retrievalRunId);
   });
 
+  it('expands citation context for the original owner and rejects other revisions and users', async () => {
+    const paragraph = '这是一句包含引用片段的完整原文。下一句补充了上下文。';
+    const text = '前一段。\n\n' + paragraph + '\n\n后一段。';
+    const uploaded = (await request(app.getHttpServer()).post('/api/upload').set(auth())
+      .attach('file', Buffer.from(text), 'citation-context.md').expect(202)).body.data;
+    await app.get(IndexingService).process(uploaded.taskId);
+    const store = app.get(Store);
+    const doc = (await store.get('documents', uploaded.documentId))!;
+    const start = text.indexOf('引用片段');
+    const url = `/api/documents/${doc.id}/versions/${doc.activeVersionId}/citation-context`;
+    const query = { revisionId: doc.activeIndexRevisionId, start, end: start + 4 };
+    const result = await request(app.getHttpServer()).get(url).query(query).set(auth()).expect(200);
+    expect(result.body.data.text).toBe(paragraph);
+    expect(result.headers['cache-control']).toBe('private, no-store');
+    await request(app.getHttpServer()).get(url).query(query).set('Authorization', 'Bearer ' + other).expect(404);
+    await request(app.getHttpServer()).get(url).query({ ...query, revisionId: query.revisionId + 1 })
+      .set(auth()).expect(404);
+    await store.save('documents', { id: doc.id, deletedAt: 'deleted' });
+    await request(app.getHttpServer()).get(url).query(query).set(auth()).expect(404);
+  });
+
   it.each([false, true])(
     'serves private images (region=%s) and rejects deleted or foreign sources',
     async (region) => {

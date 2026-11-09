@@ -2,12 +2,13 @@
 require('dotenv/config');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 const { ConfigService } = require('@nestjs/config');
 require('@nestjs/common').Logger.overrideLogger(['error', 'warn']);
 const arg = (key, fallback) => { const i = process.argv.indexOf(key); return i < 0 ? fallback : process.argv[i + 1]; };
 (async () => {
   const file = arg('--file');
-  if (!file) throw Error('--file <PDF> required; optional --pages 39,74 --modes legacy,hybrid --live');
+  if (!file) throw Error('--file <PDF> required; optional --pages 39,74 --mock-local --live');
   const build = path.resolve(arg('--build-dir', 'dist'));
   const { PdfVisualService } = require(path.join(build, 'modules/documents/parsers/pdf-visual.service'));
   const { PageAssetsService } = require(path.join(build, 'modules/documents/page-assets.service'));
@@ -17,17 +18,27 @@ const arg = (key, fallback) => { const i = process.argv.indexOf(key); return i <
   const { localRendering } = require(path.join(build, 'modules/documents/parsers/vision-scheduler'));
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const bytes = new Uint8Array(await fs.readFile(file));
-  const root = path.resolve(arg('--output', '.data/hybrid-benchmark/' + Date.now()));
+  const sourceHash = createHash('sha256').update(bytes).digest('hex');
+  const root = path.resolve(arg('--output', '.data/adaptive-pdf-benchmark/' + Date.now()));
   await fs.mkdir(root, { recursive: true });
-  const report = { file: path.basename(file), live: process.argv.includes('--live'), maxLiveRequests: 12, requests: 0, usage: [], localRequests: [], runs: [] };
+  const live = process.argv.includes('--live'), mockLocal = process.argv.includes('--mock-local');
+  if (live && mockLocal) throw Error('--live and --mock-local cannot be combined');
+  const report = { file: path.basename(file), live, mockLocal, maxLiveRequests: 12, requests: 0, usage: [], localRequests: [], runs: [] };
   let phase;
   const originalFetch = global.fetch;
   // Usage only; do not store API keys, prompts, response text or images in the report.
   global.fetch = async (...args) => {
     const started = performance.now();
-    const response = await originalFetch(...args);
-    if (/\/v1\/(layout|ocr)$/.test(String(args[0])))
-      report.localRequests.push({ ...phase, kind: String(args[0]).endsWith('/ocr') ? 'ocr' : 'layout', status: response.status, elapsedMs: performance.now() - started });
+    const url = String(args[0]);
+    const local = /\/(health|v1\/(?:layout|ocr))$/.exec(url)?.[1];
+    const manifest = 'benchmark-mock-local-v1';
+    const response = mockLocal && local
+      ? Response.json(local === 'health' ? { ready: true, manifest }
+        : local === 'v1/layout' ? { regions: [], manifest }
+        : { blocks: [], textOnly: false, manifest })
+      : await originalFetch(...args);
+    if (local)
+      report.localRequests.push({ ...phase, kind: local, status: response.status, elapsedMs: performance.now() - started });
     if (String(args[0]).includes('/chat/completions') && response.ok) {
       const body = await response.clone().json();
       report.usage.push(body.usage || null);
@@ -35,9 +46,8 @@ const arg = (key, fallback) => { const i = process.argv.indexOf(key); return i <
     return response;
   };
   try {
-    for (const mode of arg('--modes', 'legacy,hybrid').split(',')) {
-      if (!['legacy', 'hybrid'].includes(mode)) throw Error('Invalid mode');
-      const config = new ConfigService(validateConfig({ ...process.env, STORAGE_DRIVER: 'memory', VECTOR_DRIVER: 'memory', QUEUE_DRIVER: 'memory', PDF_ANALYSIS_MODE: mode, PAGE_ASSETS_DIR: path.join(root, mode) }));
+    {
+      const config = new ConfigService(validateConfig({ ...process.env, STORAGE_DRIVER: 'memory', VECTOR_DRIVER: 'memory', QUEUE_DRIVER: 'memory', PAGE_ASSETS_DIR: path.join(root, 'pages') }));
       const real = report.live ? new LlmService(config) : undefined;
       let requests = 0, peak = 0, active = 0, imagePixels = 0, imageBytes = 0;
       const llm = { complete: async (...args) => {
@@ -62,13 +72,13 @@ const arg = (key, fallback) => { const i = process.argv.indexOf(key); return i <
       const service = new PdfVisualService(config, llm, new PageAssetsService(config, new MemoryStore()));
       try {
         for (const pass of ['cold', 'cached']) {
-          phase = { mode, pass };
+          phase = { pass };
           const before = requests, beforePixels = imagePixels, beforeBytes = imageBytes, started = performance.now(), rows = [];
           peak = 0;
           let next = 0, failure, peakRssBytes = process.memoryUsage().rss;
           const sample = setInterval(() => { peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss); }, 20);
           const controller = new AbortController();
-          const scope = { userId: 1, documentId: 1, versionId: 1, signal: controller.signal,
+          const scope = { userId: 1, documentId: 1, versionId: 1, sourceHash, signal: controller.signal,
             beforeRequest: () => { if (failure) throw failure; } };
           try {
             await Promise.all(Array.from({ length: Math.min(service.concurrency, pages.length) }, async () => {
@@ -85,7 +95,7 @@ const arg = (key, fallback) => { const i = process.argv.indexOf(key); return i <
               }
             }));
           } finally { clearInterval(sample); }
-          report.runs.push({ mode, pass, pipeline: 'bounded-parallel-pages', elapsedMs: performance.now() - started,
+          report.runs.push({ pass, pipeline: 'bounded-parallel-pages', elapsedMs: performance.now() - started,
             requests: requests - before, imagePixels: imagePixels - beforePixels, imageBytes: imageBytes - beforeBytes,
             peak, peakRssBytes: Math.max(peakRssBytes, process.memoryUsage().rss), pages: rows.filter(Boolean),
             ...(failure ? { error: failure.message } : {}) });

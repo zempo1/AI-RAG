@@ -40,17 +40,16 @@ describe('internal PDF analysis client', () => {
     response = { ready: true, manifest: 'layout-b+ocr-b' };
     expect((await client.health()).manifest).toBe('layout-b+ocr-b');
   });
-  it('uploads binary image and precision as multipart form fields', async () => {
+  it('uploads a binary image without a selectable layout precision', async () => {
     response = {
       regions: [{ kind: 'figure', bbox: [0.1, 0.2, 0.6, 0.7], score: 0.9 }],
       manifest: 'a',
     };
-    expect((await client.layout(Buffer.from('image bytes'), 'high')).regions[0].kind).toBe(
+    expect((await client.layout(Buffer.from('image bytes'))).regions[0].kind).toBe(
       'figure',
     );
     expect(requests[0].url).toBe('/v1/layout');
-    expect(requests[0].body).toContain('name="precision"');
-    expect(requests[0].body).toContain('high');
+    expect(requests[0].body).not.toContain('name="precision"');
     expect(requests[0].body).toContain('image bytes');
   });
   it.each([
@@ -60,7 +59,7 @@ describe('internal PDF analysis client', () => {
     { kind: 'unexpected', bbox: [0, 0, 1, 1], score: 0.9 },
   ])('rejects malformed geometry and scores: %j', async (region) => {
     response = { regions: [region], manifest: 'a' };
-    await expect(client.layout(Buffer.from('x'), 'standard')).rejects.toThrow(/响应格式/);
+    await expect(client.layout(Buffer.from('x'))).rejects.toThrow(/响应格式/);
   });
   it('validates OCR blocks and never falls back on service errors', async () => {
     response = { blocks: [{ text: '可检索文字', bbox: [0, 0, 1, 1], score: 0.98 }], manifest: 'a' };
@@ -98,7 +97,7 @@ describe('internal PDF analysis client', () => {
     const canceled = expect(queued).rejects.toBe(reason);
     abort.abort(reason);
     await canceled;
-    const second = other.layout(Buffer.from('y'), 'standard');
+    const second = other.layout(Buffer.from('y'));
     await new Promise(r => setTimeout(r, 25));
     release();
     await Promise.all([first, second]);

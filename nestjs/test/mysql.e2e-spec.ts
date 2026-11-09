@@ -73,6 +73,31 @@ const enabled = process.env.MYSQL_INTEGRATION === '1';
     store = new MysqlStore(source.manager);
     expect((await store.get('documents', doc.id))?.content).toBe('持久化内容');
   });
+  it('serializes a document vector lease across sessions without blocking other documents', async () => {
+    let entered!: () => void;
+    let release!: () => void;
+    const writing = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const original = store.withDocumentVectorLock(123, async () => {
+      entered();
+      await gate;
+    });
+    await writing;
+    let ran = false;
+    const contender = new MysqlStore(source.manager).withDocumentVectorLock(123, async () => {
+      ran = true;
+    });
+    try {
+      const independent = await store.withDocumentVectorLock(124, async () => 'ready');
+      expect(independent).toBe('ready');
+      expect(ran).toBe(false);
+    } finally {
+      release();
+      await Promise.all([original, contender]);
+    }
+    expect(ran).toBe(true);
+  });
+
   it('preserves database wall time across UTC hosts and repeated updates', async () => {
     const original = process.env.TZ;
     process.env.TZ = 'UTC';

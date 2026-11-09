@@ -1,4 +1,7 @@
 import { resolve } from 'node:path';
+import { Logger } from '@nestjs/common';
+
+let pdfMigrationWarningShown = false;
 
 export function validateConfig(input: Record<string, unknown>): Record<string, any> {
   const c: Record<string, any> = { ...input };
@@ -29,13 +32,13 @@ export function validateConfig(input: Record<string, unknown>): Record<string, a
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('CHAT_BASE_URL must be HTTP(S)');
   c.CHAT_MODEL ||= 'qwen3.8-flash';
   c.VISION_MODEL ||= 'qwen3.8-flash';
-  c.PDF_ANALYSIS_MODE ??= 'legacy';
-  if (c.PDF_ANALYSIS_NATIVE_FAST_PATH !== undefined &&
-    ![true, false, 'true', 'false'].includes(c.PDF_ANALYSIS_NATIVE_FAST_PATH))
-    throw new Error('PDF_ANALYSIS_NATIVE_FAST_PATH must be true or false');
-  c.PDF_ANALYSIS_NATIVE_FAST_PATH = c.PDF_ANALYSIS_NATIVE_FAST_PATH !== false && c.PDF_ANALYSIS_NATIVE_FAST_PATH !== 'false';
-  if (!['legacy', 'hybrid'].includes(c.PDF_ANALYSIS_MODE))
-    throw new Error('PDF_ANALYSIS_MODE must be legacy or hybrid');
+  if (!pdfMigrationWarningShown &&
+      (c.PDF_ANALYSIS_MODE !== undefined || c.PDF_ANALYSIS_NATIVE_FAST_PATH !== undefined)) {
+    pdfMigrationWarningShown = true;
+    Logger.warn('PDF_ANALYSIS_MODE 和 PDF_ANALYSIS_NATIVE_FAST_PATH 已停用。请从环境配置移除，PDF 现在自动分流。', 'Configuration');
+  }
+  delete c.PDF_ANALYSIS_MODE;
+  delete c.PDF_ANALYSIS_NATIVE_FAST_PATH;
   c.PDF_ANALYSIS_URL ||= 'http://127.0.0.1:8091';
   if (!['http:', 'https:'].includes(new URL(c.PDF_ANALYSIS_URL).protocol))
     throw new Error('PDF_ANALYSIS_URL must be HTTP(S)');

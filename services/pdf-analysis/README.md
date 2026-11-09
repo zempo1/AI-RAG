@@ -2,7 +2,7 @@
 
 Python 3.11 / FastAPI；PaddleOCR 3.7.0、PaddleX 3.7.0、PaddlePaddle CPU 3.3.1 固定版本。原计划 PaddlePaddle 3.4.0 在当前 PyPI（Windows 与 Linux/Python 3.11）不可获取，按实施裁决改用可安装的 3.3.1，不更改模型路线。
 
-单独的 `spawn` 模型子进程同时预载 `PP-DocLayout-M`（standard）、`PP-DocLayout_plus-L`（high）、`PP-OCRv6_small_det/rec`，CPU 4 线程。PaddlePaddle 3.3.1 的 oneDNN PIR 路径对这些模型存在属性转换异常，因此显式关闭 MKL-DNN、使用 CPU kernel。模型子进程以模型目录为 cwd 并传 ASCII 相对目录，绕开 Windows native loader 的中文绝对路径问题；HTTP 父进程 cwd 不变。两个版面模型及带真实英数文本的 OCR 均执行预热，且 OCR 必须返回识别块后 health 才报告 ready。不要开启 uvicorn 多 worker/reload。
+单独的 `spawn` 模型子进程预载一个版面模型 `PP-DocLayout-M` 和独立的 `PP-OCRv6_small_det/rec`，CPU 4 线程。PaddlePaddle 3.3.1 的 oneDNN PIR 路径对这些模型存在属性转换异常，因此显式关闭 MKL-DNN、使用 CPU kernel。模型子进程以模型目录为 cwd 并传 ASCII 相对目录，绕开 Windows native loader 的中文绝对路径问题。版面模型、文字检测和识别均预热，OCR 返回识别块后 health 才报告 ready。不要开启 uvicorn 多 worker/reload。
 
 ## 安装、下载与首次信任
 
@@ -19,7 +19,7 @@ py -3.11 -m venv .venv
 ./start.ps1
 ```
 
-本次开发工作区已准备隔离的 `.model-deps` 和 `models`。在当前开发机可直接使用已验证的解释器启动，不重新下载依赖：
+开发机如已有完整的隔离依赖 `.model-deps` 和封印后的 `models`，可使用已有解释器启动：
 
 ```powershell
 ./start.ps1 -Python 'E:/CodexData/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe' -DependencyDir '.model-deps'
@@ -27,9 +27,9 @@ py -3.11 -m venv .venv
 
 这是本开发机的路径，其他机器按前述虚拟环境或容器方式部署。
 
-`download` 只下载固定四个模型，不自动封印，也不覆盖已有模型。`seal` 记录全部模型文件 SHA-256、模型名称、包版本；已有 manifest 时拒绝覆盖。每次服务启动和子进程重建都核对已封印内容；文件新增、缺失或变化会阻止服务。升级请使用新模型目录，审核后显式生成新的清单；保存旧清单便于回滚。不要把未审核文件的 hash 作为自动信任依据。运行阶段使用本地显式模型目录，不调用模型下载命令。
+`download` 只下载三个固定模型，首次 `seal` 会记录模型文件 SHA-256、模型名称和包版本。已有 manifest 时拒绝覆盖。每次服务启动和子进程重建都核对活跃模型，文件新增、缺失或变化会阻止服务。此前已封印的四模型目录可以直接用于新服务。服务仅校验并加载三个活跃模型，保留磁盘上的原清单用于回滚。升级活跃权重时请另用模型目录，审核后显式封印。运行阶段仅使用本地显式模型目录。
 
-仓库的 `model-manifest.lock.json` 固定本次实测的12个模型文件SHA-256；`seal` 会比对该清单，下载源的内容变化不能被静默接受。`requirements-win-py312.lock` 固定本次Windows CPU实测环境的76个依赖版本，仅用于Windows/Python3.12复现；Docker仍使用Python3.11和requirements.txt，尚未在本机Docker daemon中验收。
+仓库的 `model-manifest.lock.json` 固定三个活跃模型的 9 个文件 SHA-256，`seal` 会比对该清单。`requirements-win-py312.lock` 固定 Windows CPU / Python 3.12 依赖版本，Docker 使用 Python 3.11 和 `requirements.txt`。
 
 默认监听 `127.0.0.1:8091`。环境变量 `PDF_ANALYSIS_MODEL_DIR`、`PDF_ANALYSIS_HOST`、`PDF_ANALYSIS_PORT` 可改变模型目录和监听地址；仅容器/明确需要时设置 `PDF_ANALYSIS_HOST=0.0.0.0`。
 
@@ -46,8 +46,8 @@ docker run --rm -p 127.0.0.1:8091:8091 -v "$PWD/models:/models:ro" pdf-analysis
 ## HTTP
 
 - `GET /health` → `{ready:boolean,manifest:string,models:{schema,versions,models,files}}`。manifest 由规范化权重清单和服务算法版本共同生成 SHA-256，Node 缓存可直接使用；files 为每个模型文件的 SHA-256。
-- `POST /v1/layout`：multipart `file`（PNG/JPEG/WEBP 单帧图像）、`precision=standard|high`（默认 standard），可选 `request_id` 或 `X-Request-ID`。返回 `{regions:[{kind,bbox,score}],manifest}`。
-- `POST /v1/ocr`：相同 `file` 上传；返回 `{blocks:[{text,bbox,score}],manifest}`。
+- `POST /v1/layout` 接收 multipart `file`（PNG/JPEG/WEBP 单帧图像），可选 `request_id` 或 `X-Request-ID`。返回 `{regions:[{kind,bbox,score}],manifest}`。旧客户端的 `precision=standard` 仍可用。
+- `POST /v1/ocr` 接收相同的 `file`，返回 `{blocks:[{text,bbox,score}],detectedBoxes:[bbox],manifest}`。对内容类型不明确的位图，可带 `classify=true`。服务利用文字框、行列分布、连续线条及框外前景判断能否按文字处理。结果附 `textOnly`，判定为 false 时 `blocks` 为空。文字识别复用同一次检测的框，`detectedBoxes` 也包含检测成功但识别缺失的行，可用于后续质量检查。
 
 响应 `X-Request-ID` 回显请求标识。bbox 均为相对于整张输入图像的 `[x0,y0,x1,y1]`，范围 `[0,1]`。布局种类为 text/title/table/figure/caption/decoration/unknown；脚注、页眉页脚保守保留为 text，公式编号保留为 caption。拒绝路径、URL、额外字段、重复 multipart 字段。服务不执行视觉大模型调用。
 
@@ -66,8 +66,6 @@ python -m pytest
 
 测试使用独立 spawn 的 fake backend，不导入 Paddle、不下载模型；覆盖 HTTP 契约、图像/流式 body 限制、校验清单漂移、运行中/排队取消、进程卡死硬超时、进程崩溃重建和排队总时限。真实模型须另外运行 `prepare.py warmup`、HTTP health/图像 smoke 与文档基准；fake 通过不表示 OCR 准确率或真实推理性能已经验收。当前执行环境只有 bundled Python 3.12，可运行 fake 测试；生产 Python 3.11 Docker 仍须在有 Docker daemon 的环境验证。
 
-当前工作区已使用隔离依赖完成 Windows / bundled Python 3.12 的固定版本 import、四个官方 BOS 权重下载/封印、独立子进程四模型预热和 OCR 文本识别回归。原生回归通过设置 `PDF_ANALYSIS_REAL_MODELS` 为已封印权重目录后运行 `python -m pytest tests/test_real_models.py` 重现；默认测试会跳过此项，不下载权重。该结果不替代 Python 3.11/Linux 容器验收及用户文档端到端基准。
-
-2026-11-04 真实 TCP HTTP smoke：health ready、12 个文件 SHA-256、request_id 回显、standard/high 布局与 OCR 及归一化 bbox 均通过。合成 720×256 英数文本图的单次时间分别为 standard 1.218 秒、high 3.547 秒、OCR 1.766 秒；这些数值仅说明接口可执行，不代表 PDF 吞吐或准确率。该次 manifest 为 `47d7f1287f208c504c203d6b824701e79bdedd3c9c4855ecf39c6c05cd72658a`。
+设置 `PDF_ANALYSIS_REAL_MODELS` 为已封印权重目录后，运行 `python -m pytest tests/test_real_models.py` 检查原生预热。默认测试跳过此项。升级时先启动新版 Python 服务，确认 health 已就绪并返回三个活跃模型，再重启 API 和 Worker。双版面模型时期的历史基准保存在仓库 Git 历史中。
 
 API 参数依据官方源码及文档：[OCR pipeline](https://github.com/PaddlePaddle/PaddleOCR/blob/main/paddleocr/_pipelines/ocr.py)、[版面检测](https://github.com/PaddlePaddle/PaddleOCR/blob/main/docs/version3.x/module_usage/layout_detection.en.md)。实际包版本兼容性以固定依赖安装与模型 smoke 输出为准。

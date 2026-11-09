@@ -14,6 +14,10 @@ export interface Category {
 }
 export interface ProcessingTask {
   agentProgress?: AgentProgress;
+  indexProgress?: Record<
+    "pages" | "regions" | "embedding" | "indexing",
+    { completed: number; total: number | null }
+  >;
   qaResult?: { retrievalRunId?: number };
   canDismiss?: boolean;
   waitingUntil?: string | null;
@@ -48,6 +52,17 @@ export interface AcceptedDocument {
   knowledgeBaseId: number;
   filename: string;
 }
+export function getCitationContext(source: Citation, signal: AbortSignal) {
+  return request.get<unknown, { text: string }>(
+    `/api/documents/${source.documentId}/versions/${source.versionId}/citation-context`,
+    {
+      params: { revisionId: source.indexRevisionId, start: source.location?.start, end: source.location?.end },
+      signal,
+      silentError: true,
+    },
+  );
+}
+
 export interface Citation {
   number: number;
   documentId: number;

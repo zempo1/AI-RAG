@@ -238,6 +238,45 @@ it('does not count time spent paused in a queue as active execution', async () =
   expect(result.agentSnapshot.budget.activeMs).toBeLessThan(1000);
 });
 
+it.each([
+  { intent: 'overview', output: 4096 },
+  { intent: 'search', output: 128 },
+])('resumes a single-document overview when the planner proposes $intent', async ({ intent, output }) => {
+  const p = setup({ CHAT_OUTPUT_TOKENS: output });
+  const question = '总结这篇论文内容';
+  const second = { ...evidence, evidenceId: 'ev2', text: '另一页原文', chunkId: 6 };
+  p.retrieval.read = async (_session: any, input: any) => input.cursor === 1
+    ? { evidence: [second], complete: true }
+    : { evidence: [evidence], complete: false, nextCursor: 1 };
+  p.retrieval.pack = async () => ({ sources: [], complete: false });
+  p.llm.complete = async () => JSON.stringify({
+    intent, complexity: 'simple', subQuestions: [question], ambiguous: false,
+  });
+  const summarizeAgent = jest.fn(async (_sources: any[]) => ({
+    groups: [{
+      summary: 'CRC用于差错检测[1]。' + (output === 128 ? '另一页要点[2]。'.repeat(12) : ''),
+      refs: { '1': 'ev1', '2': 'ev2' },
+    }],
+    coverage: { complete: true, totalSections: 1, completedSections: 1 },
+  }));
+  (p.service as any).summary = { summarizeAgent };
+  const accepted = await p.service.prepare(question, 1, 2, { documentIds: [3] });
+  expect(accepted.requiresAsync).toBe(true);
+  expect(accepted.snapshot.pending[0]).toMatchObject({
+    name: 'summarize_document', args: { documentId: 3 },
+  });
+  const result = await p.service.resume(accepted.snapshot, { background: true });
+  expect(summarizeAgent.mock.calls[0][0]).toEqual([evidence, second]);
+  expect(p.llm.invokeTools).not.toHaveBeenCalled();
+  if (output === 128) {
+    expect(result.directAnswer).toBeUndefined();
+    expect(result.prompt).toContain('CRC用于差错检测[1]');
+    expect(result.prompt).toContain('另一页要点[2]');
+    expect(result.sources[1].evidenceId).toBe('ev2');
+  } else expect(result.directAnswer).toContain('CRC用于差错检测[1]');
+  expect(result.sources[0].evidenceId).toBe('ev1');
+});
+
 it('returns verified summary sections with original citations and an explicit partial notice', async () => {
   const p = setup();
   p.retrieval.pack = async () => ({ sources: [], complete: false });
@@ -272,6 +311,7 @@ it('returns verified summary sections with original citations and an explicit pa
 
 it.each([
   { question: '概览全部文件', mode: 'auto' },
+  { question: '总结这篇论文内容', mode: 'auto' },
   { question: '给我看一下', mode: 'overview' },
 ] as const)('requires full coverage for an overview requested with $mode mode', async ({ question, mode }) => {
   const p = setup();

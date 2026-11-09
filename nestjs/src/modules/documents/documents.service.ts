@@ -11,6 +11,7 @@ import { TasksService, terminalTask } from '../tasks/tasks.service';
 import { currentModelProfile } from '../embeddings/model-profile';
 import { embeddingFingerprint } from '../vector-store/qdrant-vector-store.service';
 import { ApiError } from '../../common/api-error';
+import { expandCitationContext } from './citation-context';
 
 export interface IngestOptions {
   knowledgeBaseId?: number;
@@ -41,6 +42,18 @@ export class DocumentsService {
       throw new ApiError(404, 'Document not found: ' + id);
     if (doc.knowledgeBaseId) await this.libraries.owned(doc.knowledgeBaseId, userId, tx);
     return doc;
+  }
+
+  async citationContext(id: number, userId: number, versionId: number, revisionId: number,
+    start: number, end: number) {
+    const doc = await this.owned(id, userId);
+    if (doc.activeVersionId !== versionId || doc.activeIndexRevisionId !== revisionId)
+      throw new ApiError(404, '当前索引与引用版本不一致');
+    const text = doc.content;
+    if (typeof text !== 'string' || start < 0 || end <= start || end > text.length ||
+        end - start > 12000)
+      throw new ApiError(400, '引用位置无效');
+    return { text: expandCitationContext(text, start, end) };
   }
 
   async ingest(

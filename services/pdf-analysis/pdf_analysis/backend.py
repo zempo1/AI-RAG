@@ -3,7 +3,7 @@ import io
 import math
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageOps, ImageStat
 
 from .manifest import MODELS, VERSIONS, verify_manifest
 
@@ -50,32 +50,62 @@ def layout_regions(result, width, height):
     return regions
 
 
-def ocr_blocks(result, width, height):
-    blocks = []
-    polygons = result.get('rec_polys')
-    if polygons is None:
-        polygons = result.get('rec_boxes', [])
-    for text, score, polygon in zip(result.get('rec_texts', []), result.get('rec_scores', []), polygons):
-        if not str(text).strip():
-            continue
-        if len(polygon) == 4 and isinstance(polygon[0], (int, float)):
-            coordinates = polygon
-        elif getattr(polygon, 'ndim', 0) == 1:
-            coordinates = polygon
-        else:
-            coordinates = [min(point[0] for point in polygon), min(point[1] for point in polygon),
-                           max(point[0] for point in polygon), max(point[1] for point in polygon)]
-        box = _box(coordinates, width, height)
-        if box:
-            blocks.append({'text': str(text), 'score': _score(score), 'bbox': box})
-    return blocks
+def detection_box(polygon, width, height):
+    return _box([min(p[0] for p in polygon), min(p[1] for p in polygon),
+                 max(p[0] for p in polygon), max(p[1] for p in polygon)], width, height)
+
+
+def text_only_candidate(rgb, boxes):
+    """Prefer visual recognition when a raster has structure beyond prose lines."""
+    if not 2 <= len(boxes) <= 400:
+        return False
+    rgb = ImageOps.contain(rgb, (768, 768)) if max(rgb.size) > 768 else rgb
+    width, height = rgb.size
+    previous = None
+    for box in sorted(boxes, key=lambda b: (b[1] + b[3], b[0])):
+        x0, y0, x1, y1 = box
+        if (x1 - x0) * width < 1.25 * (y1 - y0) * height:
+            return False
+        if previous:
+            px0, py0, px1, py1 = previous
+            overlap = min(y1, py1) - max(y0, py0)
+            gap = max(x0, px0) - min(x1, px1)
+            # Separate cells sharing a baseline are a table/column signal.
+            if overlap >= 0.55 * min(y1 - y0, py1 - py0) and gap * width >= (y1 - y0) * height:
+                return False
+        previous = box
+
+    background = Image.new('RGB', rgb.size, tuple(ImageStat.Stat(rgb).median))
+    red, green, blue = ImageChops.difference(rgb, background).split()
+    foreground = ImageChops.lighter(ImageChops.lighter(red, green), blue)
+    foreground = foreground.point([0] * 42 + [255] * 214)
+    ink = foreground.histogram()[255]
+    if ink < 24 or ink > width * height * 0.35:
+        return False
+
+    # Continuous edges in either direction can be axes, grids or connectors,
+    # including an edge accidentally enclosed in a detector polygon.
+    for axis in (foreground, foreground.transpose(Image.Transpose.TRANSPOSE)):
+        stride = axis.width
+        pixels = axis.tobytes()
+        stroke = b'\xff' * max(18, round(stride * 0.18))
+        if any(stroke in pixels[offset:offset + stride] for offset in range(0, len(pixels), stride)):
+            return False
+
+    non_text = foreground.copy()
+    draw = ImageDraw.Draw(non_text)
+    for x0, y0, x1, y1 in boxes:
+        draw.rectangle((x0 * width - 2, y0 * height - 2, x1 * width + 2, y1 * height + 2), fill=0)
+    return non_text.histogram()[255] <= ink * 0.055
 
 
 class PaddleBackend:
     def __init__(self, model_root):
         import importlib.metadata
         import numpy as np
-        from paddleocr import LayoutDetection, PaddleOCR
+        from paddleocr import LayoutDetection, TextDetection, TextRecognition
+        from paddlex.inference.pipelines.components.common.crop_image_regions import CropByPolys
+        from paddlex.inference.pipelines.components.common.sort_boxes import SortQuadBoxes
 
         for name, version in VERSIONS.items():
             if importlib.metadata.version(name) != version:
@@ -86,20 +116,21 @@ class PaddleBackend:
         # conversion on these layout weights. Use its CPU kernels consistently.
         common = {'device': 'cpu', 'cpu_threads': 4, 'enable_mkldnn': False}
         self.np = np
-        self.layouts = {
-            precision: LayoutDetection(model_name=name, model_dir=str(root / name), **common)
-            for precision, name in zip(('standard', 'high'), MODELS[:2])
-        }
-        self.ocr = PaddleOCR(
-            text_detection_model_name=MODELS[2], text_detection_model_dir=str(root / MODELS[2]),
-            text_recognition_model_name=MODELS[3], text_recognition_model_dir=str(root / MODELS[3]),
-            use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False,
-            **common,
+        layout, detector, recognizer = MODELS
+        self.layout = LayoutDetection(model_name=layout, model_dir=str(root / layout), **common)
+        # Preserve the pinned OCR pipeline's sizing and thresholds when using
+        # its detector directly, especially for small type on full scans.
+        self.detect = TextDetection(
+            model_name=detector, model_dir=str(root / detector),
+            limit_side_len=64, limit_type='min', thresh=0.3, box_thresh=0.6, unclip_ratio=1.5, **common,
         )
+        self.recognize = TextRecognition(model_name=recognizer, model_dir=str(root / recognizer), **common)
+        self.sort_boxes = SortQuadBoxes()
+        self.crop = CropByPolys(det_box_type='quad')
 
     def warmup(self):
         stream = io.BytesIO()
-        # Both layout precisions and OCR must execute before ready becomes true.
+        # Layout, text detection and recognition must run before ready.
         sample = Image.new('RGB', (720, 256), 'white')
         draw = ImageDraw.Draw(sample)
         font = ImageFont.load_default(size=48)
@@ -107,12 +138,11 @@ class PaddleBackend:
         draw.text((24, 112), 'Warmup text ABC 123', fill='black', font=font)
         sample.save(stream, format='PNG')
         image = stream.getvalue()
-        self.infer('layout', image, 'standard')
-        self.infer('layout', image, 'high')
-        if not self.infer('ocr', image, 'standard')['blocks']:
+        self.infer('layout', image)
+        if not self.infer('ocr', image)['blocks']:
             raise RuntimeError('OCR warmup did not complete text recognition')
 
-    def infer(self, operation, image, precision):
+    def infer(self, operation, image):
         with Image.open(io.BytesIO(image)) as decoded:
             rgb = decoded.convert('RGB')
             width, height = rgb.size
@@ -120,10 +150,31 @@ class PaddleBackend:
             pixels = self.np.asarray(rgb)[:, :, ::-1].copy()
         if operation == 'layout':
             regions = []
-            for result in self.layouts[precision].predict(pixels, batch_size=1):
+            for result in self.layout.predict(pixels, batch_size=1):
                 regions.extend(layout_regions(result, width, height))
             return {'regions': regions}
+
+        detections = []
+        for result in self.detect.predict(pixels, batch_size=1):
+            for polygon in self.sort_boxes(result.get('dt_polys', [])):
+                box = detection_box(polygon, width, height)
+                if box:
+                    detections.append((box, polygon))
+        response = {'detectedBoxes': [box for box, _ in detections]}
+        if operation == 'classify':
+            response['textOnly'] = text_only_candidate(rgb, response['detectedBoxes'])
+            if not response['textOnly']:
+                return {**response, 'blocks': []}
+
+        # Reuse the detector polygons. Recognition batches are bounded even on
+        # a dense scan and retain each line's original position for quality checks.
         blocks = []
-        for result in self.ocr.predict(pixels):
-            blocks.extend(ocr_blocks(result, width, height))
-        return {'blocks': blocks}
+        for start in range(0, len(detections), 6):
+            batch = detections[start:start + 6]
+            crops = self.crop(pixels, [polygon for _, polygon in batch])
+            results = self.recognize.predict(crops, batch_size=6)
+            for (box, _), result in zip(batch, results, strict=True):
+                text = str(result.get('rec_text', '')).strip()
+                if text:
+                    blocks.append({'text': text, 'bbox': box, 'score': _score(result['rec_score'])})
+        return {**response, 'blocks': blocks}

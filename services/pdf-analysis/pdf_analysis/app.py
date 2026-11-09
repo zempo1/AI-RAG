@@ -138,7 +138,7 @@ def _multipart(body, content_type):
     def part_end():
         disposition, parameters = parse_options_header(headers.get(b'content-disposition', b''))
         name = parameters.get(b'name', b'').decode('ascii')
-        if disposition != b'form-data' or name not in ('file', 'precision', 'request_id') or name in fields:
+        if disposition != b'form-data' or name not in ('file', 'precision', 'request_id', 'classify') or name in fields:
             raise ValueError('Unexpected multipart field')
         if name == 'file' and b'filename' not in parameters:
             raise ValueError('File upload required')
@@ -209,7 +209,12 @@ def create_app(settings=None, *, backend_factory=PaddleBackend):
             request_id = request.headers.get('x-request-id') or fields.get('request_id', b'').decode('ascii') or uuid.uuid4().hex
         except UnicodeError:
             raise HTTPException(422, 'Invalid request fields') from None
-        if precision not in ('standard', 'high') or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}', request_id):
+        if (
+            precision != 'standard'
+            or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}', request_id)
+            or ('classify' in fields and (operation != 'ocr' or fields['classify'] != b'true'))
+            or ('precision' in fields and operation != 'layout')
+        ):
             raise HTTPException(422, 'Invalid request fields')
         _validate_image(fields['file'], settings)
         cancelled = asyncio.Event()
@@ -223,7 +228,10 @@ def create_app(settings=None, *, backend_factory=PaddleBackend):
 
         watcher = asyncio.create_task(watch_disconnect())
         try:
-            result = await worker.submit(operation, fields['file'], precision, cancelled, request.state.deadline)
+            result = await worker.submit(
+                'classify' if 'classify' in fields else operation,
+                fields['file'], cancelled, request.state.deadline,
+            )
             return JSONResponse({**result, 'manifest': worker.manifest}, headers={'X-Request-ID': request_id})
         except QueueFull:
             raise HTTPException(503, 'Inference queue is full', headers={'Retry-After': '1'}) from None

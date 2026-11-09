@@ -47,12 +47,20 @@ export class AgentService {
     this.checkpoints.set(s, pending);
     await pending;
   }
+  private overviewResponseBudget() {
+    return Math.min(
+      this.limit('CHAT_CONTEXT_TOKENS', 32768),
+      this.limit('CHAT_OUTPUT_TOKENS', 4096) + 16384,
+    );
+  }
   private observer(s: AgentSnapshot, o: AgentOptions, final = false) {
     return new AgentBudget(s.budget, () => this.checkpoint(s, o), final, o.guard, o.signal, {
       calls: this.limit('AGENT_MODEL_CALLS', 32),
       tokens: this.limit('AGENT_TOKEN_BUDGET', 100000),
       activeMs: this.limit('AGENT_ACTIVE_MS', 600000),
-      finalReserve: this.limit('CHAT_CONTEXT_TOKENS', 32768),
+      finalReserve: s.plan?.intent === 'overview' && s.scope.documents.length === 1
+        ? this.overviewResponseBudget()
+        : this.limit('CHAT_CONTEXT_TOKENS', 32768),
       contextTokens: this.limit('CHAT_CONTEXT_TOKENS', 32768),
     });
   }
@@ -234,7 +242,7 @@ export class AgentService {
           p.intent = 'search';
         if (s.mode === 'general') p.intent = 'general';
         else if (s.mode && s.mode !== 'auto') p.intent = s.mode;
-        else if (p.intent === 'overview') {
+        else if (p.intent === 'overview' || s.scope.documents.length === 1) {
           const question = s.question.trim();
           const summary =
             /总结|概[览括述]|归纳|摘要|梳理|讲[了的]什么|(?:有|包含)(?:什么|哪些)内容|summari[sz]e|summary|overview/i;
@@ -247,9 +255,16 @@ export class AgentService {
             ? question.slice(question.indexOf(target) + target.length).trim()
             : '';
           const narrowsTarget =
-            /^(?:中|里|内|关于|有关|提到|所述|的(?!主要内容|核心内容|内容|要点|大意|重点|全文)|(?:on|about|section|chapter)\b)/i;
+            /^(?:中|里|内(?!容)|关于|有关|提到|所述|的(?!主要内容|核心内容|内容|要点|大意|重点|全文)|(?:on|about|section|chapter)\b)/i;
           // A planner guess cannot impose whole-document coverage on a topic lookup.
-          if (!summary.test(question) || !target || narrowsTarget.test(afterTarget)) {
+          const explicitOverview = target && s.scope.documents.length === 1 &&
+            summary.test(question.slice(0, question.indexOf(target))) &&
+            /^(?:的)?(?:全文|主要内容|核心内容|内容|要点|大意|重点)?[。？！?!]*$/.test(afterTarget);
+          if (explicitOverview) {
+            p.intent = 'overview';
+            p.subQuestions = [s.question];
+            p.ambiguous = false;
+          } else if (p.intent === 'overview' && (!summary.test(question) || !target || narrowsTarget.test(afterTarget))) {
             p.intent = 'search';
             p.subQuestions = [s.question];
           }
@@ -288,6 +303,25 @@ export class AgentService {
             }),
           },
         ];
+        if (s.phase === 'decide' && p.intent === 'overview' && s.scope.documents.length === 1) {
+          const call: ToolCall = {
+            id: `overview-${s.runId}`,
+            name: 'summarize_document',
+            args: { documentId: s.scope.documents[0].documentId },
+          };
+          s.pending = [call];
+          s.roundEvidenceCount = s.evidence.length;
+          s.phase = 'tool';
+          s.messages.push({
+            role: 'assistant',
+            content: '',
+            tool_calls: [{
+              id: call.id,
+              type: 'function',
+              function: { name: call.name, arguments: JSON.stringify(call.args) },
+            }],
+          });
+        }
         await this.event(s, o, 'plan', '已分析问题和查询范围');
         return { next: s.phase };
       }
@@ -420,6 +454,7 @@ export class AgentService {
           if (result.status === 'rejected') {
             if (
               result.reason instanceof AgentLimitError ||
+              call.name === 'summarize_document' ||
               o.signal?.aborted ||
               result.reason?.retryable === false ||
               result.reason?.getStatus?.() < 500
@@ -440,6 +475,8 @@ export class AgentService {
               if (!s.evidence.some((e) => e.evidenceId === item.evidenceId)) s.evidence.push(item);
             s.messages.push({ role: 'tool', tool_call_id: call.id, content: result.value });
             consumePending();
+            if (call.id === `overview-${s.runId}` && call.name === 'summarize_document')
+              s.phase = 'finalize';
             await this.event(s, o, 'tool_end', '资料查询完成', {
               tool: call.name,
               evidenceCount: found.length,
@@ -679,23 +716,33 @@ export class AgentService {
     const packed = await this.retrieval.pack(s.evidence, budget);
     let sources = packed.sources,
       directAnswer = s.directAnswer,
-      complete = packed.complete;
+      complete = packed.complete,
+      summaryPrompt: string | undefined;
     if (s.plan?.intent === 'overview')
       complete = !!complete && (await this.overviewCovered(s, sources, o));
-    if (s.phase === 'finalize' && s.plan?.intent === 'overview' && (!complete || directAnswer)) {
-      const result = verifiedSummaryResult(s, output);
+    if (s.phase === 'finalize' && s.plan?.intent === 'overview') {
+      const summaryWindow = s.scope.documents.length === 1 ? this.overviewResponseBudget() : window;
+      const result = verifiedSummaryResult(s, summaryWindow - output - 1024 - Buffer.byteLength(base, 'utf8'));
       if (result) {
         sources = result.sources;
-        directAnswer = result.answer;
+        if (Buffer.byteLength(result.answer, 'utf8') <= output) directAnswer = result.answer;
+        else {
+          directAnswer = undefined;
+          summaryPrompt = base +
+            '\n综合下列已经过原文核查的分组要点，保留重要限定条件及引用编号，勿加入新事实。' +
+            (result.complete ? '' : '明确说明仅覆盖已核查部分。') +
+            '\n<核查要点>\n' + result.answer + '\n</核查要点>';
+        }
         complete = result.complete;
         s.status = result.complete ? 'ready' : 'partial';
-      } else directAnswer ||= '当前仅获得部分文档片段，不足以概览全文，请使用全文摘要或缩小范围。';
+      } else if (!complete)
+        directAnswer ||= '未能核查足够的全文摘要内容，请重试或指定要总结的章节。';
     }
     const partialInstruction =
       s.status === 'partial' && s.plan?.intent === 'search'
         ? '\n覆盖检查未确认完整性。仅回答原文明确支持的部分，逐项附引用。指出无法确认的具体步骤或要点。如果原文完全不支持问题，明确说明，勿猜测。'
         : '';
-    const prompt =
+    const prompt = summaryPrompt ||
       base + partialInstruction + '\n<原文>\n' + this.retrieval.context(packed.sources) + '\n</原文>';
     const diagnostics = {
       runId: s.runId,

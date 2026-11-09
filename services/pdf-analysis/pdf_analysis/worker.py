@@ -42,9 +42,9 @@ def _child(connection, factory, model_root):
             backend.warmup()
             connection.send(('ready', None))
             while True:
-                operation, image, precision = connection.recv()
+                operation, image = connection.recv()
                 try:
-                    result = backend.infer(operation, image, precision)
+                    result = backend.infer(operation, image)
                     connection.send(('result', result))
                 except Exception:
                     connection.send(('error', None))
@@ -64,7 +64,6 @@ def _child(connection, factory, model_root):
 class _Job:
     operation: str
     image: bytes
-    precision: str
     deadline: float
     cancelled: asyncio.Event
     future: asyncio.Future
@@ -153,12 +152,12 @@ class ProcessWorker:
     async def wait_ready(self, timeout=300):
         await asyncio.wait_for(self._ready.wait(), timeout)
 
-    async def submit(self, operation, image, precision, cancelled=None, deadline=None):
+    async def submit(self, operation, image, cancelled=None, deadline=None):
         if self._closing or self._fatal:
             raise RuntimeError('Model worker unavailable')
         loop = asyncio.get_running_loop()
         until = min(deadline or float('inf'), time.monotonic() + self.total_timeout)
-        job = _Job(operation, image, precision, until, cancelled or asyncio.Event(), loop.create_future())
+        job = _Job(operation, image, until, cancelled or asyncio.Event(), loop.create_future())
         try:
             self.queue.put_nowait(job)
         except asyncio.QueueFull as error:
@@ -211,7 +210,7 @@ class ProcessWorker:
                 until = min(job.deadline, time.monotonic() + self.inference_timeout)
                 # The child is waiting on recv after ready. Offload the bounded image transfer
                 # so disconnect/timeout supervision remains live even for a stuck native child.
-                sender = asyncio.create_task(asyncio.to_thread(self._pipe.send, (job.operation, job.image, job.precision)))
+                sender = asyncio.create_task(asyncio.to_thread(self._pipe.send, (job.operation, job.image)))
                 sender.add_done_callback(_consume_failure)
                 while True:
                     if time.monotonic() >= until:

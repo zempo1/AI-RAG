@@ -3,8 +3,10 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   Param,
+  ParseIntPipe,
   Post,
   Put,
   Query,
@@ -99,6 +101,19 @@ export class DocumentsController {
     response.setHeader('Cache-Control', 'private, no-store');
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.send(bytes);
+  }
+
+  @Get('documents/:id/versions/:versionId/citation-context')
+  @Header('Cache-Control', 'private, no-store')
+  citationContext(
+    @Param('id', IdPipe) id: number,
+    @Param('versionId', IdPipe) versionId: number,
+    @Query('revisionId', IdPipe) revisionId: number,
+    @Query('start', ParseIntPipe) start: number,
+    @Query('end', ParseIntPipe) end: number,
+    @UserId() user: number,
+  ) {
+    return this.documents.citationContext(id, user, versionId, revisionId, start, end);
   }
 
   @Get('documents/:id')

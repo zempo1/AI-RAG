@@ -27,6 +27,8 @@ export interface OcrBlock {
 export interface OcrResult {
   blocks: OcrBlock[];
   manifest: string;
+  textOnly?: boolean;
+  detectedBoxes?: RegionBox[];
 }
 export interface AnalysisHealth {
   ready: boolean;
@@ -81,12 +83,43 @@ export function validateOcr(raw: any): OcrResult {
     if (typeof row?.text !== 'string') invalid(`blocks[${i}].text`);
     geometry(row, `blocks[${i}]`);
   }
-  return { blocks: raw.blocks, manifest: manifest(raw.manifest) };
+  if (raw.textOnly !== undefined && typeof raw.textOnly !== 'boolean') invalid('textOnly');
+  if (raw.detectedBoxes !== undefined) {
+    if (!Array.isArray(raw.detectedBoxes)) invalid('detectedBoxes');
+    raw.detectedBoxes.forEach((bbox: RegionBox, i: number) =>
+      geometry({ bbox, score: 1 }, `detectedBoxes[${i}]`),
+    );
+  }
+  return {
+    blocks: raw.blocks,
+    manifest: manifest(raw.manifest),
+    textOnly: raw.textOnly,
+    detectedBoxes: raw.detectedBoxes,
+  };
+}
+
+const sessionManifests = new WeakMap<PdfAnalysisClient, WeakMap<object, Promise<AnalysisHealth>>>();
+export function analysisHealth(client: PdfAnalysisClient, scope: ParseScope & { signal?: AbortSignal }) {
+  let sessions = sessionManifests.get(client);
+  if (!sessions) {
+    sessions = new WeakMap();
+    sessionManifests.set(client, sessions);
+  }
+  const key = scope.signal || scope;
+  let health = sessions.get(key);
+  if (!health) {
+    health = client.health(scope.signal);
+    sessions.set(key, health);
+  }
+  return health;
+}
+
+export function verifyAnalysisManifest(result: { manifest: string }, expected: string) {
+  if (result.manifest !== expected) throw new Error('PDF 分析服务模型在解析中发生变化，请重试');
 }
 
 /** Internal local service boundary. A service failure must remain visible to the indexing worker. */
 export class PdfAnalysisClient {
-  private lastManifest?: string;
   readonly timeoutMs: number;
   private readonly url: string;
   constructor(readonly config: Pick<ConfigService, 'get'>) {
@@ -97,9 +130,6 @@ export class PdfAnalysisClient {
     this.timeoutMs = Number(config.get('PDF_ANALYSIS_TIMEOUT_MS') ?? 95000);
     if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0)
       throw new Error('PDF_ANALYSIS_TIMEOUT_MS 必须为正数');
-  }
-  get modelManifest() {
-    return this.lastManifest;
   }
   cacheDirectory(scope: ParseScope): string | undefined {
     const root = this.config.get<string>('PAGE_ASSETS_DIR');
@@ -147,7 +177,6 @@ export class PdfAnalysisClient {
     if (typeof result?.ready !== 'boolean') invalid('ready');
     const current = manifest(result.manifest);
     if (!result.ready) throw new Error('PDF 分析服务模型未就绪');
-    this.lastManifest = current;
     return { ready: true, manifest: current };
   }
   private upload(bytes: Buffer) {
@@ -157,21 +186,19 @@ export class PdfAnalysisClient {
   }
   async layout(
     bytes: Buffer,
-    precision: 'standard' | 'high',
     signal?: AbortSignal,
   ): Promise<LayoutResult> {
     return localInference.run(async () => {
       const body = this.upload(bytes);
-      body.append('precision', precision);
-      const result = validateLayout(await this.request('/v1/layout', body, signal));
-      this.lastManifest = result.manifest;
-      return result;
+      return validateLayout(await this.request('/v1/layout', body, signal));
     }, signal);
   }
-  async ocr(bytes: Buffer, signal?: AbortSignal): Promise<OcrResult> {
+  async ocr(bytes: Buffer, signal?: AbortSignal, classify = false): Promise<OcrResult> {
     return localInference.run(async () => {
-      const result = validateOcr(await this.request('/v1/ocr', this.upload(bytes), signal));
-      this.lastManifest = result.manifest;
+      const body = this.upload(bytes);
+      if (classify) body.append('classify', 'true');
+      const result = validateOcr(await this.request('/v1/ocr', body, signal));
+      if (classify && result.textOnly === undefined) invalid('textOnly，需更新本地分析服务');
       return result;
     }, signal);
   }

@@ -10,7 +10,7 @@ import { PageAssetsService } from '../src/modules/documents/page-assets.service'
 import { MemoryStore } from '../src/persistence/memory.store';
 import { RecursiveChunker } from '../src/modules/documents/chunkers/recursive.chunker';
 import { TokenizerService } from '../src/modules/embeddings/tokenizer.service';
-import { groupLegacyCrops, locateRegions, PdfRegion } from '../src/modules/documents/parsers/pdf-layout';
+import { groupNearbyCrops, locateRegions, PdfRegion } from '../src/modules/documents/parsers/pdf-layout';
 import { pdfRegionScale } from '../src/modules/documents/parsers/pdf-render-cache';
 
 async function fixture(
@@ -20,6 +20,7 @@ async function fixture(
     | 'vector'
     | 'scan'
     | 'watermark'
+    | 'pixel-watermark'
     | 'columns'
     | 'rotated'
     | 'narrow'
@@ -54,9 +55,11 @@ async function fixture(
     doc.rect(43, 322, 135, 100).stroke();
     doc.rect(355, 150, 135, 100).stroke();
   }
-  if (kind === 'watermark') {
+  if (kind === 'watermark' || kind === 'pixel-watermark') {
     const image = createCanvas(300, 100);
-    image.getContext('2d').fillText('watermark', 10, 40);
+    const ctx = image.getContext('2d');
+    if (kind === 'pixel-watermark') ctx.globalAlpha = 0.17;
+    ctx.fillText('watermark', 10, 40);
     for (let i = 0; i < 3; i++) {
       if (i) {
         doc.addPage();
@@ -64,8 +67,8 @@ async function fixture(
       }
       doc
         .save()
-        .opacity(0.15)
-        .image(image.toBuffer('image/png'), 100, 200, { width: 400 })
+        .opacity(kind === 'watermark' ? 0.15 : 1)
+        .image(image.toBuffer('image/png'), 100 + (kind === 'pixel-watermark' ? i * 5 : 0), 200, { width: 400 })
         .restore();
       doc.moveTo(20, 100).lineTo(580, 100).stroke();
     }
@@ -116,6 +119,20 @@ describe('content-aware PDF regions', () => {
       llm,
       new PageAssetsService(config, new MemoryStore()),
     );
+    (visual as any).analysis = {
+      health: async () => ({ ready: true, manifest: 'fixture-models' }),
+      cacheDirectory: () => undefined,
+      layout: async () => ({
+        manifest: 'fixture-models',
+        regions: [{ kind: 'text', bbox: [0.02, 0.02, 0.98, 0.98], score: 0.99 }],
+      }),
+      ocr: async (_bytes: Buffer, _signal?: AbortSignal, classify?: boolean) => ({
+        manifest: 'fixture-models',
+        ...(classify
+          ? { textOnly: false, blocks: [] }
+          : { blocks: [{ text: 'IMAGE42', bbox: [0, 0, 1, 1], score: 0.99 }] }),
+      }),
+    };
     return { calls, parser: new DocumentParser(visual) };
   }
   const scope = { userId: 1, documentId: 1, versionId: 1 };
@@ -135,7 +152,7 @@ describe('content-aware PDF regions', () => {
       { kind: 'region', bbox: [0.1, 0.2, 0.3, 0.42], textIndexes: [], context: '' },
       { kind: 'region', bbox: [0.1, 0.46, 0.3, 0.68], textIndexes: [], context: '' },
     ];
-    const grouped = groupLegacyCrops(regions, ([x0, y0, x1, y1], limit) =>
+    const grouped = groupNearbyCrops(regions, ([x0, y0, x1, y1], limit) =>
       pdfRegionScale(1200 * (x1 - x0), 10000 * (y1 - y0), limit),
     );
     expect(grouped).toEqual(regions);
@@ -197,6 +214,12 @@ describe('content-aware PDF regions', () => {
   it('does not pay vision tokens for repeated translucent watermarks and decorative rules', async () => {
     const p = setup();
     await p.parser.parseStructured(await fixture('watermark'), 'a.pdf', undefined, scope);
+    expect(p.calls).toHaveLength(0);
+  });
+  it('skips repeated watermarks with translucency encoded in the bitmap even when shifted', async () => {
+    const p = setup();
+    const result = await p.parser.parseStructured(await fixture('pixel-watermark'), 'a.pdf', undefined, scope);
+    expect(result.blocks.every((b) => b.location.contentType === 'native')).toBe(true);
     expect(p.calls).toHaveLength(0);
   });
   it('keeps context and related native paragraphs within each column', async () => {
@@ -270,12 +293,12 @@ describe('content-aware PDF regions', () => {
       expect(p.calls).toHaveLength(count);
     },
   );
-  it('allows full-page OCR only for scans or explicit fallback', async () => {
+  it('uses local OCR for a scanned text page', async () => {
     const p = setup();
     const parsed = await p.parser.parseStructured(await fixture('scan'), 'a.pdf', undefined, scope);
-    expect(p.calls).toHaveLength(1);
-    expect(p.calls[0].height).toBe(1600);
-    expect((parsed.blocks[0].location as any).regionImage.kind).toBe('scan');
+    expect(p.calls).toHaveLength(0);
+    expect(parsed.blocks[0]).toMatchObject({ text: '[图片文字识别]\nIMAGE42',
+      location: { contentType: 'ocr', regionImage: { page: 1 } } });
   });
   it('records an explicit fallback when drawing bounds are unavailable', async () => {
     const { OPS } = await import('pdfjs-dist/legacy/build/pdf.mjs');

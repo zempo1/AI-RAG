@@ -2,7 +2,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiError } from '../../common/api-error';
-import { ModelUsage, ModelExecutionOptions, ModelCallRequest, ModelCallOutcome, ToolMessage, ToolDefinition, ToolInvocationOptions, ToolInvocationResult } from './llm.types';
+import { ModelUsage, ModelOutputError, ModelExecutionOptions, ModelCallRequest, ModelCallOutcome, ToolMessage, ToolDefinition, ToolInvocationOptions, ToolInvocationResult } from './llm.types';
 export * from './llm.types';
 
 export interface VisionImage {
@@ -128,8 +128,8 @@ export class LlmService {
       const message = await (await this.model(apiKey, false, images.length > 0, execution)).invoke(input, { signal: options.signal });
       record(message);
       this.reportUsage(message, images);
-      if (message.response_metadata?.finish_reason === 'length') throw new Error('回答达到输出长度上限，请缩小问题范围或分次提问');
-      if (typeof message.content !== 'string' || !message.content.trim()) throw new Error('模型返回空内容或不支持的内容格式');
+      if (message.response_metadata?.finish_reason === 'length') throw new ModelOutputError('回答达到输出长度上限，请缩小问题范围或分次提问');
+      if (typeof message.content !== 'string' || !message.content.trim()) throw new ModelOutputError('模型返回空内容或不支持的内容格式');
       return message.content;
     });
   }

@@ -1,4 +1,5 @@
 import { DataSource, EntityManager } from 'typeorm';
+import { createHash } from 'node:crypto';
 import { Store, Table, Row, now } from './store';
 import { entityTargets } from './data-source';
 import { ApiError } from '../common/api-error';
@@ -130,6 +131,42 @@ export class MysqlStore extends Store {
 
   async transaction<T>(work: (store: Store) => Promise<T>): Promise<T> {
     return this.manager.transaction((manager) => work(new MysqlStore(manager)));
+  }
+
+  async withDocumentVectorLock<T>(
+    documentId: number,
+    work: (store: Store) => Promise<T>,
+  ): Promise<T> {
+    if (this.manager.queryRunner?.isTransactionActive)
+      throw new Error('Vector mutations must run outside a database transaction');
+    const name = createHash('sha256')
+      .update(
+        JSON.stringify([
+          'rag-document-vector',
+          this.manager.connection.driver.database,
+          documentId,
+        ]),
+      )
+      .digest('hex');
+    const runner = this.manager.connection.createQueryRunner('master');
+    try {
+      const [result] = await runner.query('SELECT GET_LOCK(?, 30) AS acquired', [name]);
+      if (Number(result?.acquired) !== 1) throw new Error('等待文档向量写入锁超时');
+      try {
+        return await work(new MysqlStore(runner.manager));
+      } finally {
+        try {
+          const [result] = await runner.query('SELECT RELEASE_LOCK(?) AS released', [name]);
+          if (Number(result?.released) !== 1) throw new Error('未能释放文档向量写入锁');
+        } catch (error) {
+          // 连接丢失或释放结果异常时销毁该会话，避免把持锁连接退回池。
+          (await runner.connect()).destroy();
+          throw error;
+        }
+      }
+    } finally {
+      await runner.release();
+    }
   }
 }
 

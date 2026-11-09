@@ -2,9 +2,14 @@
 require('reflect-metadata');
 process.env.PROCESS_ROLE = 'worker';
 const { Test } = require('@nestjs/testing');
-const { AppModule } = require('../dist/app.module');
-const { EmbeddingsService } = require('../dist/modules/embeddings/embeddings.service');
-const { LlmService } = require('../dist/modules/llm/llm.service');
+const { agentLlmFixture } = require('./helpers/agent-llm.fixture.ts');
+const { join, resolve } = require('node:path');
+const build = process.env.RAG_TEST_BUILD_DIR
+  ? resolve(process.env.RAG_TEST_BUILD_DIR)
+  : join(__dirname, '../dist');
+const { AppModule } = require(join(build, 'app.module'));
+const { EmbeddingsService } = require(join(build, 'modules/embeddings/embeddings.service'));
+const { LlmService } = require(join(build, 'modules/llm/llm.service'));
 let context;
 (async () => {
   context = await Test.createTestingModule({ imports: [AppModule] })
@@ -14,10 +19,11 @@ let context;
       embedQuery: async () => [1, ...Array(383).fill(0)],
     })
     .overrideProvider(LlmService)
-    .useValue({
+    .useValue(agentLlmFixture({
       complete: async (prompt) =>
         prompt.startsWith('核查') ? '{"supported":true}' : '原文要求核对证据。[1]',
-    })
+      stream: async function* () { yield '原文要求核对证据。[1]'; },
+    }))
     .compile();
   await context.init();
   process.send?.({ ready: true });

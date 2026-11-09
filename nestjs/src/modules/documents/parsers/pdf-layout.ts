@@ -15,12 +15,13 @@ export interface PdfRegion {
   context: string;
   textIndexes: number[];
   scaleLimit?: number;
-  recognition?: 'ocr' | 'vision';
+  rasterOnly?: boolean;
+  recognition?: 'ocr' | 'vision' | 'classify';
   analysisProfile?: string;
 }
 
 /** Consolidate adjacent, already-expanded crops within one narrow column. */
-export function groupLegacyCrops(
+export function groupNearbyCrops(
   regions: PdfRegion[],
   scale: (box: RegionBox, limit?: number) => number,
 ): PdfRegion[] {
@@ -32,7 +33,8 @@ export function groupLegacyCrops(
     }
     const b = region.bbox;
     const index = grouped.findIndex((item) => {
-      if (item.kind !== 'region' || item.scaleLimit !== region.scaleLimit) return false;
+      if (item.kind !== 'region' || item.scaleLimit !== region.scaleLimit ||
+          item.rasterOnly || region.rasterOnly) return false;
       const a = item.bbox;
       const merged = union(a, b);
       const horizontalOverlap = Math.min(a[2], b[2]) - Math.max(a[0], b[0]);
@@ -93,7 +95,29 @@ export function hasPdfGraphics(list: any, ops: any): boolean {
   );
 }
 const decorationCache = new WeakMap<object, Promise<Set<string>>>();
-const imageHashes = new WeakMap<object, string>();
+const imageSignatures = new WeakMap<object, { hash: string; meanAlpha: number; maxAlpha: number }>();
+
+function imageSignature(object: any) {
+  let signature = imageSignatures.get(object);
+  if (signature) return signature;
+  let meanAlpha = 1, maxAlpha = 1;
+  if (object.kind === 3 && object.data.length === object.width * object.height * 4) {
+    let sum = 0, max = 0;
+    for (let i = 3; i < object.data.length; i += 4) {
+      sum += object.data[i];
+      max = Math.max(max, object.data[i]);
+    }
+    meanAlpha = sum / (255 * object.width * object.height);
+    maxAlpha = max / 255;
+  }
+  signature = {
+    hash: createHash('sha256').update(object.data).digest('hex'),
+    meanAlpha,
+    maxAlpha,
+  };
+  imageSignatures.set(object, signature);
+  return signature;
+}
 
 async function operationInfo(list: any, ops: any, page: any) {
   // 图片解码可晚于 operator list 返回；先等依赖，避免首次和重试得到不同指纹。
@@ -130,7 +154,7 @@ async function operationInfo(list: any, ops: any, page: any) {
     a[0] * b[4] + a[2] * b[5] + a[4],
     a[1] * b[4] + a[3] * b[5] + a[5],
   ];
-  return list.fnArray.map((op: number, i: number) => {
+  return (list.fnArray as number[]).map((op, i) => {
     const args = list.argsArray[i];
     if (op === ops.save || op === ops.paintFormXObjectBegin) {
       stack.push({ alpha, transform: [...transform] });
@@ -147,15 +171,15 @@ async function operationInfo(list: any, ops: any, page: any) {
       for (const [name, value] of args[0]) if (name === 'ca') alpha = value;
     const image = imageNames.some((name) => ops[name] === op);
     let identity: string | undefined;
+    let bitmap: ReturnType<typeof imageSignature> | undefined;
+    let bitmapKey: string | undefined;
     if (image && typeof args[0] === 'string') {
       const pool = args[0].startsWith('g_') ? page.commonObjs : page.objs;
       const object = pool?.has(args[0]) ? pool.get(args[0]) : undefined;
       if (object?.data) {
-        identity = imageHashes.get(object);
-        if (!identity) {
-          identity = createHash('sha256').update(object.data).digest('hex');
-          imageHashes.set(object, identity);
-        }
+        bitmap = imageSignature(object);
+        identity = bitmap.hash;
+        bitmapKey = `bitmap:${object.width}x${object.height}:${identity}`;
       }
       // 无法确认图像内容相同时，不仅凭尺寸和透明度忽略它。
       identity ||= args[0];
@@ -163,6 +187,8 @@ async function operationInfo(list: any, ops: any, page: any) {
     const data = image ? [identity, ...args.slice(1)] : args;
     return {
       alpha,
+      bitmap,
+      bitmapKey,
       key: createHash('sha256')
         .update(JSON.stringify([op, data, transform, alpha]))
         .digest('hex'),
@@ -186,7 +212,7 @@ async function repeatedOperations(document: any, ops: any): Promise<Set<string>>
                 list.fnArray[i] === ops.constructPath ||
                 imageNames.some((name) => ops[name] === list.fnArray[i]),
             )
-            .map((r: any) => r.key),
+            .flatMap((r) => r.bitmapKey ? [r.key, r.bitmapKey] : [r.key]),
         );
         for (const key of keys) counts.set(key, (counts.get(key) || 0) + 1);
       }
@@ -281,20 +307,30 @@ export async function locateRegions(
   }
   const reader = page.recordedBBoxes;
   if (!reader) return full('fallback', '绘图边界不可用');
-  const candidates: { bbox: RegionBox; image: boolean; count: number; scaleLimit?: number }[] = [];
+  const candidates: { bbox: RegionBox; image: boolean; rasterOnly: boolean; count: number; scaleLimit?: number }[] = [];
   let missing = false;
   for (let i = 0; i < list.fnArray.length; i++) {
     const op = list.fnArray[i];
     if (!graphics.has(op) || (op === ops.constructPath && list.argsArray[i]?.[0] === ops.endPath))
       continue;
+    const { bitmap, bitmapKey } = info[i];
+    const recurringBitmap = native.trim().length >= 16 && bitmap && bitmapKey && repeated.has(bitmapKey);
+    // Watermark opacity can be baked into RGBA rather than set in the PDF graphics state.
+    if (recurringBitmap && bitmap.maxAlpha * info[i].alpha <= 0.25) continue;
     if (reader.isEmpty(i)) {
       if (images.has(op) || op === ops.shadingFill) missing = true;
       continue;
     }
     const bbox = clamp([reader.minX(i), reader.minY(i), reader.maxX(i), reader.maxY(i)]);
+    if (!bbox.every(Number.isFinite)) {
+      missing = true;
+      continue;
+    }
     const width = bbox[2] - bbox[0],
       height = bbox[3] - bbox[1];
     const image = images.has(op);
+    if (recurringBitmap && repeated.has(info[i].key) && bitmap.meanAlpha <= 0.25 &&
+        height <= 0.09 && (bbox[1] >= 0.9 || bbox[3] <= 0.1)) continue;
     if (
       repeated.has(info[i].key) &&
       (info[i].alpha <= 0.25 ||
@@ -314,7 +350,7 @@ export async function locateRegions(
       op === ops.paintImageXObject && args[1] > 0 && args[2] > 0
         ? Math.min(2, args[1] / (width * viewport.width), args[2] / (height * viewport.height))
         : undefined;
-    candidates.push({ bbox, image, count: 1, scaleLimit });
+    candidates.push({ bbox, image, rasterOnly: image, count: 1, scaleLimit });
   }
   if (missing) return full('fallback', '图片或渐变区域无法可靠定位');
   // 合并相交/相邻的绘图构件，箭头、节点与表格线共同形成一个区域。
@@ -332,6 +368,7 @@ export async function locateRegions(
         candidates[i] = {
           bbox: union(candidates[i].bbox, candidates[j].bbox),
           image: candidates[i].image || candidates[j].image,
+          rasterOnly: candidates[i].rasterOnly && candidates[j].rasterOnly,
           count: candidates[i].count + candidates[j].count,
         };
         candidates.splice(j, 1);
@@ -387,6 +424,7 @@ export async function locateRegions(
       bbox,
       kind: 'region',
       scaleLimit: candidate.scaleLimit,
+      rasterOnly: candidate.rasterOnly,
       context: nearby
         .map((t) => t.text)
         .join('\n')

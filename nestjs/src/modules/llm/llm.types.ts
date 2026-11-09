@@ -1,3 +1,5 @@
+export class ModelOutputError extends Error {}
+
 export interface ModelUsage {
   inputTokens: number;
   outputTokens: number;

@@ -3,10 +3,11 @@ import hashlib
 import json
 from pathlib import Path
 
-MODELS = ('PP-DocLayout-M', 'PP-DocLayout_plus-L', 'PP-OCRv6_small_det', 'PP-OCRv6_small_rec')
+MODELS = ('PP-DocLayout-M', 'PP-OCRv6_small_det', 'PP-OCRv6_small_rec')
+_RETIRED_LAYOUT = 'PP-DocLayout_plus-L'
 MANIFEST_FILE = 'manifest.json'
 VERSIONS = {'paddleocr': '3.7.0', 'paddlepaddle': '3.3.1', 'paddlex': '3.7.0'}
-PIPELINE_VERSION = 'paddle-analysis-v2-numeric-edges-bgr-cpu-no-mkldnn'
+PIPELINE_VERSION = 'paddle-analysis-v3-single-layout-detect-recognize'
 
 
 def _inventory(root: Path):
@@ -51,7 +52,16 @@ def verify_manifest(root: Path):
     if target.is_symlink():
         raise ValueError('Manifest must be a regular file')
     document = json.loads(target.read_text(encoding='utf-8'))
-    if document.get('schema') != 1 or document.get('versions') != VERSIONS or document.get('models') != list(MODELS):
+    if document.get('schema') != 1 or document.get('versions') != VERSIONS or not isinstance(document.get('files'), dict):
+        raise ValueError('Unsupported model manifest')
+    if document.get('models') == [MODELS[0], _RETIRED_LAYOUT, *MODELS[1:]]:
+        # An existing seal already pins the three active models. Do not require
+        # re-downloading them, or reading/loading the retired model.
+        document = {**document, 'models': list(MODELS), 'files': {
+            name: digest for name, digest in document['files'].items()
+            if not name.startswith(_RETIRED_LAYOUT + '/')
+        }}
+    if document.get('models') != list(MODELS):
         raise ValueError('Unsupported model manifest')
     if document.get('files') != _inventory(root):
         raise ValueError('Model integrity verification failed')

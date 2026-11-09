@@ -34,6 +34,12 @@ export abstract class Store {
   abstract delete(table: Table, id: number): Promise<void>;
 
   abstract transaction<T>(work: (store: Store) => Promise<T>): Promise<T>;
+
+  /** Serializes vector mutations for one document across workers, without database row locks. */
+  abstract withDocumentVectorLock<T>(
+    documentId: number,
+    work: (store: Store) => Promise<T>,
+  ): Promise<T>;
 }
 
 export const now = () => {

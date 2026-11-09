@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { locateHybridRegions } from '../src/modules/documents/parsers/hybrid-layout';
+import { locateAdaptiveRegions } from '../src/modules/documents/parsers/adaptive-layout';
 import {
   PdfAnalysisClient,
   LayoutRegion,
@@ -19,6 +19,7 @@ async function fixture(
     | 'short-native'
     | 'table'
     | 'table-short'
+    | 'two-column-prose'
     | 'vector'
     | 'vector-image'
     | 'image-native-prose'
@@ -50,6 +51,11 @@ async function fixture(
     for (const y of [100, 135]) {
       pdf.text(fragment, 50, y);
       pdf.font('Helvetica-Bold').text('continues on the same line', nextX, y).font('Helvetica');
+    }
+  } else if (kind === 'two-column-prose') {
+    for (const y of [100, 118, 136, 154]) {
+      pdf.text('This line is part of a long paragraph.', 40, y);
+      pdf.text('Another independent paragraph here.', 330, y);
     }
   } else if (kind === 'clipped-text') {
     pdf.save().rect(0, 0, 600, 800).clip();
@@ -160,21 +166,19 @@ describe('hybrid PDF layout', () => {
   let calls: string[];
   const scope = { userId: 1, documentId: 2, versionId: 3 };
   let client: PdfAnalysisClient;
-  let config: ConfigService;
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'hybrid-layout-'));
     manifest = 'layout-a';
     calls = [];
     regions = [];
-    config = new ConfigService({ PAGE_ASSETS_DIR: dir, PDF_ANALYSIS_NATIVE_FAST_PATH: false });
-    client = new PdfAnalysisClient(config);
+    client = new PdfAnalysisClient(new ConfigService({ PAGE_ASSETS_DIR: dir }));
     // The external model boundary is the only fake: PDF parsing, drawing, geometry and disk cache run normally.
     client.health = async () => {
       calls.push('health');
       return { ready: true, manifest };
     };
-    client.layout = async (_bytes, precision) => {
-      calls.push(precision);
+    client.layout = async () => {
+      calls.push('layout');
       return { regions, manifest };
     };
   });
@@ -184,12 +188,12 @@ describe('hybrid PDF layout', () => {
   async function run(kind: Parameters<typeof fixture>[0], changedScope = scope) {
     const f = await fixture(kind);
     try {
-      return await locateHybridRegions(
+      return await locateAdaptiveRegions(
         f.document,
         f.page,
         f.native,
         f.content,
-        changedScope,
+        { ...changedScope, sourceHash: 'immutable-fixture-' + kind },
         client,
       );
     } finally {
@@ -204,8 +208,11 @@ describe('hybrid PDF layout', () => {
     expect(await run('prose-fragments')).toEqual([]);
     expect(calls).toEqual([]);
   });
+  it('keeps two wide columns of native prose out of layout inference', async () => {
+    expect(await run('two-column-prose')).toEqual([]);
+    expect(calls).toEqual([]);
+  });
   it('uses the default native vector fast path without model health or layout requests', async () => {
-    config.set('PDF_ANALYSIS_NATIVE_FAST_PATH', undefined);
     const found = await run('vector');
     expect(calls).toEqual([]);
     expect(found).toHaveLength(1);
@@ -220,20 +227,13 @@ describe('hybrid PDF layout', () => {
     expect((await run('vector'))[0].analysisProfile).toBe(firstProfile);
     expect(calls).toEqual([]);
   });
-  it('allows disabling native vector fast path to force model semantics', async () => {
-    regions = [{ kind: 'figure', bbox: [0.08, 0.18, 0.56, 0.28], score: 0.97 }];
-    expect(await run('vector')).toHaveLength(1);
-    expect(calls).toContain('standard');
-  });
   it('uses painted grid boundaries for native table fast path', async () => {
-    config.set('PDF_ANALYSIS_NATIVE_FAST_PATH', true);
     const found = await run('grid-table');
     expect(found).toHaveLength(1);
     expect(found[0].recognition).toBe('vision');
     expect(calls).toEqual([]);
   });
   it.each([
-    'vector-sparse',
     'vector-empty',
     'vector-large',
     'image-native-inside',
@@ -244,27 +244,24 @@ describe('hybrid PDF layout', () => {
   ] as const)(
     'keeps model analysis for %s when native vector evidence is insufficient',
     async (kind) => {
-      config.set('PDF_ANALYSIS_NATIVE_FAST_PATH', true);
-      regions = [{ kind: 'unknown', bbox: [0.08, 0.18, 0.56, 0.28], score: 0.5 }];
+        regions = [{ kind: 'unknown', bbox: [0.08, 0.18, 0.56, 0.28], score: 0.5 }];
       await run(kind);
-      expect(calls).toContain('standard');
+      expect(calls).toContain('layout');
     },
   );
   it.each(['vector-image', 'image-native-prose'] as const)(
-    'sends a well bounded %s directly to vision when native prose outside it is reliable',
+    'sends a well bounded %s without full-page layout when native prose outside it is reliable',
     async (kind) => {
-      config.set('PDF_ANALYSIS_NATIVE_FAST_PATH', true);
-      const found = await run(kind);
+        const found = await run(kind);
       expect(found.length).toBeGreaterThan(0);
-      expect(found.every((r) => r.recognition === 'vision')).toBe(true);
+      expect(found.some((r) => r.recognition === 'classify')).toBe(true);
       expect(calls).toEqual([]);
     },
   );
   it('keeps corrupt native extraction and its legacy fallback on model analysis', async () => {
-    config.set('PDF_ANALYSIS_NATIVE_FAST_PATH', true);
     const f = await fixture('vector');
     try {
-      const found = await locateHybridRegions(
+      const found = await locateAdaptiveRegions(
         f.document,
         f.page,
         '\uFFFD' + f.native,
@@ -272,7 +269,7 @@ describe('hybrid PDF layout', () => {
         scope,
         client,
       );
-      expect(calls).toContain('standard');
+      expect(calls).toContain('layout');
       expect(found[0]?.kind).toBe('fallback');
       expect(found[0]?.recognition).toBe('vision');
     } finally {
@@ -280,10 +277,9 @@ describe('hybrid PDF layout', () => {
     }
   });
   it('still sends a borderless native table to layout when fast path is enabled', async () => {
-    config.set('PDF_ANALYSIS_NATIVE_FAST_PATH', true);
     regions = [{ kind: 'table', bbox: [0.07, 0.11, 0.67, 0.29], score: 0.96 }];
     expect(await run('table')).toHaveLength(1);
-    expect(calls).toContain('standard');
+    expect(calls).toContain('layout');
   });
   it('makes no service request for an entirely blank page', async () => {
     expect(await run('blank')).toEqual([]);
@@ -297,24 +293,24 @@ describe('hybrid PDF layout', () => {
     expect(await run('ruled-text')).toEqual([]);
     expect(calls).toEqual([]);
   });
-  it('accepts native coverage for a short model text region', async () => {
+  it('does not infer that a scan is covered from a short native text region', async () => {
     regions = [{ kind: 'text', bbox: [0.095, 0.114, 0.15, 0.134], score: 0.99 }];
-    expect(await run('short-native')).toEqual([]);
+    expect(await run('short-native')).toMatchObject([{ kind: 'scan', recognition: 'classify' }]);
   });
   it('does not rerun layout for a low-confidence title fully covered by native text', async () => {
     regions = [{ kind: 'title', bbox: [0.05, 0.07, 0.37, 0.094], score: 0.6 }];
-    expect(await run('scan-native')).toEqual([]);
-    expect(calls).toEqual(['health', 'standard']);
+    expect(await run('scan-native')).toMatchObject([{ kind: 'scan', recognition: 'classify' }]);
+    expect(calls).toEqual(['health', 'layout']);
   });
   it('detects a borderless table from repeated column alignment', async () => {
     regions = [{ kind: 'table', bbox: [0.07, 0.11, 0.67, 0.29], score: 0.96 }];
     expect(await run('table')).toMatchObject([{ recognition: 'vision', kind: 'region' }]);
-    expect(calls).toContain('standard');
+    expect(calls).toContain('layout');
   });
   it('checks a two-row borderless table instead of taking the native prose shortcut', async () => {
     regions = [{ kind: 'table', bbox: [0.07, 0.11, 0.67, 0.2], score: 0.96 }];
     expect((await run('table-short'))[0]?.recognition).toBe('vision');
-    expect(calls).toContain('standard');
+    expect(calls).toContain('layout');
   });
   it('keeps a complete native-labelled vector diagram and its caption within one column', async () => {
     regions = [{ kind: 'figure', bbox: [0.08, 0.18, 0.56, 0.28], score: 0.97 }];
@@ -347,9 +343,13 @@ describe('hybrid PDF layout', () => {
     expect(found).toHaveLength(1);
     expect(found[0].recognition).toBe('ocr');
   });
-  it('skips OCR when the native layer reliably covers the scan text region', async () => {
+  it('checks scanned content outside a confidently detected native heading', async () => {
     regions = [{ kind: 'text', bbox: [0.05, 0.07, 0.37, 0.094], score: 0.99 }];
-    expect(await run('scan-native')).toEqual([]);
+    expect(await run('scan-native')).toMatchObject([{ kind: 'scan', recognition: 'classify' }]);
+  });
+  it('classifies a low-confidence text candidate before deciding whether OCR is sufficient', async () => {
+    regions = [{ kind: 'text', bbox: [0.1, 0.2, 0.9, 0.7], score: 0.55 }];
+    expect(await run('scan')).toMatchObject([{ kind: 'region', recognition: 'classify' }]);
   });
   it('does not mistake recovered first and last lines for complete native OCR coverage', async () => {
     regions = [{ kind: 'text', bbox: [0.1, 0.1, 0.9, 0.8], score: 0.99 }];
@@ -365,60 +365,48 @@ describe('hybrid PDF layout', () => {
     const b = result[0].bbox;
     expect((b[2] - b[0]) * (b[3] - b[1])).toBeLessThan(0.1);
   });
-  it('rechecks low confidence and retains unexplained graphics conservatively', async () => {
-    regions = [{ kind: 'unknown', bbox: [0.08, 0.18, 0.56, 0.28], score: 0.5 }];
-    const found = await run('vector');
-    expect(calls).toContain('high');
-    expect(found.some((r) => r.recognition === 'vision')).toBe(true);
-  });
-  it('retains painted vector nodes and connectors when the local layout model misses them', async () => {
-    regions = [{ kind: 'text', bbox: [0.05, 0.07, 0.37, 0.094], score: 0.99 }];
-    const found = await run('vector');
-    expect(calls).toContain('high');
-    expect(found).toHaveLength(1);
-    expect(found[0].recognition).toBe('vision');
-    expect(found[0].bbox[0]).toBeLessThan(0.09);
-    expect(found[0].bbox[2]).toBeGreaterThan(0.54);
-  });
-  it('rechecks uncertain decoration rather than dropping a suspected borderless table', async () => {
-    client.layout = async (_bytes, precision) => {
-      calls.push(precision);
-      return {
-        manifest,
-        regions:
-          precision === 'standard'
-            ? [{ kind: 'decoration', bbox: [0.07, 0.11, 0.67, 0.29], score: 0.4 }]
-            : [{ kind: 'table', bbox: [0.07, 0.11, 0.67, 0.29], score: 0.96 }],
-      };
-    };
-    const found = await run('table');
-    expect(found).toHaveLength(1);
-    expect(found[0].recognition).toBe('vision');
-    expect(calls).toContain('high');
-  });
-  it('keeps an uncertain region after the high precision recheck also calls it decoration', async () => {
+  it('retains uncertain decoration after one layout inference', async () => {
     regions = [{ kind: 'decoration', bbox: [0.07, 0.11, 0.67, 0.29], score: 0.4 }];
     const found = await run('table');
     expect(found).toHaveLength(1);
     expect(found[0].recognition).toBe('vision');
+    expect(calls).toEqual(['health', 'layout']);
+  });
+  it('rejects a layout response from a different model version', async () => {
+    client.layout = async () => ({ regions: [], manifest: 'replaced-model' });
+    await expect(run('scan')).rejects.toThrow(/模型在解析中发生变化/);
+  });
+  it('reuses a session health check and reads immutable layout cache before rasterizing', async () => {
+    const f = await fixture('table');
+    const current = { ...scope, sourceHash: 'table-bytes', signal: new AbortController().signal };
+    regions = [{ kind: 'table', bbox: [0.07, 0.11, 0.67, 0.29], score: 0.96 }];
+    try {
+      const read = () => locateAdaptiveRegions(f.document, f.page, f.native, f.content, current, client);
+      const first = await read();
+      f.page.render = () => { throw new Error('warm layout must not render'); };
+      expect(await read()).toEqual(first);
+      expect(calls).toEqual(['health', 'layout']);
+    } finally {
+      await f.task.destroy();
+    }
   });
   it('reuses layout cache only within the same scope and current model manifest', async () => {
     regions = [{ kind: 'figure', bbox: [0.08, 0.18, 0.56, 0.28], score: 0.97 }];
-    await run('vector');
-    await run('vector');
-    expect(calls.filter((c) => c === 'standard')).toHaveLength(1);
+    await run('scan');
+    await run('scan');
+    expect(calls.filter((c) => c === 'layout')).toHaveLength(1);
     manifest = 'layout-b';
-    await run('vector');
-    expect(calls.filter((c) => c === 'standard')).toHaveLength(2);
-    await run('vector', { ...scope, userId: 9 });
-    expect(calls.filter((c) => c === 'standard')).toHaveLength(3);
+    await run('scan');
+    expect(calls.filter((c) => c === 'layout')).toHaveLength(2);
+    await run('scan', { ...scope, userId: 9 });
+    expect(calls.filter((c) => c === 'layout')).toHaveLength(3);
   });
   it('preserves a guard cancellation before reading cache or calling a service', async () => {
     const f = await fixture('scan');
     const error = new Error('version deleted');
     try {
       await expect(
-        locateHybridRegions(
+        locateAdaptiveRegions(
           f.document,
           f.page,
           '',

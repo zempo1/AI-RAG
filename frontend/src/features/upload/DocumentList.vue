@@ -42,6 +42,10 @@
                 v-else-if="doc.status === 'failed'" /><Clock v-else /></el-icon
             >{{ stateLabel(doc) }}</span
           >
+          <IndexProgressDetails
+            v-if="doc.task?.status === 'running'"
+            :progress="doc.task.indexProgress"
+          />
           <el-progress
             v-if="doc.task && !terminal(doc.task.status) && doc.task.total"
             :percentage="
@@ -137,6 +141,7 @@ import type {
   ManagedDocument,
   ProcessingTask,
 } from "../../api/knowledge-bases";
+import IndexProgressDetails from "./IndexProgressDetails.vue";
 defineProps<{
   documents: ManagedDocument[];
   categories: Category[];

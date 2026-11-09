@@ -52,6 +52,16 @@ describe('rendered PDF vision pipeline with real HTTP and persistent page cache'
     server = createServer(async (req, res) => {
       let raw = '';
       for await (const part of req) raw += part;
+      const manifest = 'adaptive-http-fixture';
+      const local =
+        req.url === '/health' ? { ready: true, manifest }
+          : req.url === '/v1/layout' ? { regions: [], manifest }
+            : req.url === '/v1/ocr' ? { blocks: [], textOnly: false, manifest } : undefined;
+      if (local) {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify(local));
+        return;
+      }
       const body = JSON.parse(raw);
       const content = body.messages[0].content;
       const label = content.find((b: any) => b.type === 'text' && /^第\d+页$/.test(b.text)).text;
@@ -125,6 +135,7 @@ describe('rendered PDF vision pipeline with real HTTP and persistent page cache'
   ) {
     const assets = new PageAssetsService(config, store);
     config.set('VISION_CONCURRENCY', 1);
+    config.set('PDF_ANALYSIS_URL', new URL(base).origin);
     return {
       assets,
       config,
@@ -248,7 +259,7 @@ describe('rendered PDF vision pipeline with real HTTP and persistent page cache'
     expect(calls).toEqual([1, 1, 1, 2]);
   });
 
-  it('rebuilds a truncated PNG cache while reusing intact pages', async () => {
+  it('rebuilds a truncated PNG without rerunning valid recognition', async () => {
     const { MemoryStore } = await import('../src/persistence/memory.store');
     const p = parser(new MemoryStore()),
       bytes = await fixture();
@@ -261,7 +272,7 @@ describe('rendered PDF vision pipeline with real HTTP and persistent page cache'
     const repaired = await p.parser.parseStructured(bytes, 'mixed.pdf', undefined, scope);
     expect(repaired).toEqual(first);
     expect((await readFile(file)).equals(original)).toBe(true);
-    expect(calls).toEqual([1, 1, 2, 1]);
+    expect(calls).toEqual([1, 1, 2]);
   });
 
   it('checks cancellation before each paid request and preserves the cancellation error type', async () => {

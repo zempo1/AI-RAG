@@ -20,15 +20,17 @@ class FakeBackend:
     def warmup(self):
         time.sleep(0.03)
 
-    def infer(self, operation, image, precision):
+    def infer(self, operation, image):
         if image == b'hang' or image.endswith(b'slow'):
             time.sleep(10)
         if image == b'crash':
             import os
             os._exit(9)
         if operation == 'layout':
-            return {'regions': [{'kind': 'table' if precision == 'high' else 'text',
+            return {'regions': [{'kind': 'text',
                                  'bbox': [0.1, 0.2, 0.9, 0.8], 'score': 0.95}]}
+        if operation == 'classify':
+            return {'textOnly': False, 'blocks': [], 'detectedBoxes': []}
         return {'blocks': [{'text': '中文测试', 'bbox': [0, 0, 1, 1], 'score': 0.9}]}
 
 
@@ -77,12 +79,12 @@ def test_http_contract_validation_and_no_path_or_url_inputs(model_root):
         assert health['ready'] is True
         assert len(health['manifest']) == 64
         assert 'files' in health['models']
-        response = client.post('/v1/layout', data={'precision': 'high'},
+        response = client.post('/v1/layout', data={'precision': 'standard'},
                                files={'file': ('page.png', png(), 'image/png')},
                                headers={'X-Request-ID': 'page-1'})
         assert response.status_code == 200
         assert response.headers['X-Request-ID'] == 'page-1'
-        assert response.json() == {'regions': [{'kind': 'table', 'bbox': [0.1, 0.2, 0.9, 0.8], 'score': 0.95}],
+        assert response.json() == {'regions': [{'kind': 'text', 'bbox': [0.1, 0.2, 0.9, 0.8], 'score': 0.95}],
                                    'manifest': health['manifest']}
         response = client.post('/v1/ocr', files={'file': ('page.png', png(), 'image/png')})
         assert response.json()['blocks'][0]['text'] == '中文测试'
@@ -98,16 +100,32 @@ def test_body_and_pixel_limits_prevent_inference(model_root):
         assert client.post('/v1/ocr', files={'file': ('x', png())}).status_code == 413
 
 
+def test_one_layout_model_and_opt_in_text_classification(model_root):
+    with TestClient(create_app(Settings(model_root=model_root), backend_factory=FakeBackend)) as client:
+        assert client.get('/health').json()['models']['models'] == [
+            'PP-DocLayout-M', 'PP-OCRv6_small_det', 'PP-OCRv6_small_rec',
+        ]
+        assert client.post('/v1/layout', data={'precision': 'high'},
+                           files={'file': ('page.png', png())}).status_code == 422
+        classified = client.post('/v1/ocr', data={'classify': 'true'},
+                                 files={'file': ('page.png', png())})
+        assert classified.status_code == 200
+        assert classified.json()['textOnly'] is False
+        assert classified.json()['blocks'] == []
+        assert client.post('/v1/ocr', data={'classify': '1'},
+                           files={'file': ('page.png', png())}).status_code == 422
+
+
 def test_worker_timeout_kills_process_then_capacity_and_readiness_recover(model_root):
     async def scenario():
         worker = ProcessWorker(model_root, FakeBackend, inference_timeout=0.15, join_timeout=0.3)
         await worker.start()
         first_pid = worker.pid
         with pytest.raises(InferenceTimeout):
-            await worker.submit('ocr', b'hang', 'standard')
+            await worker.submit('ocr', b'hang')
         await worker.wait_ready(5)
         assert worker.pid != first_pid
-        assert (await worker.submit('ocr', b'ok', 'standard'))['blocks'][0]['text'] == '中文测试'
+        assert (await worker.submit('ocr', b'ok'))['blocks'][0]['text'] == '中文测试'
         await worker.close()
         assert not worker.ready
     asyncio.run(scenario())
@@ -119,14 +137,14 @@ def test_cancel_running_request_restarts_child_and_does_not_leak_capacity(model_
         await worker.start()
         first_pid = worker.pid
         cancelled = asyncio.Event()
-        task = asyncio.create_task(worker.submit('ocr', b'hang', 'standard', cancelled))
+        task = asyncio.create_task(worker.submit('ocr', b'hang', cancelled))
         await asyncio.sleep(0.1)
         cancelled.set()
         with pytest.raises(InferenceCancelled):
             await task
         await worker.wait_ready(5)
         assert worker.pid != first_pid
-        assert 'blocks' in await worker.submit('ocr', b'ok', 'standard')
+        assert 'blocks' in await worker.submit('ocr', b'ok')
         await worker.close()
     asyncio.run(scenario())
 
@@ -135,19 +153,19 @@ def test_queue_is_bounded_and_waiting_cancel_does_not_kill_active_child(model_ro
     async def scenario():
         worker = ProcessWorker(model_root, FakeBackend, queue_size=1, inference_timeout=0.6)
         await worker.start()
-        active = asyncio.create_task(worker.submit('ocr', b'hang', 'standard'))
+        active = asyncio.create_task(worker.submit('ocr', b'hang'))
         await asyncio.sleep(0.1)
         first_pid = worker.pid
         cancelled = asyncio.Event()
-        queued = asyncio.create_task(worker.submit('ocr', b'ok', 'standard', cancelled))
+        queued = asyncio.create_task(worker.submit('ocr', b'ok', cancelled))
         await asyncio.sleep(0.05)
         with pytest.raises(QueueFull):
-            await worker.submit('ocr', b'ok', 'standard')
+            await worker.submit('ocr', b'ok')
         cancelled.set()
         with pytest.raises(InferenceCancelled):
             await queued
         assert worker.pid == first_pid
-        replacement = asyncio.create_task(worker.submit('ocr', b'ok', 'standard'))
+        replacement = asyncio.create_task(worker.submit('ocr', b'ok'))
         await asyncio.sleep(0.03)
         assert not replacement.done(), 'Cancelled queue entry must free admission immediately'
         with pytest.raises(InferenceTimeout):
@@ -162,9 +180,9 @@ def test_child_crash_recovers_and_unsealed_start_fails_closed(model_root, tmp_pa
         worker = ProcessWorker(model_root, FakeBackend)
         await worker.start()
         with pytest.raises(RuntimeError):
-            await worker.submit('ocr', b'crash', 'standard')
+            await worker.submit('ocr', b'crash')
         await worker.wait_ready(5)
-        assert 'blocks' in await worker.submit('ocr', b'ok', 'standard')
+        assert 'blocks' in await worker.submit('ocr', b'ok')
         await worker.close()
     asyncio.run(scenario())
     with pytest.raises((ValueError, FileNotFoundError)):

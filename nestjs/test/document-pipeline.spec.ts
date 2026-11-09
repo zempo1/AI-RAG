@@ -132,6 +132,101 @@ describe('asynchronous document lifecycle', () => {
     expect((await p.tasks.get(first.taskId, 1)).status).toBe('canceled');
   });
 
+  it('does not hold library or task rows while waiting for a vector write', async () => {
+    const first = await upload();
+    const originalWrite = p.vectors.addAll.bind(p.vectors);
+    let entered!: () => void;
+    let release!: () => void;
+    const writing = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    p.vectors.addAll = async (vectors, segments) => {
+      entered();
+      await gate;
+      originalWrite(vectors, segments);
+    };
+    const run = p.indexing.process(first.taskId);
+    await writing;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const bounded = new Promise<never>((_, reject) => {
+      timeout = setTimeout(
+        () => reject(new Error('A vector write held a database row lock')),
+        1000,
+      );
+    });
+    const unrelated = upload('同一知识库的另一份文档');
+    const deletion = p.documents.delete(first.documentId, 1);
+    try {
+      await Promise.race([Promise.all([unrelated, deletion]), bounded]);
+    } finally {
+      clearTimeout(timeout);
+      release();
+      await Promise.allSettled([run, unrelated, deletion]);
+    }
+    await p.indexing.process((await deletion).taskId);
+    expect((await p.tasks.get(first.taskId, 1)).status).toBe('canceled');
+    expect(p.vectors.search([1, 0], 10, 0)).toEqual([]);
+  });
+
+  it('waits for an older vector write before resetting and publishing a redelivered revision', async () => {
+    const first = await upload();
+    const originalWrite = p.vectors.addAll.bind(p.vectors);
+    const originalReset = p.vectors.removeRevision.bind(p.vectors);
+    const originalLock = p.store.withDocumentVectorLock.bind(p.store);
+    const events: string[] = [];
+    let entered!: () => void;
+    let release!: () => void;
+    let redelivered!: () => void;
+    const writing = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const waiting = new Promise<void>((resolve) => {
+      redelivered = resolve;
+    });
+    let locks = 0;
+    p.store.withDocumentVectorLock = (id, work) => {
+      if (++locks === 2) redelivered();
+      return originalLock(id, work);
+    };
+    p.vectors.addAll = async (vectors, segments) => {
+      if (!events.length) {
+        events.push('older-write-started');
+        entered();
+        await gate;
+        events.push('older-write-finished');
+      } else events.push('newer-write');
+      originalWrite(vectors, segments);
+    };
+    p.vectors.removeRevision = (revisionId, userId) => {
+      events.push('newer-reset');
+      originalReset(revisionId, userId);
+    };
+    const older = p.indexing.process(first.taskId);
+    await writing;
+    const newer = p.indexing.process(first.taskId, 2);
+    try {
+      await waiting;
+      expect(events).toEqual(['older-write-started']);
+    } finally {
+      release();
+      await Promise.all([older, newer]);
+    }
+    expect(events).toEqual([
+      'older-write-started',
+      'older-write-finished',
+      'newer-reset',
+      'newer-write',
+    ]);
+    expect((await p.tasks.get(first.taskId, 1)).status).toBe('completed');
+    expect(p.vectors.search([1, 0], 10, 0)).toHaveLength(1);
+  });
+
   it('locks writes during library rebuild and releases the lock after partial failure', async () => {
     const first = await upload();
     await p.indexing.process(first.taskId);

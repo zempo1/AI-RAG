@@ -8,6 +8,11 @@ import {
   assertTokenizerProfile,
 } from './model-profile';
 import { TokenizerService } from './tokenizer.service';
+import { RequestScheduler } from '../../common/request-scheduler';
+
+export const REMOTE_EMBEDDING_BATCH_SIZE = 10;
+export const REMOTE_EMBEDDING_CONCURRENCY = 2;
+const remoteRequests = new RequestScheduler(REMOTE_EMBEDDING_CONCURRENCY);
 
 @Injectable()
 export class EmbeddingsService implements OnModuleDestroy {
@@ -79,13 +84,22 @@ export class EmbeddingsService implements OnModuleDestroy {
     return pending;
   }
 
-  async embedQuery(text: string, profile: ModelProfile = this.currentProfile(), signal?: AbortSignal): Promise<number[]> {
+  async embedQuery(
+    text: string,
+    profile: ModelProfile = this.currentProfile(),
+    signal?: AbortSignal,
+  ): Promise<number[]> {
     return (await this.embedDocuments([text], profile, signal))[0];
   }
 
-  private async remote(texts: string[], profile: ModelProfile, signal?: AbortSignal): Promise<number[][]> {
+  private async remote(
+    texts: string[],
+    profile: ModelProfile,
+    signal?: AbortSignal,
+  ): Promise<number[][]> {
     if (!texts.length) return [];
-    const key = this.config.get<string>('EMBEDDING_API_KEY') || this.config.get<string>('CHAT_API_KEY');
+    const key =
+      this.config.get<string>('EMBEDDING_API_KEY') || this.config.get<string>('CHAT_API_KEY');
     if (!key) throw new Error('请配置 EMBEDDING_API_KEY 或 CHAT_API_KEY');
     // 调用前检查输入长度，拒绝静默截断，保证向量代表完整片段。
     const tokenizer = new TokenizerService(this.config);
@@ -93,28 +107,35 @@ export class EmbeddingsService implements OnModuleDestroy {
       if ((await tokenizer.count(text, profile.tokenizer)) > 8192)
         throw new Error('Embedding 输入超过模型 token 上限，拒绝静默截断');
     const all: number[][] = [];
-    for (let i = 0; i < texts.length; i += 10) {
+    for (let i = 0; i < texts.length; i += REMOTE_EMBEDDING_BATCH_SIZE) {
       signal?.throwIfAborted();
-      const input = texts.slice(i, i + 10);
-      const response = await fetch(
-        (
-          this.config.get<string>('EMBEDDING_BASE_URL') ||
-          'https://dashscope.aliyuncs.com/compatible-mode/v1'
-        ).replace(/\/$/, '') + '/embeddings',
-        {
-          method: 'POST',
-          headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: profile.model,
-            input,
-            dimensions: profile.dimensions,
-            encoding_format: 'float',
-          }),
-          signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
-        },
-      );
-      if (!response.ok) throw new Error('Embedding API HTTP ' + response.status);
-      const body: any = await response.json();
+      const input = texts.slice(i, i + REMOTE_EMBEDDING_BATCH_SIZE);
+      const body: any = await remoteRequests.run(async () => {
+        const response = await fetch(
+          (
+            this.config.get<string>('EMBEDDING_BASE_URL') ||
+            'https://dashscope.aliyuncs.com/compatible-mode/v1'
+          ).replace(/\/$/, '') + '/embeddings',
+          {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: profile.model,
+              input,
+              dimensions: profile.dimensions,
+              encoding_format: 'float',
+            }),
+            signal: signal
+              ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+              : AbortSignal.timeout(30000),
+          },
+        );
+        if (!response.ok) {
+          remoteRequests.cooldown(response);
+          throw new Error('Embedding API HTTP ' + response.status);
+        }
+        return response.json();
+      }, signal);
       // 按返回下标恢复输入顺序，再校验维度与数值，防止向量和原文对应错误。
       const rows = [...(body.data || [])].sort((a, b) => a.index - b.index);
       if (

@@ -230,7 +230,8 @@
         <p v-if="selectedCitation.location?.contentType" class="source-location">
           {{ ({ native: '原生文字', ocr: '图片文字识别', table: '表格识别', figure: '模型生成的图解，请结合原图核对' })[selectedCitation.location.contentType] }}
         </p>
-        <pre class="source-text">{{ selectedCitation.text }}</pre>
+        <p v-if="citationContext" class="source-location">引用所在的原文上下文</p>
+        <pre class="source-text">{{ citationContext || selectedCitation.text }}</pre>
         <SourcePagePreview :source="selectedCitation" />
       </template>
     </el-drawer>
@@ -256,7 +257,7 @@ import GenerationStatus from "./GenerationStatus.vue";
 import RetrievalDebug from "./RetrievalDebug.vue";
 import SourcePagePreview from "./SourcePagePreview.vue";
 import { useToast } from "../../composables/useToast";
-import type { Citation } from "../../api/knowledge-bases";
+import { getCitationContext, type Citation } from "../../api/knowledge-bases";
 
 interface Message {
   agentSteps?: AgentStep[];
@@ -420,6 +421,21 @@ async function stopGeneration() {
   }
 }
 const selectedCitation = ref<Citation | null>(null);
+const citationContext = ref("");
+watch(selectedCitation, (source, _previous, onCleanup) => {
+  citationContext.value = "";
+  if (!source?.location || source.sourceDeleted || source.sourceOutdated ||
+      !source.indexRevisionId ||
+      (source.location.contentType && source.location.contentType !== "native")) return;
+  const controller = new AbortController();
+  onCleanup(() => controller.abort());
+  void getCitationContext(source, controller.signal).then(({ text }) => {
+    if (!controller.signal.aborted && text.includes(source.text.trim()))
+      citationContext.value = text;
+  }).catch(() => {
+    // The saved evidence is still useful when the original revision is unavailable.
+  });
+}, { flush: "sync" });
 let streamAbort: AbortController | undefined;
 let epoch = 0;
 const handleCitationClick = (event: MouseEvent, message: Message) => {

@@ -11,6 +11,8 @@ export class MemoryStore extends Store {
 
   private serial: Promise<unknown> = Promise.resolve();
 
+  private readonly vectorLocks = new Map<number, Promise<void>>();
+
   private table(name: Table): Map<number, Row> {
     if (!this.tables.has(name)) this.tables.set(name, new Map());
     return this.tables.get(name)!;
@@ -72,5 +74,23 @@ export class MemoryStore extends Store {
     const pending = this.serial.then(execute, execute);
     this.serial = pending.catch(() => undefined);
     return pending;
+  }
+
+  async withDocumentVectorLock<T>(
+    documentId: number,
+    work: (store: Store) => Promise<T>,
+  ): Promise<T> {
+    const previous = this.vectorLocks.get(documentId) ?? Promise.resolve();
+    const pending = previous.then(() => work(this));
+    const settled = pending.then(
+      () => {},
+      () => {},
+    );
+    this.vectorLocks.set(documentId, settled);
+    try {
+      return await pending;
+    } finally {
+      if (this.vectorLocks.get(documentId) === settled) this.vectorLocks.delete(documentId);
+    }
   }
 }

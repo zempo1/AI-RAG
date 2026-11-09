@@ -37,6 +37,9 @@ export class TasksService {
         : {}),
       ...(row.kind === 'qa' && row.payload?.engine === 'agentic-v1'
         ? { agentProgress: row.payload?.agentProgress, retrievalRunId: row.payload?.retrievalRunId } : {}),
+      ...(row.kind === 'index' && row.payload?.indexProgress
+        ? { indexProgress: row.payload.indexProgress }
+        : {}),
       canDismiss: terminalTask(row.status) && !executionToken && !row.parentTaskId,
       waitingUntil: delayed ? waitingUntil : null,
       waitingReason: delayed

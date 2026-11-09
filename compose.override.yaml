@@ -1,0 +1,4 @@
+services:
+  pdf-analysis:
+    volumes:
+      - ./services/pdf-analysis/models:/models:ro

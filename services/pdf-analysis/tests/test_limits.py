@@ -10,11 +10,11 @@ def test_queue_wait_counts_toward_total_request_deadline(model_root):
     async def scenario():
         worker = ProcessWorker(model_root, FakeBackend, total_timeout=0.25, inference_timeout=1)
         await worker.start()
-        active = asyncio.create_task(worker.submit('ocr', b'hang', 'standard'))
+        active = asyncio.create_task(worker.submit('ocr', b'hang'))
         await asyncio.sleep(0.05)
         started = time.monotonic()
         try:
-            await worker.submit('ocr', b'ok', 'standard', deadline=started + 0.1)
+            await worker.submit('ocr', b'ok', deadline=started + 0.1)
             assert False, 'Queued request must expire'
         except InferenceTimeout:
             assert time.monotonic() - started < 0.5

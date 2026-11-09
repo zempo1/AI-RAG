@@ -10,6 +10,7 @@ export class RecursiveChunker {
     document: ParsedDocument,
     tokenizer: TokenizerService,
     profile: ModelProfile,
+    textOffset = 0,
   ) {
     // 先合并同页、同标题下的顺序段落，保留章节边界，避免跨页混合上下文。
     const groups: ParsedBlock[] = [];
@@ -34,14 +35,14 @@ export class RecursiveChunker {
       const context = group.contextText
         ? (await tokenizer.windows(group.contextText, 96, 0, profile.tokenizer))[0]?.text || ''
         : '';
-      const contextRanges = this.contextRanges(document, group);
+      const contextRanges = this.contextRanges(document, group, textOffset);
       // 父块保留较完整上下文；子块负责精确检索，命中后可展开父块补足语义。
       for (const parent of await tokenizer.windows(group.text, 1536, 0, profile.tokenizer)) {
         const parentStart = group.location.start + parent.start;
         const parentLocation = {
           ...group.location,
-          start: parentStart,
-          end: group.location.start + parent.end,
+          start: textOffset + parentStart,
+          end: textOffset + group.location.start + parent.end,
         };
         const parentId = `${parentLocation.page ?? 'legacy'}:${parentLocation.start}:${parentLocation.end}`;
         // 子块保留 token 重叠，减少句子在切块边缘被截断而导致漏检。
@@ -66,8 +67,8 @@ export class RecursiveChunker {
             location: {
               ...group.location,
               paragraph: initialBlock?.location.paragraph ?? group.location.paragraph,
-              start,
-              end,
+              start: start + textOffset,
+              end: end + textOffset,
             },
             retrievalMetadata: {
               parentId,
@@ -85,7 +86,7 @@ export class RecursiveChunker {
     }
     return output;
   }
-  private contextRanges(document: ParsedDocument, block: ParsedBlock) {
+  private contextRanges(document: ParsedDocument, block: ParsedBlock, textOffset: number) {
     return document.blocks
       .filter(
         (b) =>
@@ -93,15 +94,15 @@ export class RecursiveChunker {
           b.location.page === block.location.page &&
           block.location.relatedParagraphs?.includes(b.location.paragraph!),
       )
-      .map((b) => ({ start: b.location.start, end: b.location.end }));
+      .map((b) => ({ start: b.location.start + textOffset, end: b.location.end + textOffset }));
   }
-  splitStructured(document: ParsedDocument, size = 500, overlap = 50) {
+  splitStructured(document: ParsedDocument, size = 500, overlap = 50, textOffset = 0) {
     const result: (ParsedBlock & { retrievalMetadata?: Record<string, unknown> })[] = [];
     for (const block of document.blocks) {
       let cursor = 0;
       for (const text of this.split(block.text, size, overlap)) {
         const index = block.text.indexOf(text, cursor);
-        const start = block.location.start + index;
+        const start = textOffset + block.location.start + index;
         result.push({
           text,
           location: { ...block.location, start, end: start + text.length },
@@ -109,7 +110,7 @@ export class RecursiveChunker {
             ? {
                 retrievalMetadata: {
                   embeddingText: text + '\n\n相关正文：\n' + block.contextText.slice(0, 300),
-                  contextRanges: this.contextRanges(document, block),
+                  contextRanges: this.contextRanges(document, block, textOffset),
                 },
               }
             : {}),

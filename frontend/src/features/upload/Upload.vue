@@ -279,7 +279,7 @@
                     task.waitingReason || stageLabels[task.stage] || task.stage
                   }}
                   {{
-                    task.total != null ? task.completed + "/" + task.total : ['vision', 'ocr'].includes(task.stage) ? `已识别 ${task.completed} 个区域（总量统计中）` : ""
+                    task.indexProgress && task.status === 'running' ? "" : task.total != null ? task.completed + "/" + task.total : ['vision', 'ocr'].includes(task.stage) ? `已识别 ${task.completed} 个区域（总量统计中）` : ""
                   }}</span
                 >
                 <span v-if="task.waitingUntil" class="muted"
@@ -289,6 +289,10 @@
                   }}
                   后开始清理</span
                 >
+                <IndexProgressDetails
+                  v-if="task.status === 'running'"
+                  :progress="task.indexProgress"
+                />
                 <div v-if="task.error" class="error-text">{{ task.error }}</div>
               </div>
               <div class="task-history-actions">
@@ -335,6 +339,7 @@ import {
 } from "@element-plus/icons-vue";
 import LibraryPicker from "./LibraryPicker.vue";
 import DocumentList from "./DocumentList.vue";
+import IndexProgressDetails from "./IndexProgressDetails.vue";
 import KnowledgeForm from "./KnowledgeForm.vue";
 import * as api from "../../api/knowledge-bases";
 import type {
@@ -470,6 +475,8 @@ const kindLabels: Record<string, string> = {
 const isTerminal = (status: string) =>
   ["completed", "failed", "partial_failed", "canceled"].includes(status);
 function stateLabel(doc: ManagedDocument) {
+  if (doc.task?.status === "running" && doc.task.indexProgress)
+    return stageLabels[doc.task.stage] || doc.task.stage;
   if (doc.task && !isTerminal(doc.task.status))
     return (
       (stageLabels[doc.task.stage] || doc.task.stage) +

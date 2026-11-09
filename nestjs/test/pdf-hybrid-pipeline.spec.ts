@@ -51,13 +51,13 @@ describe('hybrid PDF recognition', () => {
     complete = async () =>
       JSON.stringify({ blocks: [{ type: 'figure', text: 'fallback diagram' }] }),
   ) {
-    const config = new ConfigService({ PAGE_ASSETS_DIR: dir, PDF_ANALYSIS_MODE: 'hybrid' });
+    const config = new ConfigService({ PAGE_ASSETS_DIR: dir });
     const visual: any = new PdfVisualService(
       config,
       { complete } as any,
       new PageAssetsService(config, new MemoryStore()),
     );
-    visual.analysis = { ocr };
+    visual.analysis = { ocr, health: async () => ({ ready: true, manifest: 'ocr-v1' }) };
     const f = fixture();
     return {
       ...f,
@@ -131,6 +131,27 @@ describe('hybrid PDF recognition', () => {
     expect(b[0].regionImage.page).toBe(2);
     expect(calls).toBe(1);
     expect(vision).toBe(0);
+  });
+  it.each([true, false])('routes a bitmap by local text-only classification (%s)', async (textOnly) => {
+    let classify: boolean | undefined, vision = 0;
+    const f = setup(
+      async (_bytes?: Buffer, _signal?: AbortSignal, flag?: boolean) => {
+        classify = flag;
+        return {
+          manifest: 'ocr-v1',
+          textOnly,
+          blocks: textOnly ? [{ text: 'text screenshot', bbox: [0, 0, 1, 1], score: 0.99 }] : [],
+        };
+      },
+      async () => {
+        vision++;
+        return JSON.stringify({ blocks: [{ type: 'figure', text: 'node A leads to B' }] });
+      },
+    );
+    const result = await f.run({ ...region, recognition: 'classify' });
+    expect(classify).toBe(true);
+    expect(result[0].type).toBe(textOnly ? 'ocr' : 'figure');
+    expect(vision).toBe(textOnly ? 0 : 1);
   });
   it('uses vision for low-confidence OCR, but propagates service transport failures', async () => {
     let vision = 0;
@@ -258,7 +279,6 @@ describe('hybrid PDF recognition', () => {
   ) {
     const config = new ConfigService({
       PAGE_ASSETS_DIR: dir,
-      PDF_ANALYSIS_MODE: 'hybrid',
       VISION_CONCURRENCY: concurrency,
     });
     const visual: any = new PdfVisualService(
@@ -431,7 +451,7 @@ describe('hybrid PDF recognition', () => {
       '1',
       '1',
       '1',
-      createHash('sha256').update('pdf-hybrid-recognition-v1').digest('hex'),
+      createHash('sha256').update('pdf-adaptive-recognition-v1').digest('hex'),
       'recognition',
     );
     const ocrFile = (await readdir(cache)).find((name) => /^ocr-[a-f0-9]{64}\.json$/.test(name))!;
