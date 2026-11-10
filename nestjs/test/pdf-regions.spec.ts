@@ -205,6 +205,24 @@ describe('content-aware PDF regions', () => {
     ).rejects.toThrow('blocks[0].type');
     expect(p.calls).toHaveLength(2);
   });
+  it('retries a timed-out visual region in place and caches the successful result', async () => {
+    let calls = 0;
+    const p = setup(() => {
+      if (++calls === 1) throw new Error('Request timed out.');
+      return [{ type: 'figure', text: 'A → B' }];
+    });
+    const bytes = await fixture('mixed');
+    const result = await p.parser.parseStructured(bytes, 'a.pdf', undefined, scope);
+    expect(result.text).toContain('A → B');
+    expect(await p.parser.parseStructured(bytes, 'a.pdf', undefined, scope)).toEqual(result);
+    expect(calls).toBe(2);
+  });
+  it('accepts a single validated visual block even if the model omitted the array wrapper', async () => {
+    const p = setup({ type: 'figure', text: 'A → B' });
+    const result = await p.parser.parseStructured(await fixture('mixed'), 'a.pdf', undefined, scope);
+    expect(result.text).toContain('A → B');
+    expect(p.calls).toHaveLength(1);
+  });
   it('never calls vision for a native text page', async () => {
     const p = setup();
     const parsed = await p.parser.parseStructured(await fixture('text'), 'a.pdf', undefined, scope);

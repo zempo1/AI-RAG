@@ -17,7 +17,7 @@ export interface ProcessingTask {
   indexProgress?: Record<
     "pages" | "regions" | "embedding" | "indexing",
     { completed: number; total: number | null }
-  >;
+  > & { previousRecognition?: { pages: number; regions: number } };
   qaResult?: { retrievalRunId?: number };
   canDismiss?: boolean;
   waitingUntil?: string | null;

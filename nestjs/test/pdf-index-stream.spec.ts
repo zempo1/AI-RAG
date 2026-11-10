@@ -205,8 +205,17 @@ it('keeps a failed revision hidden and reuses successful vectors while writing t
     );
     expect((await p.documents.owned(p.accepted.documentId, 1)).activeIndexRevisionId).toBeNull();
     expect(modelCalls).toBe(2);
+    await p.store.save('tasks', { id: p.accepted.taskId, payload: { indexProgress: {
+      pages: { completed: 11, total: 21 }, regions: { completed: 5, total: null },
+      embedding: { completed: 10, total: null }, indexing: { completed: 10, total: null },
+    } } });
     fail = false;
-    await p.indexing.process(p.accepted.taskId, 2);
+    const progress: object[] = [];
+    await p.indexing.process(p.accepted.taskId, 2, async (event) => { progress.push(event); });
+    expect(progress[0]).toMatchObject({ indexProgress: {
+      pages: { completed: 0, total: 21 }, previousRecognition: { pages: 11, regions: 5 },
+      indexing: { completed: 0 },
+    } });
     expect(modelCalls).toBe(4);
     expect(p.vectors.search(vector, 30, 0)).toHaveLength(21);
     expect((await p.tasks.get(p.accepted.taskId, 1)).status).toBe('completed');

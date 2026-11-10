@@ -50,6 +50,7 @@ export interface AgentSnapshot {
   status?: 'running' | 'ready' | 'completed' | 'partial' | 'insufficient' | 'clarification';
   noProgress: number;
   roundEvidenceCount?: number;
+  evidenceGaps?: string[];
   repairUsed: boolean;
   activeStarted?: number;
   history: any[];

@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LlmService } from '../../llm/llm.service';
+import { ModelOutputError } from '../../llm/llm.types';
 import { PageAssetsService, ParseScope } from '../page-assets.service';
 import { ContentType, PageImageRef, RegionImageRef } from './parsed-document';
 import { PdfRegion } from './pdf-layout';
@@ -19,6 +20,7 @@ import {
 import { locateAdaptiveRegions } from './adaptive-layout';
 import { RegionBox } from './parsed-document';
 import { missingOcrText } from './pdf-ocr-coverage';
+import { retryTransientRequest } from '../../../common/transient-request';
 const imagePools = new Map<number, VisionScheduler>();
 const fallbackImageSlot = new VisionScheduler(1);
 const sessionFlights = new WeakMap<object, Map<string, Promise<any>>>();
@@ -467,8 +469,6 @@ export class PdfVisualService {
           );
         } catch (error) {
           pool.cooldown(error);
-          markPdfFailure(error, page, index);
-          scope.failed?.(error);
           throw error;
         } finally {
           pool.requests--;
@@ -500,15 +500,26 @@ export class PdfVisualService {
         } catch {
           throw new VisionOutputError('视觉解析格式错误：模型返回的 JSON 无法解析');
         }
-        return this.blocks(json);
+        // Providers occasionally omit the outer envelope or emit one block as an object.
+        // Keep the same per-block validation and reject unrecognized shapes.
+        const envelope = Array.isArray(json) ? { blocks: json } : json;
+        const blocks = (envelope as { blocks?: unknown } | null)?.blocks;
+        if (blocks && typeof blocks === 'object' && !Array.isArray(blocks))
+          return this.blocks({ blocks: [blocks] });
+        return this.blocks(envelope);
       };
-      const raw = await request();
       try {
-        return decode(raw);
+        return decode(await retryTransientRequest(request, scope.signal));
       } catch (error) {
-        if (!(error instanceof VisionOutputError)) throw error;
+        if (!(error instanceof VisionOutputError || error instanceof ModelOutputError)) throw error;
         return decode(await request(true));
       }
+    } catch (error) {
+      if (!scope.signal?.aborted) {
+        markPdfFailure(error, page, index);
+        scope.failed?.(error);
+      }
+      throw error;
     } finally {
       release();
     }

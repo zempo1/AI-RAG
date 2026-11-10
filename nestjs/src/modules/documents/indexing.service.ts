@@ -13,6 +13,7 @@ import { join, basename } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { Store, Row, now } from '../../persistence/store';
 import { ApiError, errorMessage } from '../../common/api-error';
+import { retryTransientRequest } from '../../common/transient-request';
 import { DocumentParser } from './parsers/document.parser';
 import { ParsedBlock, ParsedDocument, paragraphBlocks } from './parsers/parsed-document';
 import type { ParseContext } from './parsers/pdf-visual.service';
@@ -31,7 +32,9 @@ class DependencyPending extends Error {}
 const wallTime = (value: string) => Date.parse(value.replace(' ', 'T') + 'Z');
 type IndexBlock = ParsedBlock & { retrievalMetadata?: Record<string, unknown> };
 type Count = { completed: number; total: number | null };
-type IndexProgress = Record<'pages' | 'regions' | 'embedding' | 'indexing', Count>;
+type IndexProgress = Record<'pages' | 'regions' | 'embedding' | 'indexing', Count> & {
+  previousRecognition?: { pages: number; regions: number };
+};
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 
 @Injectable()
@@ -296,6 +299,13 @@ export class IndexingService {
       embedding: { completed: 0, total: null },
       indexing: { completed: 0, total: null },
     };
+    const previous = task.payload?.indexProgress as IndexProgress | undefined;
+    if (pdf && previous) {
+      counters.pages.total = previous.pages.total;
+      const pages = Math.max(previous.pages.completed, previous.previousRecognition?.pages ?? 0);
+      const regions = Math.max(previous.regions.completed, previous.previousRecognition?.regions ?? 0);
+      if (pages || regions) counters.previousRecognition = { pages, regions };
+    }
     const controller = new AbortController();
     const checkOwned = async () => {
       controller.signal.throwIfAborted();
@@ -421,7 +431,13 @@ export class IndexingService {
         // 文档级向量锁让重投和清理等待当前 RPC，数据库行锁在网络调用前已释放。
         const writeStarted = Date.now();
         await this.withVectorExecution(task, token, async () =>
-          this.vectors.addAll(vectors, segments, profile),
+          retryTransientRequest(async () => {
+            await checkOwned();
+            return this.vectors.addAll(vectors, segments, profile);
+          }, controller.signal).catch((error) => {
+            controller.signal.throwIfAborted();
+            throw new Error('写入向量库失败：' + errorMessage(error), { cause: error });
+          }),
         );
         metrics.vectorWriteMs += Date.now() - writeStarted;
         firstVector ||= vectors[0];

@@ -29,6 +29,7 @@ test('Agent SSE steps deduplicate, background polling updates and explicit stop 
   await expect(page.locator('.agent-timeline li')).toHaveCount(1);
   await expect(page.locator('.agent-timeline')).toContainText('第 3 页');
   const stop=page.getByRole('button',{name:'停止后台任务',exact:true});
+  await expect(page.locator('.input-box').getByRole('button',{name:'停止后台任务',exact:true})).toHaveText('');
   await stop.focus();await page.keyboard.press('Enter');
   await expect(page.getByText('停止失败，后台任务仍在运行，可重试。')).toBeVisible();
   await expect(stop).toBeEnabled();
@@ -44,6 +45,29 @@ test('Agent SSE steps deduplicate, background polling updates and explicit stop 
   await expect(page.getByText('后台任务已停止，已获取的来源仍可查看。')).toHaveCount(2);
   expect(cancelCalls).toBe(3);
 });
+test('the composer button switches from send to an icon-only stop during foreground generation', async ({ page }) => {
+  await fixture(page);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route('**/api/stream-chat', async (route) => {
+    await pending;
+    await route.abort();
+  });
+  const composer = page.locator('.input-box');
+  try {
+    await page.getByPlaceholder('发送消息...').fill('核对文档');
+    await composer.getByRole('button', { name: '发送消息' }).click();
+    const stop = composer.getByRole('button', { name: '停止生成', exact: true });
+    await expect(stop).toHaveText('');
+    await expect(stop.locator('svg rect')).toHaveCount(1);
+    await stop.click();
+    await expect(composer.getByRole('button', { name: '发送消息' })).toBeVisible();
+    await expect(page.getByText('已停止生成，已获取的来源仍可查看。')).toBeVisible();
+  } finally {
+    release();
+  }
+});
+
 test('final Agent diagnostics replaces live trace and drawer shows only public plan',async({page})=>{
   await fixture(page);
   const finalAgent={...agent,steps:[{...step,sequence:2,summary:'证据检查完成'}],status:'completed',stopReason:'sufficient'};

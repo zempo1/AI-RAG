@@ -22,9 +22,6 @@
       暂时无法更新后台任务，正在重试…
     </div>
     <div v-if="cancelError" class="qa-task-status" role="alert">{{ cancelError }}</div>
-    <button v-if="loading && (!activeTask || canCancelTask)" class="debug-trigger stop-task" type="button" :disabled="canceling || stopRequested" @click="stopGeneration">
-      {{ activeTask ? (stopRequested ? '正在停止…' : '停止后台任务') : '停止生成' }}
-    </button>
     <div class="messages-viewport">
       <div
         class="messages-container"
@@ -131,10 +128,18 @@
           ></textarea>
           <button
             class="send-btn"
-            @click="sendMessage"
-            :disabled="!input.trim() || loading || readOnly || !knowledgeBaseId"
+            type="button"
+            :aria-label="composerActionLabel"
+            :title="composerActionLabel"
+            :disabled="loading ? !canStopGeneration || canceling || stopRequested : !input.trim() || readOnly || !knowledgeBaseId"
+            @click="loading ? stopGeneration() : sendMessage()"
           >
-            <el-icon><Promotion /></el-icon>
+            <el-icon aria-hidden="true">
+              <svg v-if="loading" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="5" y="5" width="14" height="14" rx="2" />
+              </svg>
+              <Promotion v-else />
+            </el-icon>
           </button>
         </div>
         <div class="disclaimer">AI 可能会犯错。请核对重要信息。</div>
@@ -285,6 +290,12 @@ const activeTask = ref<ProcessingTask | null>(null),
 const canceling = ref(false), stopRequested = ref(false), cancelError = ref("");
 const messageSteps = (message: Message) => getAgentProgress(message.diagnostics)?.steps ?? message.agentSteps ?? [];
 const canCancelTask = computed(() => !!activeTask.value?.agentProgress || !!messages.value.at(-1)?.retrievalRunId || !!messageSteps(messages.value.at(-1) || { role: 'assistant', content: '' }).length);
+const canStopGeneration = computed(() => !activeTask.value || canCancelTask.value);
+const composerActionLabel = computed(() =>
+  !loading.value ? "发送消息" :
+    canceling.value || stopRequested.value ? "正在停止" :
+      activeTask.value ? "停止后台任务" : "停止生成",
+);
 let taskTimer: ReturnType<typeof setTimeout> | undefined;
 const modeLabels: Record<QaMode, string> = {
   auto: "自动判断",

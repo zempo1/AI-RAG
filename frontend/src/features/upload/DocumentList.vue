@@ -43,11 +43,11 @@
             >{{ stateLabel(doc) }}</span
           >
           <IndexProgressDetails
-            v-if="doc.task?.status === 'running'"
+            v-if="doc.task && ['queued', 'running', 'retrying'].includes(doc.task.status)"
             :progress="doc.task.indexProgress"
           />
           <el-progress
-            v-if="doc.task && !terminal(doc.task.status) && doc.task.total"
+            v-if="doc.task && !doc.task.indexProgress && !terminal(doc.task.status) && doc.task.total"
             :percentage="
               Math.min(
                 100,
@@ -57,7 +57,7 @@
             :stroke-width="4"
             :show-text="false"
           />
-          <div v-else-if="doc.task?.status === 'running'" class="index-progress-unknown"
+          <div v-else-if="doc.task?.status === 'running' && !doc.task.indexProgress?.pages.total" class="index-progress-unknown"
             role="progressbar" aria-label="文档解析进度"
             :aria-valuetext="['vision', 'ocr'].includes(doc.task.stage) ? `已识别 ${doc.task.completed} 个区域，总量统计中` : '正在处理，总量统计中'">
             <span></span>

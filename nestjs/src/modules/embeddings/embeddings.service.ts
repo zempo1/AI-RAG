@@ -9,6 +9,7 @@ import {
 } from './model-profile';
 import { TokenizerService } from './tokenizer.service';
 import { RequestScheduler } from '../../common/request-scheduler';
+import { retryTransientRequest } from '../../common/transient-request';
 
 export const REMOTE_EMBEDDING_BATCH_SIZE = 10;
 export const REMOTE_EMBEDDING_CONCURRENCY = 2;
@@ -111,7 +112,7 @@ export class EmbeddingsService implements OnModuleDestroy {
       signal?.throwIfAborted();
       const input = texts.slice(i, i + REMOTE_EMBEDDING_BATCH_SIZE);
       const body: any = await remoteRequests.run(async () => {
-        const response = await fetch(
+        const response = await retryTransientRequest(() => fetch(
           (
             this.config.get<string>('EMBEDDING_BASE_URL') ||
             'https://dashscope.aliyuncs.com/compatible-mode/v1'
@@ -129,7 +130,10 @@ export class EmbeddingsService implements OnModuleDestroy {
               ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
               : AbortSignal.timeout(30000),
           },
-        );
+        ), signal).catch((error) => {
+          signal?.throwIfAborted();
+          throw new Error('向量化请求失败：' + (error instanceof Error ? error.message : String(error)), { cause: error });
+        });
         if (!response.ok) {
           remoteRequests.cooldown(response);
           throw new Error('Embedding API HTTP ' + response.status);

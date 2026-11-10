@@ -290,7 +290,7 @@
                   后开始清理</span
                 >
                 <IndexProgressDetails
-                  v-if="task.status === 'running'"
+                  v-if="['queued', 'running', 'retrying'].includes(task.status)"
                   :progress="task.indexProgress"
                 />
                 <div v-if="task.error" class="error-text">{{ task.error }}</div>

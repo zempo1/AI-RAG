@@ -103,6 +103,27 @@ it('turns model-budget exhaustion into a terminal business result with counters 
   expect(context.diagnostics.agent.stopReason).toBe('budget_exhausted');
 });
 
+it('uses the final response reserve to answer from evidence when tool calls are exhausted', async () => {
+  const p = setup({ AGENT_TOOLS: 1 });
+  const plan = p.llm.complete;
+  p.llm.complete = jest.fn(async (prompt: string) => {
+    if (prompt.startsWith('分析用户问题')) return plan(prompt);
+    expect(prompt).toContain('仅回答原文明确支持的部分');
+    expect(prompt).toContain('[1] CRC用于差错检测');
+    return 'CRC用于差错检测[1]。';
+  });
+  p.llm.invokeTools.mockResolvedValue({
+    content: '',
+    toolCalls: [{ id: 'recheck', name: 'knowledge_search', args: { query: 'CRC差错检测' } }],
+  });
+  const result = await p.service.prepare('CRC作用', 1, 2);
+  expect(result.agentSnapshot.budget.tools).toBe(1);
+  expect(result.directAnswer).toBeUndefined();
+  const answer = await p.service.answerPrepared(result);
+  expect(answer.citations.map((c) => c.number)).toEqual([1]);
+  expect(answer.diagnostics.agent).toMatchObject({ stopReason: 'budget_exhausted', status: 'partial' });
+});
+
 it('fills two independent tool slots and preserves returned tool-call order', async () => {
   const p = setup();
   let active = 0,
@@ -131,7 +152,7 @@ it('fills two independent tool slots and preserves returned tool-call order', as
   ).toEqual(['first', 'second']);
 });
 
-it('caches repeated lookups but still counts their decisions and stops without progress', async () => {
+it('checks a simple lookup before the agent can spend another round repeating it', async () => {
   const p = setup();
   p.retrieval.search = jest.fn<any>().mockResolvedValue({ evidence: [evidence] });
   p.llm.invokeTools = async () => ({
@@ -140,10 +161,36 @@ it('caches repeated lookups but still counts their decisions and stops without p
   });
   const result = await p.service.prepare('CRC作用', 1, 2);
   expect(p.retrieval.search).toHaveBeenCalledTimes(1);
-  expect(result.agentSnapshot.budget.decisions).toBe(3);
+  expect(result.agentSnapshot.budget.decisions).toBe(1);
   expect(result.agentSnapshot.budget.assessments).toBe(1);
   expect(result.diagnostics.agent.stopReason).toBe('supported');
   expect(result.directAnswer).toBeUndefined();
+});
+
+it('gives a precise evidence gap to the next tool decision and checks the new evidence', async () => {
+  const p = setup();
+  const second = { ...evidence, evidenceId: 'ev2', text: '校验值附在帧尾。' };
+  p.retrieval.search = jest.fn<any>()
+    .mockResolvedValueOnce({ evidence: [evidence] })
+    .mockResolvedValueOnce({ evidence: [second] });
+  const complete = p.llm.complete;
+  const check = jest.fn<any>()
+    .mockResolvedValueOnce(JSON.stringify({ supported: false, missing: ['校验值所在字段'], subQuestions: [] }))
+    .mockResolvedValueOnce(JSON.stringify({ supported: true, subQuestions: [
+      { question: 'CRC作用', status: 'supported', evidenceIds: ['ev1', 'ev2'] },
+    ] }));
+  p.llm.complete = (prompt: string) => prompt.startsWith('检查原文') ? check() : complete(prompt);
+  p.llm.invokeTools.mockImplementationOnce(async (messages: any[]) => {
+    expect(messages.at(-1).content).toContain('校验值所在字段');
+    return { content: '', toolCalls: [
+      { id: 'gap', name: 'knowledge_search', args: { query: '校验值所在字段' } },
+    ] };
+  });
+  const result = await p.service.prepare('CRC作用', 1, 2);
+  expect(check).toHaveBeenCalledTimes(2);
+  expect(p.llm.invokeTools).toHaveBeenCalledTimes(2);
+  expect(result.diagnostics.agent.stopReason).toBe('supported');
+  expect(result.sources.map((source: any) => source.evidenceId)).toEqual(['ev1', 'ev2']);
 });
 
 it('uses bounded original evidence for a grounded answer when the assessment cannot confirm full coverage', async () => {
@@ -385,7 +432,7 @@ it('resumes after a persisted tool_end without appending its tool result a secon
       },
     }),
   ).rejects.toThrow('simulate crash');
-  await p.service.resume(saved, { background: true });
-  const messages: any[] = p.llm.invokeTools.mock.calls.at(-1)[0];
+  const resumed = await p.service.resume(saved, { background: true });
+  const messages = resumed.agentSnapshot.messages;
   expect(messages.filter((m) => m.role === 'tool' && m.tool_call_id === 'a')).toHaveLength(1);
 });
