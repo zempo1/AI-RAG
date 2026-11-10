@@ -1,6 +1,6 @@
 import { DataSource, EntityManager } from 'typeorm';
 import { createHash } from 'node:crypto';
-import { Store, Table, Row, now } from './store';
+import { Store, Table, Row, LatestRows, now } from './store';
 import { entityTargets } from './data-source';
 import { ApiError } from '../common/api-error';
 
@@ -62,7 +62,7 @@ export class MysqlStore extends Store {
     return row;
   }
 
-  async list(table: Table, where: Record<string, unknown> = {}): Promise<Row[]> {
+  async list(table: Table, where: Record<string, unknown> = {}, latest?: LatestRows): Promise<Row[]> {
     const select = this.manager.connection
       .getMetadata(entityTargets[table])
       .columns.map((column) => column.propertyName)
@@ -73,8 +73,9 @@ export class MysqlStore extends Store {
       .join(' AND ');
     return (
       await this.query(
-        `SELECT ${select} FROM ${this.name(table)}${conditions ? ' WHERE ' + conditions : ''}`,
-        Object.values(where),
+        `SELECT ${select} FROM ${this.name(table)}${conditions ? ' WHERE ' + conditions : ''}` +
+          (latest ? ` ORDER BY ${this.column(table, latest.orderBy)} DESC LIMIT ?` : ''),
+        latest ? [...Object.values(where), latest.limit] : Object.values(where),
       )
     ).map((row: any) => this.normalize(row, table));
   }
@@ -127,6 +128,12 @@ export class MysqlStore extends Store {
 
   async delete(table: Table, id: number): Promise<void> {
     await this.query(`DELETE FROM ${this.name(table)} WHERE id = ?`, [id]);
+  }
+
+  async deleteAgentThread(threadId: string): Promise<void> {
+    for (const table of ['agentCheckpointWrites', 'agentCheckpoints'] as const) {
+      await this.query(`DELETE FROM ${this.name(table)} WHERE thread_id = ?`, [threadId]);
+    }
   }
 
   async transaction<T>(work: (store: Store) => Promise<T>): Promise<T> {

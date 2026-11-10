@@ -48,11 +48,11 @@ export class ChatController {
         const context = await this.chat.prepare(body.question!, user, started.chat.knowledgeBaseId, {
           documentIds: body.documentIds, mode: body.mode || 'auto', requestId, chatId: started.chat.id,
           history: started.chat.messages || [], apiKey, onProgress, ...execution,
-          onAgentStep: async (step: any) => { await execution.onAgentStep(step); await onAgentStep?.(step); },
+          onAgentStep,
         });
         execution.signal.throwIfAborted();
         if (context.requiresAsync) {
-          const accepted = await this.agentTasks.handoff(started.task.id, started.token!, context.snapshot);
+          const accepted = await this.agentTasks.handoff(started.task.id, started.token!);
           execution.dispose();
           return { accepted };
         }

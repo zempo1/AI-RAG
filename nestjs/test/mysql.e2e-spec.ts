@@ -13,6 +13,15 @@ import { LlmService } from '../src/modules/llm/llm.service';
 import { DocumentCascade1793376000000 } from '../src/persistence/migrations/1793376000000-document-cascade';
 import { IndexingService } from '../src/modules/documents/indexing.service';
 import { TaskQueueRuntime } from '../src/modules/tasks/task-queue.runtime';
+import { ConfigService } from '@nestjs/config';
+import { AgentService } from '../src/modules/agent/agent.service';
+import { MysqlAgentCheckpointer } from '../src/modules/agent/mysql-agent-checkpointer';
+import { AgentQaTasksService } from '../src/modules/tasks/agent-qa.service';
+import { HistoryService } from '../src/modules/history/history.service';
+import { KnowledgeBasesService } from '../src/modules/knowledge-bases/knowledge-bases.service';
+import type { ModelExecutionOptions } from '../src/modules/llm/llm.types';
+import { emptyCheckpoint } from '@langchain/langgraph';
+import { ERROR } from '@langchain/langgraph-checkpoint';
 
 const enabled = process.env.MYSQL_INTEGRATION === '1';
 
@@ -98,6 +107,203 @@ const enabled = process.env.MYSQL_INTEGRATION === '1';
     expect(ran).toBe(true);
   });
 
+  it('resumes a MySQL Agent thread after reconnect and rejects stale writes during retry', async () => {
+    const user = await store.save('users', { username: 'graph-reconnect', password: 'hash' });
+    const kb = await new KnowledgeBasesService(store).default(user.id);
+    const settings = {
+      AGENT_SYNC_MS: 30000, JWT_SECRET: 'test-secret-for-agent-graph',
+    };
+    const config = new ConfigService(settings);
+    const scope = { userId: user.id, knowledgeBaseId: kb.id, documents: [] };
+    const retrieval = {
+      createScope: async () => scope,
+      verify: async () => {},
+      pack: async () => ({ sources: [], complete: false }),
+      context: () => '',
+    };
+    let planned = 0, decisions = 0;
+    let checkStaleOwner: () => Promise<void>;
+    const llm = {
+      complete: async (prompt: string, _key: string, _history: unknown, _signal: AbortSignal, options: ModelExecutionOptions) => {
+        planned++;
+        const reservation = await options.observer!.before({ kind: 'complete', model: 'test', input: prompt, maxOutputTokens: 64 });
+        await options.observer!.settle(reservation, { status: 'success', usage: { totalTokens: 40 } });
+        settings.AGENT_SYNC_MS = 1;
+        return '{"intent":"search","complexity":"simple","subQuestions":["问题"],"ambiguous":false}';
+      },
+      invokeTools: async (_messages: unknown, _definitions: unknown, options: ModelExecutionOptions) => {
+        await checkStaleOwner();
+        const reservation = await options.observer!.before({ kind: 'tools', model: 'test', input: '证据', maxOutputTokens: 64 });
+        if (++decisions === 1) throw new Error('模拟调用发出后进程退出：test-runtime-key');
+        await options.observer!.settle(reservation, { status: 'success', usage: { totalTokens: 30 } });
+        return { content: '', toolCalls: [] };
+      },
+    };
+    const makeWorker = () => {
+      const libraries = new KnowledgeBasesService(store);
+      const agent = new AgentService(retrieval as any, llm as any, {} as any, config, store);
+      return { agent, tasks: new AgentQaTasksService(store, new HistoryService(store, libraries), libraries, agent, config) };
+    };
+    const foreground = makeWorker();
+    const started = await foreground.tasks.begin(user.id, {
+      question: '问题', knowledgeBaseId: kb.id, requestId: 'resume', fingerprint: 'resume', apiKey: 'test-runtime-key',
+    });
+    const id = started.task.id;
+    const threadId = `qa:${id}:v2`;
+    const execution = foreground.tasks.execution(id, started.token!);
+    const stale = new MysqlAgentCheckpointer(store, execution.graphOwner);
+    try {
+      const prepared = await foreground.agent.prepare('问题', user.id, kb.id, {
+        ...execution, chatId: started.chat.id, apiKey: 'test-runtime-key',
+      });
+      expect(prepared.requiresAsync).toBe(true);
+      const saved = (await stale.getTuple({ configurable: { thread_id: threadId } }))!;
+      const history = [];
+      for await (const checkpoint of stale.list({ configurable: { thread_id: threadId } })) history.push(checkpoint);
+      expect(history.length).toBeGreaterThan(1);
+      expect(JSON.stringify(history)).not.toContain('test-runtime-key');
+      expect(JSON.stringify(history)).not.toContain(started.token);
+      checkStaleOwner = async () => {
+        await expect(stale.put(saved.config, saved.checkpoint, saved.metadata!)).rejects.toThrow('执行权');
+        await expect(stale.putWrites(saved.config, [['out', 'stale']], 'stale')).rejects.toThrow('执行权');
+      };
+      await foreground.tasks.handoff(id, started.token!);
+    } finally {
+      execution.dispose();
+    }
+    expect((await store.get('tasks', id))?.payload.agentBudgetLedger.budget.calls).toBe(1);
+    await source.destroy();
+    await source.initialize();
+    store = new MysqlStore(source.manager);
+    await expect(makeWorker().tasks.process(id)).rejects.toThrow('模拟调用发出后进程退出');
+    const retrying = (await store.get('tasks', id))!;
+    expect(retrying.status).toBe('retrying');
+    expect(retrying.payload.snapshot).toBeUndefined();
+    expect(retrying.payload.agentBudgetLedger.budget).toMatchObject({ calls: 2, tokens: 110 });
+    const errors = (await store.list('agentCheckpointWrites', { threadId, channel: ERROR }))
+      .map(write => Buffer.from(write.value.split(':')[1], 'base64').toString('utf8'));
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.join()).not.toContain('test-runtime-key');
+    await source.destroy();
+    await source.initialize();
+    store = new MysqlStore(source.manager);
+    expect(await makeWorker().tasks.process(id, 2)).toBe('done');
+    expect({ planned, decisions }).toEqual({ planned: 1, decisions: 2 });
+    const finished = (await store.get('tasks', id))!;
+    expect(finished.payload.agentProgress.budget).toMatchObject({ calls: 3, tokens: 140 });
+    expect((await store.list('messages', { chatId: started.chat.id })).filter(row => row.role === 'assistant')).toHaveLength(1);
+    expect(await store.list('agentCheckpoints', { threadId })).toEqual([]);
+    expect(await store.list('agentCheckpointWrites', { threadId })).toEqual([]);
+  });
+
+  it('replays only the failed tool in a batch and rechecks the frozen revision at commit', async () => {
+    const user = await store.save('users', { username: 'graph-tools', password: 'hash' });
+    const libraries = new KnowledgeBasesService(store);
+    const kb = await libraries.default(user.id);
+    const doc = await store.save('documents', { userId: user.id, knowledgeBaseId: kb.id, filename: '原文.md' });
+    const version = await store.save('versions', { documentId: doc.id, filename: doc.filename });
+    const revision = await store.save('indexRevisions', {
+      documentId: doc.id, versionId: version.id, embeddingFingerprint: 'test', status: 'active',
+    });
+    await store.save('documents', { id: doc.id, activeIndexRevisionId: revision.id });
+    const scope = {
+      userId: user.id, knowledgeBaseId: kb.id,
+      documents: [{ documentId: doc.id, filename: doc.filename, indexRevisionId: revision.id }],
+    };
+    let searches = 0, reads = 0, decisions = 0, scopes = 0;
+    const retrieval = {
+      createScope: async () => { scopes++; return scope; },
+      verify: async () => {},
+      open: async () => ({}),
+      search: async () => { searches++; return { evidence: [] }; },
+      read: async () => {
+        if (++reads === 1) throw new Error('摘要工具暂时离线');
+        return { evidence: [], complete: false };
+      },
+      pack: async () => ({ sources: [], complete: false }),
+      context: () => '',
+    };
+    const llm = {
+      complete: async () => '{"intent":"search","complexity":"simple","subQuestions":["问题"],"ambiguous":false}',
+      invokeTools: async () => ({
+        content: '',
+        toolCalls: ++decisions === 1 ? [
+          { id: 'summary', name: 'summarize_document', args: { documentId: doc.id } },
+          { id: 'search', name: 'keyword_search', args: { query: '问题' } },
+        ] : [],
+      }),
+    };
+    const summary = { summarizeAgent: async () => ({ groups: [], coverage: { complete: false } }) };
+    const config = new ConfigService({ JWT_SECRET: 'test-secret-for-agent-graph' });
+    const agent = new AgentService(retrieval as any, llm as any, summary as any, config, store);
+    const tasks = new AgentQaTasksService(store, new HistoryService(store, libraries), libraries, agent, config);
+    const started = await tasks.begin(user.id, { question: '问题', requestId: 'tool-batch', fingerprint: 'tool-batch' });
+    const id = started.task.id;
+    const execution = tasks.execution(id, started.token!);
+    try {
+      await expect(agent.prepare('问题', user.id, kb.id, {
+        ...execution, background: true, chatId: started.chat.id,
+      })).rejects.toThrow('摘要工具暂时离线');
+    } finally {
+      execution.dispose();
+    }
+    expect({ searches, reads }).toEqual({ searches: 1, reads: 1 });
+    const restartedAgent = new AgentService(retrieval as any, llm as any, summary as any, config, store);
+    const restartedTasks = new AgentQaTasksService(store, new HistoryService(store, libraries), libraries, restartedAgent, config);
+    const retryToken = 'renewed-token';
+    await store.transaction(async tx => {
+      await tx.lock('knowledgeBases', kb.id);
+      const task = (await tx.lock('tasks', id))!;
+      await tx.save('tasks', { id, executionToken: retryToken, payload: { ...task.payload, foreground: false } });
+    });
+    const retry = restartedTasks.execution(id, retryToken);
+    try {
+      const context = await restartedAgent.prepare('问题', user.id, kb.id, {
+        ...retry, background: true, chatId: started.chat.id,
+      });
+      const answer = await restartedAgent.answerPrepared(context);
+      expect({ searches, reads, decisions, scopes }).toEqual({ searches: 1, reads: 2, decisions: 2, scopes: 1 });
+      const progress = (await store.get('tasks', id))?.payload.agentProgress;
+      expect(progress.steps.filter((step: { kind: string }) => step.kind === 'tool_start')).toHaveLength(2);
+      let completion!: Promise<unknown>;
+      await store.transaction(async tx => {
+        await tx.lock('knowledgeBases', kb.id);
+        await tx.lock('documents', doc.id);
+        completion = expect(restartedTasks.complete(id, retryToken, answer)).rejects.toThrow('索引已更新');
+        await tx.save('documents', { id: doc.id, activeIndexRevisionId: null });
+      });
+      await completion;
+      const threadId = `qa:${id}:v2`;
+      expect(await store.list('agentCheckpoints', { threadId })).not.toHaveLength(0);
+      await restartedTasks.cancel(id, user.id);
+      await expect(restartedTasks.complete(id, retryToken, answer)).rejects.toThrow('执行权');
+      expect(await store.list('agentCheckpoints', { threadId })).toEqual([]);
+      const messages = (await store.list('messages', { chatId: started.chat.id })).filter(row => row.role === 'assistant');
+      expect(messages).toHaveLength(1);
+      expect(messages[0].generationStatus).toBe('interrupted');
+    } finally {
+      retry.dispose();
+    }
+  });
+
+  it('cleans revoked native checkpoints when the chat has been deleted', async () => {
+    const user = await store.save('users', { username: 'graph-deleted-chat', password: 'hash' });
+    const libraries = new KnowledgeBasesService(store);
+    const history = new HistoryService(store, libraries);
+    const config = new ConfigService({ JWT_SECRET: 'test-secret-for-agent-graph' });
+    const agent = new AgentService({} as any, {} as any, {} as any, config, store);
+    const tasks = new AgentQaTasksService(store, history, libraries, agent, config);
+    const started = await tasks.begin(user.id, { question: '问题', requestId: 'deleted-chat', fingerprint: 'deleted-chat' });
+    const id = started.task.id;
+    const threadId = `qa:${id}:v2`;
+    const saver = new MysqlAgentCheckpointer(store, { taskId: id, token: started.token! });
+    await saver.put({ configurable: { thread_id: threadId } }, emptyCheckpoint(), { source: 'input', step: -1, parents: {} });
+    await history.delete(started.chat.id, user.id);
+    await tasks.fail(id, started.token!, new Error('中断'));
+    expect(await store.get('tasks', id)).toMatchObject({ status: 'failed', retryable: 0, executionToken: null });
+    expect(await store.list('agentCheckpoints', { threadId })).toEqual([]);
+  });
+
   it('preserves database wall time across UTC hosts and repeated updates', async () => {
     const original = process.env.TZ;
     process.env.TZ = 'UTC';
@@ -124,7 +330,7 @@ const enabled = process.env.MYSQL_INTEGRATION === '1';
         await tx.delete('messages', message.id);
       await tx.delete('chats', chat.id);
     });
-    expect(await store.list('messages')).toEqual([]);
+    expect(await store.list('messages', { chatId: chat.id })).toEqual([]);
     expect(await store.get('chats', chat.id)).toBeUndefined();
     await verifySchema(source);
   });
@@ -176,8 +382,9 @@ const enabled = process.env.MYSQL_INTEGRATION === '1';
     }
   });
 
-  it('boots the complete MySQL-backed app and persists the upload/chat API flow', async () => {
+  it('boots the complete MySQL-backed app and persists the upload and native Agent SSE flow', async () => {
     process.env.STORAGE_DRIVER = 'mysql';
+    process.env.AGENT_SYNC_MS = '30000';
     process.env.VECTOR_DRIVER = 'memory';
     process.env.QUEUE_DRIVER = 'memory';
     process.env.DB_NAME = name;
@@ -237,6 +444,9 @@ const enabled = process.env.MYSQL_INTEGRATION === '1';
       const chats = await request(app.getHttpServer()).get('/api/chats').set(auth).expect(200);
       expect(chats.body.data[0].messages).toHaveLength(2);
       const id = chats.body.data[0].id;
+      const [qa] = await store.list('tasks', { userId: userBefore.id, kind: 'qa' });
+      expect(qa.payload).toMatchObject({ graphVersion: 2, graphThreadId: `qa:${qa.id}:v2` });
+      expect(qa.payload.snapshot).toBeUndefined();
       await request(app.getHttpServer()).delete(`/api/chats/${id}`).set(auth).expect(200);
       expect(await store.list('messages', { chatId: id })).toEqual([]);
     } finally {

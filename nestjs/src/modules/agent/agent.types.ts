@@ -2,6 +2,8 @@ import { RetrievalScope, OriginalEvidence } from '../rag/retrieval.types';
 import { RetrievalOptions } from '../rag/quality.types';
 import { AgentBudgetState } from './agent-budget';
 import { ToolMessage, ToolCall } from '../llm/llm.types';
+import type { AgentGraphOwner } from './agent-graph-owner';
+import type { AgentGraphRun } from './agent-graph-run';
 export interface PublicStep {
   runId: number;
   sequence: number;
@@ -18,6 +20,14 @@ export interface AgentOptions extends RetrievalOptions {
   guard?: () => Promise<unknown> | unknown;
   background?: boolean;
   evaluation?: 'single-round' | 'no-feedback';
+  graphOwner?: AgentGraphOwner;
+  graphRun?: AgentGraphRun;
+  graphEventPrefix?: string;
+}
+export interface AgentPlan {
+  intent: 'general' | 'search' | 'overview' | 'compare';
+  complexity: 'simple' | 'complex';
+  subQuestions: string[];
 }
 export interface AgentSnapshot {
   engine: 'agentic-v1';
@@ -27,7 +37,7 @@ export interface AgentSnapshot {
   question: string;
   runId: number;
   scope: RetrievalScope;
-  plan: any;
+  plan: AgentPlan | null;
   steps: PublicStep[];
   budget: AgentBudgetState;
   phase: string;

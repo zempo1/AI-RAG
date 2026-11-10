@@ -1,6 +1,6 @@
 # Agentic RAG 运行与验收
 
-生产问答使用单 Agent 的 `agentic-v1` 状态图。模型先规划，再选择知识库工具，依据原文检查各子问题的证据覆盖，最后统一生成引用。现有 `mode` 仍表达查询意图。原固定 `RagService` 保留为离线实验基线；评估的 `single-round`、`no-feedback` 选项不作为公开引擎切换开关。
+生产问答统一使用 LangGraph v2 持久化图。任务的 `agentic-v1` 字段是供历史记录和队列识别使用的引擎标识，执行版本由任务的 `graphVersion` 标记。模型先规划，再选择知识库工具，依据原文检查各子问题的证据覆盖，最后生成引用。现有 `mode` 仍表达查询意图。原固定 `RagService` 保留为离线实验基线；评估的 `single-round`、`no-feedback` 选项不作为公开引擎切换开关。
 
 自动判断模式只在问题明确要求概览整份文档时采用全文覆盖检查。选中文档后询问其中一个概念或流程，按专题检索处理。手动选择「文档概览」仍会要求全文覆盖。
 
@@ -27,10 +27,10 @@ API 与 Worker 使用相同的 `.env`。`AGENT_MODEL` 留空时继承 `CHAT_MODE
 
 ## 部署与 Worker
 
-1. 配置 MySQL、Qdrant、Redis，按仓库现有数据库升级流程升级。无需新增 Agent 表或列；复用 `processing_tasks(kind=qa)`、`retrieval_runs` 和消息存储。
+1. 配置 MySQL、Qdrant 和 Redis。部署 API 和 Worker 前，在 `nestjs` 目录为已有数据库执行 `npm run schema:upgrade`，为空库执行 `npm run migration:run`。Agent v2 的 `agent_checkpoints` 和 `agent_checkpoint_writes` 与任务表使用同一 MySQL。
 2. API 与 Worker 共享 `ORIGINALS_DIR`、`PAGE_ASSETS_DIR`、聊天/Embedding/分块配置和上述 Agent 预算；生产使用 `QUEUE_DRIVER=bullmq`。内存存储不能跨 API/Worker 进程共享。
-3. 执行后端及前端现有构建流程，分别启动 `npm run start:prod` 与 `npm run start:worker`。API/Worker 同步发布，避免旧 Worker 解析新 continuation。
-4. 前台超过同步窗口在节点边界移交后台；超上下文全文摘要在调用前移交。续跑继承 phase、pending tools、messages、已完成工具 journal 和已消耗预算。旧的无 engine 摘要任务仍走原流程。
+3. 升级时停止旧版 API 和 Worker，执行数据库升级，再分别用 `npm run start:prod` 与 `npm run start:worker` 启动新版。新任务直接使用 v2。待处理和可重试的旧 Agent 任务由新版 Worker 在领取时导入断点，继承已用预算和工具结果，并在图状态首次落库的同一事务中移除旧快照。
+4. 前台超过同步窗口或需要长摘要时暂停图，检查点落库后再移交后台。Worker 按任务线程恢复计划、待执行工具和已保存的证据；已扣预算随任务继承。模型调用完成到结果落库之间发生故障时，重试可能再次调用。可重试任务保留检查点，任务完成、取消或不可重试失败时清理。
 5. 普通问答与 SSE 保留 sources/citations/done；SSE 增加 `agent_step`。前台断连传递取消信号，已受理后台任务继续；显式停止通过 `POST /api/tasks/:id/cancel`，只允许本人 Agent 问答任务。确认取消后不得发布最终答案。
 
 ## 模型工具兼容与功能验证

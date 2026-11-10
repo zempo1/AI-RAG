@@ -113,8 +113,9 @@ export class HistoryService {
   }
 
   async delete(id: number, userId: number): Promise<void> {
-    await this.get(id, userId);
+    const chat = await this.get(id, userId);
     await this.store.transaction(async (tx) => {
+      await tx.lock('knowledgeBases', chat.knowledgeBaseId);
       for (const message of await tx.list('messages', { chatId: id }))
         await tx.delete('messages', message.id);
       await tx.delete('chats', id);

@@ -4,6 +4,8 @@ export interface Row {
 }
 
 export interface EntityMap {
+  agentCheckpoints: import('./agent-checkpoint.persistence').AgentCheckpoint;
+  agentCheckpointWrites: import('./agent-checkpoint.persistence').AgentCheckpointWrite;
   retrievalRuns: import('./quality.persistence').RetrievalRun;
   summaryCaches: import('./quality.persistence').SummaryCache;
   knowledgeBases: import('../modules/knowledge-bases/entities/knowledge-base.entity').KnowledgeBase;
@@ -21,17 +23,23 @@ export interface EntityMap {
 }
 
 export type Table = keyof EntityMap;
+export interface LatestRows {
+  orderBy: string;
+  limit: number;
+}
 
 export abstract class Store {
   /** Transaction-only lock. Always lock library before document before task. */
   abstract lock(table: Table, id: number): Promise<Row | undefined>;
-  abstract list(table: Table, where?: Record<string, unknown>): Promise<Row[]>;
+  abstract list(table: Table, where?: Record<string, unknown>, latest?: LatestRows): Promise<Row[]>;
 
   abstract get(table: Table, id: number): Promise<Row | undefined>;
 
   abstract save(table: Table, row: Partial<Row>): Promise<Row>;
 
   abstract delete(table: Table, id: number): Promise<void>;
+
+  abstract deleteAgentThread(threadId: string): Promise<void>;
 
   abstract transaction<T>(work: (store: Store) => Promise<T>): Promise<T>;
 

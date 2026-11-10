@@ -7,12 +7,12 @@ import { ApiError } from '../../common/api-error';
 import { HistoryService } from '../history/history.service';
 import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service';
 import { AgentService } from '../agent/agent.service';
+import { INTERRUPT } from '@langchain/langgraph-checkpoint';
+import { AgentExecutionRevoked, agentThreadId } from '../agent/agent-graph-owner';
+import { MysqlAgentCheckpointer } from '../agent/mysql-agent-checkpointer';
 import { sealQaCredential, openQaCredential } from './qa-credentials';
 
-export class AgentExecutionRevoked extends Error {
-  readonly retryable = false;
-  constructor(message = '任务已停止或执行权已变化') { super(message); this.name = 'AgentExecutionRevoked'; }
-}
+export { AgentExecutionRevoked } from '../agent/agent-graph-owner';
 interface AgentRequest {
   question: string;
   chatId?: number | null;
@@ -79,15 +79,18 @@ export class AgentQaTasksService {
       if (!chat || chat.userId !== userId || chat.knowledgeBaseId !== kb.id) throw new ApiError(404, '会话不存在');
       const messages = (await tx.list('messages', { chatId: chat.id })).sort((a, b) => a.id - b.id);
       const token = randomUUID();
-      const task = await tx.save('tasks', {
+      let task = await tx.save('tasks', {
         userId, knowledgeBaseId: kb.id, kind: 'qa', documentId: null, indexRevisionId: null, parentTaskId: null,
         idempotencyKey, status: 'running', stage: 'understanding', completed: 0, total: null, attempts: 1,
         dispatchGeneration: 0, executionToken: token, retryable: 1, error: null, updatedAt: now(),
         payload: { engine: 'agentic-v1', chatId: chat.id, requestId: input.requestId, fingerprint: input.fingerprint,
-          foreground: true, leaseUntil: Date.now() + 300000, snapshot: null,
+          foreground: true, leaseUntil: Date.now() + 300000, graphVersion: 2,
           input: { question: input.question, documentIds: input.documentIds, mode: input.mode || 'auto', history: messages },
           credential: sealQaCredential(this.config.getOrThrow('JWT_SECRET'), input.apiKey) },
       });
+      task = await tx.save('tasks', { id: task.id, payload: {
+        ...task.payload, graphThreadId: agentThreadId(task.id),
+      } });
       await tx.save('messages', { chatId: chat.id, role: 'user', content: input.question, citations: [],
         generationStatus: 'completed', retrievalContext: { documentIds: input.documentIds, mode: input.mode || 'auto',
           requestId: input.requestId, taskId: task.id } });
@@ -107,44 +110,21 @@ export class AgentQaTasksService {
     return task;
   }
 
-  async checkpoint(id: number, token: string, snapshot: any) {
-    const initial = await this.guard(id, token);
-    if (snapshot.userId !== initial.userId || snapshot.knowledgeBaseId !== initial.knowledgeBaseId)
-      throw new AgentExecutionRevoked('任务快照授权不匹配');
-    await this.store.transaction(async tx => {
-      const kb = await tx.lock('knowledgeBases', initial.knowledgeBaseId);
-      if (!kb || kb.deletedAt || kb.userId !== initial.userId) throw new AgentExecutionRevoked('知识库不可用');
-      const task = await tx.lock('tasks', id);
-      this.assertOwner(task, token);
-      const progress = publicAgentProgress(snapshot);
-      await tx.save('tasks', { id, completed: Number(snapshot.budget?.steps ?? snapshot.budget?.decisions ?? 0),
-        stage: snapshot.phase || 'agent', updatedAt: now(), payload: { ...task!.payload,
-          snapshot: structuredClone(snapshot), retrievalRunId: snapshot.runId,
-          agentProgress: progress, leaseUntil: Date.now() + 300000 } });
-    });
-  }
-
-  async step(id: number, token: string, step: any) {
-    const current = await this.guard(id, token);
-    await this.store.transaction(async tx => {
-      await tx.lock('knowledgeBases', current.knowledgeBaseId);
-      const task = await tx.lock('tasks', id);
-      this.assertOwner(task, token);
-      const progress = task.payload.agentProgress || publicAgentProgress(task.payload.snapshot);
-      const steps = [...(progress.steps || []).filter((s: any) => s.sequence !== step.sequence || s.runId !== step.runId), step]
-        .sort((a: any, b: any) => a.sequence - b.sequence);
-      await tx.save('tasks', { id, payload: { ...task.payload,
-        agentProgress: { ...progress, steps: publicAgentProgress({ steps }).steps } }, updatedAt: now() });
-    });
-  }
-
   private assertOwner(task: Row | undefined, token: string): asserts task is Row {
     if (!task || task.executionToken !== token || task.status !== 'running') throw new AgentExecutionRevoked();
   }
 
-  async handoff(id: number, token: string, snapshot: any) {
-    await this.checkpoint(id, token, snapshot);
+  private async taskChat(tx: Store, task: Row) {
+    const chat = await tx.get('chats', task.payload.chatId);
+    return chat?.userId === task.userId && chat?.knowledgeBaseId === task.knowledgeBaseId ? chat : undefined;
+  }
+
+  async handoff(id: number, token: string) {
     const task = await this.guard(id, token);
+    const saver = new MysqlAgentCheckpointer(this.store, { taskId: id, token });
+    const saved = await saver.getTuple({ configurable: { thread_id: task.payload.graphThreadId } });
+    if (!saved?.pendingWrites?.some(([, channel]) => channel === INTERRUPT))
+      throw new Error('Agent 暂停尚未持久化');
     return this.store.transaction(async tx => {
       await tx.lock('knowledgeBases', task.knowledgeBaseId);
       const row = await tx.lock('tasks', id);
@@ -155,6 +135,12 @@ export class AgentQaTasksService {
     });
   }
 
+  private async releaseGraph(tx: Store, task: Row) {
+    if (task.payload.graphVersion === 2) await tx.deleteAgentThread(agentThreadId(task.id));
+    const { graphScope, agentBudgetLedger, agentEventSequences, agentEventSequence, input, snapshot, ...payload } = task.payload;
+    return payload;
+  }
+
   async complete(id: number, token: string, result: any) {
     const current = await this.guard(id, token);
     await this.store.transaction(async tx => {
@@ -163,7 +149,7 @@ export class AgentQaTasksService {
       // All checkpoint writers hold this KB lock, so this read sees the last durable scope.
       const latest = await tx.get('tasks', id);
       this.assertOwner(latest, token);
-      const scope = latest.payload.snapshot?.scope;
+      const scope = latest.payload.graphScope;
       for (const expected of [...(scope?.documents || [])].sort((a: any, b: any) => a.documentId - b.documentId)) {
         const doc = await tx.lock('documents', expected.documentId);
         if (!doc || doc.deletedAt || doc.userId !== current.userId || doc.knowledgeBaseId !== current.knowledgeBaseId)
@@ -174,13 +160,14 @@ export class AgentQaTasksService {
       }
       const task = await tx.lock('tasks', id);
       this.assertOwner(task, token);
-      const chat = await tx.get('chats', task.payload.chatId);
-      if (!chat || chat.userId !== current.userId || chat.knowledgeBaseId !== task.knowledgeBaseId) throw new AgentExecutionRevoked('会话不存在');
+      const chat = await this.taskChat(tx, task);
+      if (!chat) throw new AgentExecutionRevoked('会话不存在');
       const message = await tx.save('messages', { id: task.payload.messageId, chatId: chat.id, role: 'assistant',
         content: result.answer, citations: result.citations || [], generationStatus: 'completed',
         retrievalRunId: result.retrievalRunId || task.payload.retrievalRunId || null, diagnostics: result.diagnostics || null });
+      const payload = await this.releaseGraph(tx, task);
       await tx.save('tasks', { id, status: 'completed', stage: 'completed', executionToken: null, retryable: 0, error: null,
-        updatedAt: now(), payload: { ...task.payload, foreground: false, credential: null, leaseUntil: null,
+        updatedAt: now(), payload: { ...payload, foreground: false, credential: null, leaseUntil: null,
           messageId: message.id, agentProgress: result.diagnostics?.agent || task.payload.agentProgress,
           qaResult: { chatId: chat.id, messageId: message.id, retrievalRunId: message.retrievalRunId,
             coverage: result.coverage || result.diagnostics?.coverage } } });
@@ -188,9 +175,9 @@ export class AgentQaTasksService {
   }
 
   async fail(id: number, token: string, error: any, attempt = 3, background = false, partial?: any) {
+    const initial = await this.store.get('tasks', id);
+    if (!initial) return;
     await this.store.transaction(async tx => {
-      const initial = await tx.get('tasks', id);
-      if (!initial) return;
       await tx.lock('knowledgeBases', initial.knowledgeBaseId);
       const task = await tx.lock('tasks', id);
       if (!task || task.executionToken !== token) return;
@@ -198,18 +185,20 @@ export class AgentQaTasksService {
         await tx.save('tasks', { id, executionToken: null, payload: { ...task.payload, credential: null, leaseUntil: null } });
         return;
       }
-      const retryable = error?.retryable !== false && !(error instanceof AgentExecutionRevoked) &&
+      const chat = await this.taskChat(tx, task);
+      const retryable = !!chat && error?.retryable !== false && !(error instanceof AgentExecutionRevoked) &&
         !(error instanceof ApiError && error.getStatus() < 500);
       const retrying = background && retryable && attempt < 3;
-      let messageId = task.payload.messageId;
-      if (!retrying) messageId = (await tx.save('messages', { id: messageId,
-        chatId: task.payload.chatId, role: 'assistant', content: partial?.answer || '回答未完成，请重试。',
+      let messageId = chat ? task.payload.messageId : null;
+      if (chat && !retrying) messageId = (await tx.save('messages', { id: messageId,
+        chatId: chat.id, role: 'assistant', content: partial?.answer || '回答未完成，请重试。',
         citations: partial?.citations || [], generationStatus: 'interrupted', retrievalRunId: task.payload.retrievalRunId || null,
         diagnostics: partial?.diagnostics || { agent: { ...task.payload.agentProgress, status: 'interrupted' } } })).id;
+      const payload = retryable ? task.payload : await this.releaseGraph(tx, task);
       await tx.save('tasks', { id, status: retrying ? 'retrying' : 'failed', stage: retrying ? 'retrying' : 'failed',
         executionToken: null, retryable: retryable ? 1 : 0, error: error instanceof AgentExecutionRevoked
           ? error.message : '问答执行未完成，可查看执行过程或稍后重试', updatedAt: now(),
-        payload: { ...task.payload, messageId, foreground: false, leaseUntil: null,
+        payload: { ...payload, messageId, foreground: false, leaseUntil: null,
           ...(retryable ? {} : { credential: null }) } });
     });
   }
@@ -223,12 +212,14 @@ export class AgentQaTasksService {
       const task = await tx.lock('tasks', id);
       if (!task || task.userId !== userId || task.kind !== 'qa' || task.payload?.engine !== 'agentic-v1') throw new ApiError(404, 'Agent任务不存在');
       if (ended(task.status)) return;
-      const message = await tx.save('messages', { id: task.payload.messageId,
-        chatId: task.payload.chatId, role: 'assistant', content: partial?.answer || '回答已停止。', citations: partial?.citations || [],
+      const chat = await this.taskChat(tx, task);
+      const message = chat && await tx.save('messages', { id: task.payload.messageId,
+        chatId: chat.id, role: 'assistant', content: partial?.answer || '回答已停止。', citations: partial?.citations || [],
         generationStatus: 'interrupted', retrievalRunId: task.payload.retrievalRunId || null,
         diagnostics: partial?.diagnostics || { agent: { ...task.payload.agentProgress, status: 'canceled', stopReason: 'canceled' } } });
+      const payload = await this.releaseGraph(tx, task);
       await tx.save('tasks', { id, status: 'canceled', stage: 'canceled', executionToken: null, retryable: 0, updatedAt: now(),
-        payload: { ...task.payload, messageId: message.id, foreground: false, credential: null, leaseUntil: null,
+        payload: { ...payload, messageId: message?.id ?? null, foreground: false, credential: null, leaseUntil: null,
           agentProgress: { ...task.payload.agentProgress, status: 'canceled', stopReason: 'canceled' } } });
     });
     return { id, status: (await this.store.get('tasks', id))?.status };
@@ -253,9 +244,8 @@ export class AgentQaTasksService {
       }).catch(error => abort.abort(error)).finally(() => { checking = false; });
     }, 1000);
     timer.unref();
-    return { signal, guard: () => this.guard(id, token, signal),
-      onCheckpoint: (snapshot: any) => this.checkpoint(id, token, snapshot),
-      onAgentStep: (step: any) => this.step(id, token, step), dispose: () => clearInterval(timer) };
+    return { signal, guard: () => this.guard(id, token, signal), graphOwner: { taskId: id, token },
+      dispose: () => clearInterval(timer) };
   }
 
   async process(id: number, attempt = 1, report?: (progress: object) => Promise<void>) {
@@ -270,18 +260,31 @@ export class AgentQaTasksService {
         await tx.save('tasks', { id, executionToken: null, payload: { ...row.payload, credential: null } });
       if (ended(row.status)) return null;
       if (row.executionToken && row.payload?.leaseUntil > Date.now()) return null;
+      const { snapshot, ...payload } = row.payload;
+      const importedProgress = snapshot && row.payload.graphVersion !== 2
+        ? row.payload.agentProgress ?? publicAgentProgress(snapshot)
+        : undefined;
       return tx.save('tasks', { id, status: 'running', stage: 'agent', executionToken: token, attempts: attempt,
-        updatedAt: now(), payload: { ...row.payload, foreground: false, leaseUntil: Date.now() + 300000 } });
+        updatedAt: now(), payload: {
+          ...payload, ...(snapshot ? { snapshot } : {}),
+          ...(importedProgress ? { agentProgress: importedProgress,
+            agentEventSequence: Math.max(0, ...importedProgress.steps.map((step: { sequence: number }) => step.sequence)) } : {}),
+          graphVersion: 2, graphThreadId: agentThreadId(id), foreground: false, leaseUntil: Date.now() + 300000,
+        } });
     });
     if (!task) return ended((await this.store.get('tasks', id))?.status || '') ? 'done' : 'waiting';
     const execution = this.execution(id, token);
     try {
       const key = openQaCredential(this.config.getOrThrow('JWT_SECRET'), task.payload.credential);
+      const legacy = task.payload.snapshot;
+      const input = task.payload.input ?? (legacy && {
+        question: legacy.question, history: legacy.history, mode: legacy.mode,
+      });
+      if (!input?.question) throw new ApiError(409, '问答任务缺少问题内容');
       const options = { ...execution, background: true, apiKey: key,
-        onAgentStep: async (step: any) => { await execution.onAgentStep(step); await report?.({ stage: 'agent', completed: step.sequence, total: null }); } };
-      const context = task.payload.snapshot ? await this.agent.resume(task.payload.snapshot, options)
-        : await this.agent.prepare(task.payload.input.question, task.userId, task.knowledgeBaseId,
-          { ...task.payload.input, ...options, chatId: task.payload.chatId });
+        onAgentStep: (step: { sequence: number }) => report?.({ stage: 'agent', completed: step.sequence, total: null }) };
+      const context = await this.agent.prepare(input.question, task.userId, task.knowledgeBaseId,
+        { ...input, ...options, chatId: task.payload.chatId });
       const result = await this.agent.answerPrepared(context, key, execution.signal);
       await this.complete(id, token, result);
       return 'done';
