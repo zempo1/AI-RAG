@@ -10,6 +10,7 @@ import {
 import { TokenizerService } from './tokenizer.service';
 import { RequestScheduler } from '../../common/request-scheduler';
 import { retryTransientRequest } from '../../common/transient-request';
+import { modelBinding, redactModelError } from '../model-settings/model-runtime';
 
 export const REMOTE_EMBEDDING_BATCH_SIZE = 10;
 export const REMOTE_EMBEDDING_CONCURRENCY = 2;
@@ -55,7 +56,10 @@ export class EmbeddingsService implements OnModuleDestroy {
   ): Promise<number[][]> {
     signal?.throwIfAborted();
     assertTokenizerProfile(profile);
-    if (profile.provider === 'dashscope') return this.remote(texts, profile, signal);
+    if (profile.provider !== 'local') {
+      try { return await this.remote(texts, profile, signal); }
+      catch (error) { throw redactModelError(this.config, error); }
+    }
     if (!texts.length) return [];
     const run = async () => {
       signal?.throwIfAborted();
@@ -99,8 +103,8 @@ export class EmbeddingsService implements OnModuleDestroy {
     signal?: AbortSignal,
   ): Promise<number[][]> {
     if (!texts.length) return [];
-    const key =
-      this.config.get<string>('EMBEDDING_API_KEY') || this.config.get<string>('CHAT_API_KEY');
+    const binding = modelBinding(this.config, 'embedding');
+    const key = binding.apiKey;
     if (!key) throw new Error('请配置 EMBEDDING_API_KEY 或 CHAT_API_KEY');
     // 调用前检查输入长度，拒绝静默截断，保证向量代表完整片段。
     const tokenizer = new TokenizerService(this.config);
@@ -114,8 +118,7 @@ export class EmbeddingsService implements OnModuleDestroy {
       const body: any = await remoteRequests.run(async () => {
         const response = await retryTransientRequest(() => fetch(
           (
-            this.config.get<string>('EMBEDDING_BASE_URL') ||
-            'https://dashscope.aliyuncs.com/compatible-mode/v1'
+            profile.baseUrl || binding.baseUrl
           ).replace(/\/$/, '') + '/embeddings',
           {
             method: 'POST',
@@ -123,7 +126,7 @@ export class EmbeddingsService implements OnModuleDestroy {
             body: JSON.stringify({
               model: profile.model,
               input,
-              dimensions: profile.dimensions,
+              ...((profile.sendDimensions ?? binding.sendDimensions ?? true) ? { dimensions: profile.dimensions } : {}),
               encoding_format: 'float',
             }),
             signal: signal

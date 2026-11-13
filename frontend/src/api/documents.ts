@@ -1,5 +1,20 @@
 import request from '../utils/request'
 
+export interface DocumentPreview {
+    documentId: number
+    versionId: number
+    filename: string
+    mimeType: string
+    originalAvailable: boolean
+    originalUrl: string | null
+    text?: string
+}
+export function getDocumentPreview(id: number, versionId?: number, signal?: AbortSignal) {
+    return request.get<unknown, DocumentPreview>(`/api/documents/${id}/preview`, {
+        params: versionId ? { versionId } : undefined, signal, silentError: true,
+    })
+}
+
 export interface DocumentSummary {
     id: number
     filename: string

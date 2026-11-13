@@ -18,7 +18,8 @@
     "markdown-it": "^14.1.0",
     "simple-mind-map": "^0.14.0-fix.1",
     "spark-md5": "^3.0.2",
-    "vue": "^3.4.15"
+    "vue": "^3.4.15",
+    "pdfjs-dist": "6.4.299"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",

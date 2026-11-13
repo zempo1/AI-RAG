@@ -11,7 +11,17 @@ export interface RegionImageRef extends PageImageRef {
   kind: 'region' | 'scan' | 'fallback';
 }
 export type ContentType = 'native' | 'ocr' | 'table' | 'figure';
+/** UTF-16 half-open range in final parsed text; normalized intrinsic page viewport. */
+export interface PdfSourceAnchor {
+  page: number;
+  start: number;
+  end: number;
+  rects: RegionBox[];
+  kind: 'native' | 'ocr' | 'region';
+}
 export interface SourceLocation {
+  anchorVersion?: 1;
+  anchors?: PdfSourceAnchor[];
   contentType?: ContentType;
   pageImage?: PageImageRef;
   regionImage?: RegionImageRef;

@@ -231,7 +231,10 @@
   cursor: pointer;
   transition: background-color 0.2s, border-color 0.2s;
 
-  &:hover { background: var(--bg-hover); }
+  &:hover {
+    background: var(--bg-hover);
+  }
+
   &:focus-visible {
     outline: 2px solid var(--accent-color);
     outline-offset: 3px;
@@ -301,7 +304,10 @@
   text-align: left;
 
   &.user {
-    .message-content-wrapper { justify-content: flex-end; }
+    .message-content-wrapper {
+      justify-content: flex-end;
+    }
+
     .message-text {
       flex: 0 1 auto;
       max-width: 85%;
@@ -330,10 +336,13 @@
     }
 
     :deep(.markdown-body) {
+      --table-rule: #3f3f46;
       color: var(--text-primary);
       overflow-x: auto;
 
-      > :first-child { margin-top: 0; }
+      > :first-child {
+        margin-top: 0;
+      }
 
       h1,
       h2,
@@ -362,6 +371,83 @@
         &:hover {
           text-decoration: underline;
         }
+      }
+
+      .markdown-table {
+        max-width: 100%;
+        margin: 20px 0;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        border: 1px solid var(--table-rule);
+        border-radius: 10px;
+
+        &:focus-visible {
+          outline: 2px solid var(--accent-color);
+          outline-offset: 3px;
+        }
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        border-spacing: 0;
+        font-size: 0.95em;
+        line-height: 1.65;
+        text-align: left;
+      }
+
+      th,
+      td {
+        min-width: 5em;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--table-rule);
+        text-align: left;
+        vertical-align: top;
+        overflow-wrap: break-word;
+
+        &:first-child {
+          min-width: 6em;
+          font-weight: 600;
+        }
+      }
+
+      thead th {
+        background: var(--bg-card);
+        color: var(--text-primary);
+        font-weight: 600;
+      }
+
+      tbody tr:nth-child(even) {
+        background: rgba(255, 255, 255, 0.025);
+      }
+
+      tbody tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .markdown-table .inline-citation {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 24px;
+        min-height: 24px;
+        margin-inline-start: 4px;
+        padding: 0 5px;
+        border-radius: 999px;
+        font-size: 0.75em;
+        line-height: 1;
+        white-space: nowrap;
+
+        &:focus-visible {
+          outline: 2px solid var(--accent-color);
+          outline-offset: 2px;
+        }
+      }
+
+      hr {
+        margin: 24px 0;
+        border: 0;
+        border-top: 1px solid var(--table-rule);
       }
 
       pre {
@@ -419,9 +505,18 @@
 }
 
 @media (max-width: 768px) {
-  .messages-container { padding: 20px 16px 36px; }
-  .messages-content { gap: 26px; }
-  .message-row.user .message-text { max-width: 90%; padding: 12px 18px; }
+  .messages-container {
+    padding: 20px 16px 36px;
+  }
+
+  .messages-content {
+    gap: 26px;
+  }
+
+  .message-row.user .message-text {
+    max-width: 90%;
+    padding: 12px 18px;
+  }
 }
 
 .input-container {
@@ -467,7 +562,6 @@
       line-height: 1.5;
       resize: none;
       max-height: 200px;
-      padding: 10px;
       outline: none;
 
       &::placeholder {

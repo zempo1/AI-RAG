@@ -1,4 +1,5 @@
 import type { Citation } from '../rag/citations';
+import { mergeSourceLocations } from '../documents/parsers/source-anchors';
 import type { OriginalEvidence } from '../rag/retrieval.types';
 
 /** Compact matching contiguous text only; visual references keep their own source regions. */
@@ -48,6 +49,6 @@ function mergeOverlap(
     text,
     score: Math.max(a.score, b.score),
     chunkIds: [...new Set([...(a.chunkIds ?? [a.chunkId]), ...(b.chunkIds ?? [b.chunkId])])],
-    location: { ...left.location!, end: right.location!.end },
+    location: mergeSourceLocations(left.location!, right.location!),
   });
 }

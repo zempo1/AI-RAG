@@ -1,0 +1,45 @@
+.source-panel {
+  display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden;
+  background:var(--bg-sidebar); color:var(--text-primary); border-left:1px solid var(--border-color);
+  button { border:1px solid var(--border-color); background:var(--bg-card); color:var(--text-primary); border-radius:7px; padding:7px 10px; min-height:36px; cursor:pointer; font:inherit; }
+  button:hover:not(:disabled) { background:var(--bg-hover); border-color:var(--accent-color); }
+  button:disabled { opacity:.4; cursor:default; }
+  button:focus-visible, input:focus-visible, summary:focus-visible, .pdf-scroll-container:focus-visible { outline:2px solid #a78bfa; outline-offset:2px; }
+}
+.source-panel-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-shrink:0; padding:14px 18px; border-bottom:1px solid var(--border-color); }
+.reader-eyebrow { color:var(--text-secondary); font-size:11px; letter-spacing:.1em; }
+.source-panel-heading h2 { margin:4px 0 0; font-size:15px; overflow-wrap:anywhere; font-weight:600; }
+.reader-close { flex-shrink:0; min-width:54px; min-height:40px!important; }
+.reader-notice, .pdf-location-notice { margin:0; padding:10px 16px; color:#e5ce9e; background:#30291c; font-size:12px; line-height:1.6; flex-shrink:0; }
+.reader-loading, .reader-failure { padding:20px; font-size:14px; line-height:1.7; }
+.reader-evidence { flex-shrink:0; max-height:32%; overflow:auto; border-top:1px solid var(--border-color); padding:0 16px 12px; background:var(--bg-sidebar); font-size:13px; }
+.reader-evidence summary { cursor:pointer; padding:12px 0; color:#d7c8ff; }
+.reader-evidence pre, .reader-markdown pre { white-space:pre-wrap; overflow-wrap:anywhere; font-family:inherit; font-size:13px; line-height:1.8; margin:0; }
+.reader-evidence-type { color:#e5ce9e; font-size:12px; }
+.reader-markdown { flex:1; min-height:0; overflow:auto; padding:20px; }
+.pdf-reader { display:flex; flex-direction:column; flex:1; min-height:120px; overflow:hidden; }
+.pdf-toolbar { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; padding:8px 12px; border-bottom:1px solid var(--border-color); font-size:12px; flex-shrink:0; }
+.pdf-tool-group { display:flex; gap:4px; align-items:center; }
+.pdf-toolbar button { padding:5px 8px; min-width:30px; }
+.pdf-toolbar input { color:var(--text-primary); background:var(--bg-card); border:1px solid var(--border-color); border-radius:5px; padding:7px; font:inherit; min-height:34px; box-sizing:border-box; }
+.pdf-page-control { display:flex; align-items:center; gap:6px; }
+.pdf-page-control input { width:52px; }
+.pdf-scale { min-width:40px; text-align:center; font-variant-numeric:tabular-nums; }
+.pdf-search { display:flex; gap:4px; align-items:center; flex:1 1 220px; }
+.pdf-search input { min-width:80px; width:100%; flex:1; }
+.pdf-find-status { color:var(--text-secondary); white-space:nowrap; font-variant-numeric:tabular-nums; min-width:44px; }
+.pdf-state { padding:18px; font-size:13px; flex-shrink:0; }
+.pdf-error { color:#f1b7b7; }
+.pdf-reading-area { flex:1; position:relative; min-height:0; background:#303035; }
+.pdf-reading-area.has-error { display:none; }
+.pdf-scroll-container { position:absolute; inset:0; overflow:auto; overscroll-behavior:contain; }
+.pdf-scroll-container .pdfViewer { padding:14px 0; --page-bg-color:#fff; --pdfViewer-padding-bottom:0; }
+.pdf-scroll-container .pdfViewer .page { border:0; margin:0 auto 14px; }
+.citation-highlights { position:absolute; inset:0; pointer-events:none; z-index:6; }
+.citation-highlight { position:absolute; background:rgba(255,201,32,.28); box-shadow:inset 0 0 0 1px rgba(155,94,0,.55); mix-blend-mode:multiply; }
+@media(max-width:1199px) {
+  .source-panel { position:fixed; inset:0; z-index:1000; border:0; width:100vw; height:100dvh; padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom); }
+  .source-panel button { min-height:44px; }
+  .reader-evidence { max-height:30%; }
+}
+@media(prefers-reduced-motion:reduce) { .source-panel *, .pdf-scroll-container { scroll-behavior:auto!important; animation:none!important; transition:none!important; } }

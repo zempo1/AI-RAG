@@ -23,6 +23,13 @@ const md: MarkdownIt = new MarkdownIt({
   },
 });
 
+// Keep wide tables scrollable on their own, without moving the surrounding answer.
+md.renderer.rules.table_open = (tokens, index, options, _env, renderer) =>
+  '<div class="markdown-table" role="region" aria-label="回答表格，可横向滚动" tabindex="0">' +
+  renderer.renderToken(tokens, index, options);
+md.renderer.rules.table_close = (tokens, index, options, _env, renderer) =>
+  renderer.renderToken(tokens, index, options) + '</div>\n';
+
 md.renderer.rules.text = (tokens, index, _options, env) => {
   const escaped = md.utils.escapeHtml(tokens[index].content);
   return escaped.replace(/\[(\d+)\]/g, (marker, number) =>

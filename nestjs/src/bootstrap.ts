@@ -7,8 +7,9 @@ import { ApiResponseInterceptor } from './common/interceptors/api-response.inter
 export function configureApp(app: INestApplication): void {
   app.enableCors({
     origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Api-Key'],
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Api-Key', 'Range'],
+    exposedHeaders: ['Accept-Ranges', 'Content-Range', 'Content-Length'],
   });
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (

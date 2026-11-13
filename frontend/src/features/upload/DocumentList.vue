@@ -13,7 +13,7 @@
         <div class="document-name">
           <el-icon class="file-symbol"><Document /></el-icon>
           <div>
-            <strong :title="doc.filename">{{ doc.filename }}</strong
+            <button class="document-preview-name" type="button" :title="doc.filename" :aria-label="'预览 ' + doc.filename" @click="emit('action', 'preview', doc)">{{ doc.filename }}</button
             ><span class="muted">{{
               doc.activeIndexRevisionId ? "已有可用索引" : "尚未建立可用索引"
             }}</span>
@@ -106,6 +106,7 @@
             ></el-button>
             <template #dropdown
               ><el-dropdown-menu>
+                <el-dropdown-item command="preview">预览</el-dropdown-item>
                 <el-dropdown-item
                   command="replace"
                   :disabled="uploading || locked"
@@ -160,6 +161,9 @@ const terminal = (status: string) =>
 </script>
 
 <style scoped>
+.document-preview-name { display:block; border:0; padding:0; background:transparent; color:inherit; font:inherit; font-weight:600; max-width:100%; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+.document-preview-name:hover { color:var(--el-color-primary); text-decoration:underline; }
+.document-preview-name:focus-visible { outline:2px solid var(--el-color-primary); outline-offset:4px; }
 .index-progress-unknown { height: 4px; overflow: hidden; border-radius: 4px; background: var(--el-fill-color-light); position: relative; margin-top: 8px; }
 .index-progress-unknown span { position: absolute; height: 100%; width: 35%; border-radius: inherit; background: var(--el-color-primary); animation: index-progress 1.6s linear infinite; }
 @keyframes index-progress { from { left: -35%; } to { left: 100%; } }

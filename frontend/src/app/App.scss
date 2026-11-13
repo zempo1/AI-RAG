@@ -52,6 +52,7 @@ body {
 }
 
 .main-content {
+  min-width: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -68,4 +69,13 @@ body {
       rgba(6, 182, 212, 0.05) 0%,
       transparent 50%
     );
+}
+
+@media (min-width: 1200px) {
+  .reader-is-open > .main-content,
+  .reader-is-open > .source-panel {
+    flex: 1 1 0;
+    width: 0;
+    min-width: 0;
+  }
 }

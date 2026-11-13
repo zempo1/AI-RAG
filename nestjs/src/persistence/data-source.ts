@@ -21,8 +21,11 @@ import { RetrievalRun, SummaryCache } from './quality.persistence';
 import { RagQuality1793491200000 } from './migrations/1793491200000-rag-quality';
 import { AgentCheckpoint, AgentCheckpointWrite } from './agent-checkpoint.persistence';
 import { AgentCheckpoints1794268800000 } from './migrations/1794268800000-agent-checkpoints';
+import { ModelSetting } from '../modules/model-settings/model-setting.entity';
+import { ModelSettings1794355200000 } from './migrations/1794355200000-model-settings';
 
 export const entityTargets = {
+  modelSettings: ModelSetting,
   agentCheckpoints: AgentCheckpoint,
   agentCheckpointWrites: AgentCheckpointWrite,
   retrievalRuns: RetrievalRun,
@@ -64,6 +67,7 @@ export function mysqlOptions(env: Record<string, any>): DataSourceOptions {
       KnowledgeBases1793404800000,
       RagQuality1793491200000,
       AgentCheckpoints1794268800000,
+      ModelSettings1794355200000,
     ],
     synchronize: false,
     migrationsRun: false,

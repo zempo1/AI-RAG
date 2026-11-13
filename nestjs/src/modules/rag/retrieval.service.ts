@@ -3,13 +3,14 @@ import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
-import { legacyModelProfile } from '../embeddings/model-profile';
+import { assertEmbeddingCompatible, legacyModelProfile } from '../embeddings/model-profile';
 import { TokenizerService } from '../embeddings/tokenizer.service';
 import { VectorStore } from '../vector-store/vector-store.interface';
 import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service';
 import { Store, Row } from '../../persistence/store';
 import { ApiError } from '../../common/api-error';
 import { Citation } from './citations';
+import { sliceSourceLocation } from '../documents/parsers/source-anchors';
 import { LexicalIndex, searchLexical, fuse, Scored } from './retrieval-algorithms';
 import { QualityModelsService } from './quality-models.service';
 import { RetrievalScope, RetrievalSession, SearchOptions, SearchResult, ReadRange, OriginalEvidence } from './retrieval.types';
@@ -105,6 +106,10 @@ export class RetrievalService {
 
   async search(session: RetrievalSession, query: string, options: SearchOptions = {}): Promise<SearchResult> {
     await this.verify(session.scope, options.signal);
+    // General chat and reading original text need no vectors. Check only the actual
+    // search selection, before allSettled/fallback can turn an incompatible index into silence.
+    if (this.config) for (const revision of session.revisions.values())
+      assertEmbeddingCompatible(revision.modelProfile || legacyModelProfile(), this.config);
     const strategy = options.strategy || 'hybrid-rerank';
     let lexical: Scored[] = [], vector: Scored[] = [];
     const degraded: string[] = [];
@@ -212,7 +217,7 @@ export class RetrievalService {
           evidence.push({
             ...citation(chunk, source.score),
             text: chunk.text.slice(start - chunk.location.start, end - chunk.location.start),
-            location: { ...chunk.location, start, end },
+            location: sliceSourceLocation(chunk.location, start, end),
           });
         }
       }

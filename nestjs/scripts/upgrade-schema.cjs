@@ -18,6 +18,8 @@ const {
     await new RagQuality1793491200000().up(runner);
     const { AgentCheckpoints1794268800000 } = require('../dist/persistence/migrations/1794268800000-agent-checkpoints');
     await new AgentCheckpoints1794268800000().up(runner);
+    const { ModelSettings1794355200000 } = require('../dist/persistence/migrations/1794355200000-model-settings');
+    await new ModelSettings1794355200000().up(runner);
     console.log('知识库、版本、任务与引用结构升级完成；旧文档归入用户默认库，旧页码保持未知。');
   } finally {
     await runner.release();

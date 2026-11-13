@@ -9,11 +9,13 @@ import { ChatModule } from './modules/chat/chat.module';
 import { AnalysisModule } from './modules/analysis/analysis.module';
 import { MindMapsModule } from './modules/mindmaps/mindmaps.module';
 import { PipelineModule } from './modules/tasks/pipeline.module';
+import { ModelSettingsModule } from './modules/model-settings/model-settings.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateConfig }),
     PersistenceModule,
+    ModelSettingsModule,
     AuthModule,
     DocumentsModule,
     HistoryModule,

@@ -2,9 +2,13 @@ import { createHash } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
+import { currentModels, environmentBindings, modelBinding, ModelProvider, normalizedModelUrl } from '../model-settings/model-runtime';
+import { ApiError } from '../../common/api-error';
 
 export interface ModelProfile {
-  provider: 'local' | 'dashscope';
+  provider: ModelProvider;
+  baseUrl?: string;
+  sendDimensions?: boolean;
   model: string;
   revision: string;
   dimensions: number;
@@ -36,6 +40,14 @@ export function legacyModelProfile(_config?: ConfigService): ModelProfile {
   };
 }
 export function currentModelProfile(config: ConfigService): ModelProfile {
+  const binding = modelBinding(config, 'embedding');
+  if (binding.custom) return {
+    provider: binding.provider, baseUrl: binding.baseUrl, sendDimensions: binding.sendDimensions,
+    model: binding.model, dimensions: binding.dimensions!,
+    revision: config.get('EMBEDDING_REVISION') || 'api-v1',
+    tokenizer: config.get('EMBEDDING_TOKENIZER') || 'estimate:utf8-v1',
+    tokenizerDigest: tokenizerDigest(config.get('EMBEDDING_TOKENIZER') || ''), chunkingVersion: 'tokens-v1',
+  };
   const provider =
     config.get('EMBEDDING_PROVIDER') ||
     (config.get('STORAGE_DRIVER') === 'memory' ? 'local' : 'dashscope');
@@ -66,5 +78,17 @@ export function profileFingerprint(profile: ModelProfile): string {
     profile.provider === 'local'
       ? [profile.model, profile.revision, 384, 'mean', 'normalize', 'fp32']
       : [profile.provider, profile.model, profile.revision, profile.dimensions, 'normalize'];
+  // Profiles predating account settings keep their exact collection suffix.
+  if (profile.baseUrl) values.push(profile.baseUrl);
   return createHash('sha256').update(JSON.stringify(values)).digest('hex');
+}
+
+export function assertEmbeddingCompatible(profile: ModelProfile, config: ConfigService) {
+  const active = currentModels()?.bindings.embedding;
+  if (!active || (!active.custom && !profile.baseUrl)) return;
+  const current = currentModelProfile(config);
+  const identity = (p: ModelProfile) => JSON.stringify([p.provider === 'local' ? 'local' : 'remote',
+    p.provider === 'local' ? '' : normalizedModelUrl(p.baseUrl || environmentBindings(config).embedding.baseUrl),
+    p.model, p.revision, p.dimensions, p.tokenizer, p.chunkingVersion]);
+  if (identity(profile) !== identity(current)) throw new ApiError(409, '向量模型已变更，请重建索引');
 }

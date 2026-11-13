@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { sliceSourceLocation } from '../documents/parsers/source-anchors';
 import { RetrievalService } from '../rag/retrieval.service';
 import { SummaryService } from '../rag/summary.service';
 import { ToolCall, ToolDefinition, ModelExecutionOptions } from '../llm/llm.types';
@@ -251,7 +252,7 @@ export class AgentTools {
           this.retrieval.original({
             ...e,
             text: e.text.slice(offset),
-            location: e.location ? { ...e.location, start: e.location.start + offset } : null,
+            location: e.location ? sliceSourceLocation(e.location, e.location.start + offset, e.location.end) : null,
           }),
         ];
       }
@@ -274,7 +275,7 @@ export class AgentTools {
           ? this.retrieval.original({
               ...e,
               text,
-              location: e.location ? { ...e.location, end: e.location.start + text.length } : null,
+              location: e.location ? sliceSourceLocation(e.location, e.location.start, e.location.start + text.length) : null,
             })
           : e;
       retained.push(original);

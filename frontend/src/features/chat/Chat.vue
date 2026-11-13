@@ -67,7 +67,7 @@
                   <button
                     v-for="source in msg.sources"
                     :key="source.number"
-                    @click="selectedCitation = source"
+                    @click="openCitation(source)"
                   >
                     {{ source.filename }} · {{ source.text.slice(0, 45) }}
                   </button>
@@ -147,105 +147,12 @@
     </div>
 
     <RetrievalDebug :run-id="debugRunId" @close="debugRunId = null" />
-    <el-dialog
-      v-model="apiKeyDialogVisible"
-      title="API Key 配置"
-      width="440px"
-      :close-on-click-modal="false"
-      class="api-key-dialog"
-      :show-close="true"
-    >
-      <div class="dialog-content">
-        <div class="icon-wrapper">
-          <div class="key-icon">
-            <el-icon><Key /></el-icon>
-          </div>
-        </div>
-        <h3>设置您的 API Key</h3>
-        <p class="dialog-desc">
-          API Key
-          保存在当前浏览器，每次生成时通过后端转发给模型服务，不写入数据库。
-        </p>
-
-        <div class="input-group">
-          <label>OpenAI / 兼容 Key</label>
-          <el-input
-            v-model="apiKeyInput"
-            placeholder="sk-..."
-            type="password"
-            show-password
-            class="custom-input"
-          >
-            <template #prefix>
-              <el-icon class="input-icon"><Lock /></el-icon>
-            </template>
-          </el-input>
-        </div>
-      </div>
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button @click="apiKeyDialogVisible = false" class="cancel-btn"
-            >取消</el-button
-          >
-          <el-button type="primary" @click="saveApiKey" class="save-btn">
-            保存配置
-          </el-button>
-        </div>
-      </template>
-    </el-dialog>
-    <el-drawer
-      class="knowledge-theme citation-drawer"
-      :model-value="!!selectedCitation"
-      title="引用来源"
-      size="min(100vw, 540px)"
-      append-to-body
-      @close="selectedCitation = null"
-    >
-      <template v-if="selectedCitation">
-        <h3>{{ selectedCitation.filename }}</h3>
-        <p class="source-location">
-          {{
-            selectedCitation.location?.page
-              ? "第 " + selectedCitation.location.page + " 页 · "
-              : ""
-          }}
-          {{
-            selectedCitation.location?.paragraph
-              ? "第 " + selectedCitation.location.paragraph + " 段"
-              : (selectedCitation.location?.regionImage || selectedCitation.location?.pageImage) ? "图片与图表内容" : selectedCitation.location?.page ? "本页文字" : "历史片段，位置未知"
-          }}
-          {{
-            selectedCitation.location?.heading
-              ? " · " + selectedCitation.location.heading
-              : ""
-          }}
-        </p>
-        <el-alert
-          v-if="selectedCitation.sourceDeleted"
-          title="来源已删除，下面展示回答时保存的原文快照。"
-          type="warning"
-          :closable="false"
-        />
-        <el-alert
-          v-else-if="selectedCitation.sourceOutdated"
-          title="来源文档已更新，下面展示回答时使用的历史版本。"
-          type="info"
-          :closable="false"
-        />
-        <p v-if="selectedCitation.location?.contentType" class="source-location">
-          {{ ({ native: '原生文字', ocr: '图片文字识别', table: '表格识别', figure: '模型生成的图解，请结合原图核对' })[selectedCitation.location.contentType] }}
-        </p>
-        <p v-if="citationContext" class="source-location">引用所在的原文上下文</p>
-        <pre class="source-text">{{ citationContext || selectedCitation.text }}</pre>
-        <SourcePagePreview :source="selectedCitation" />
-      </template>
-    </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, nextTick, watch, onMounted, onBeforeUnmount } from "vue";
-import { Bottom, Promotion, Key, Lock } from "@element-plus/icons-vue";
+import { Bottom, Promotion } from "@element-plus/icons-vue";
 import { renderMarkdown } from "../../utils/markdown";
 import {
   getChatHistory,
@@ -260,9 +167,8 @@ import { getAgentProgress, mergeAgentSteps, type AgentStep } from "../../utils/a
 import QuestionSources from "./QuestionSources.vue";
 import GenerationStatus from "./GenerationStatus.vue";
 import RetrievalDebug from "./RetrievalDebug.vue";
-import SourcePagePreview from "./SourcePagePreview.vue";
 import { useToast } from "../../composables/useToast";
-import { getCitationContext, type Citation } from "../../api/knowledge-bases";
+import { type Citation } from "../../api/knowledge-bases";
 
 interface Message {
   agentSteps?: AgentStep[];
@@ -280,7 +186,7 @@ interface Message {
 }
 
 const props = defineProps<{ knowledgeBaseId: number | null }>();
-const emit = defineEmits(["chat-created", "history-loaded"]);
+const emit = defineEmits(["chat-created", "history-loaded", "open-source"]);
 const readOnly = ref(false);
 const selectedDocumentIds = ref<number[]>([]),
   mode = ref<QaMode>("auto"),
@@ -431,31 +337,17 @@ async function stopGeneration() {
     if (currentEpoch === epoch) canceling.value = false;
   }
 }
-const selectedCitation = ref<Citation | null>(null);
-const citationContext = ref("");
-watch(selectedCitation, (source, _previous, onCleanup) => {
-  citationContext.value = "";
-  if (!source?.location || source.sourceDeleted || source.sourceOutdated ||
-      !source.indexRevisionId ||
-      (source.location.contentType && source.location.contentType !== "native")) return;
-  const controller = new AbortController();
-  onCleanup(() => controller.abort());
-  void getCitationContext(source, controller.signal).then(({ text }) => {
-    if (!controller.signal.aborted && text.includes(source.text.trim()))
-      citationContext.value = text;
-  }).catch(() => {
-    // The saved evidence is still useful when the original revision is unavailable.
-  });
-}, { flush: "sync" });
+const openCitation = (source: Citation) => emit('open-source', {
+  documentId: source.documentId, versionId: source.versionId, citation: source,
+});
 let streamAbort: AbortController | undefined;
 let epoch = 0;
 const handleCitationClick = (event: MouseEvent, message: Message) => {
   const button = (event.target as HTMLElement).closest("[data-citation]");
-  if (button)
-    selectedCitation.value =
-      message.citations?.find(
-        (c) => c.number === Number(button.getAttribute("data-citation")),
-      ) || null;
+  if (button) {
+    const source = message.citations?.find(c => c.number === Number(button.getAttribute('data-citation')));
+    if (source) openCitation(source);
+  }
 };
 
 const toast = useToast();
@@ -471,10 +363,6 @@ const followingBottom = ref(true);
 let resizeObserver: ResizeObserver | undefined;
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 
-const apiKeyDialogVisible = ref(false);
-const apiKeyInput = ref("");
-const userApiKey = ref("");
-
 onMounted(() => {
   resizeObserver = new ResizeObserver(() => {
     if (followingBottom.value) void scrollToBottom(true, false);
@@ -482,28 +370,7 @@ onMounted(() => {
   });
   if (messagesContainer.value) resizeObserver.observe(messagesContainer.value);
   if (messagesContent.value) resizeObserver.observe(messagesContent.value);
-  const storedKey = localStorage.getItem("user_api_key");
-  if (storedKey) {
-    userApiKey.value = storedKey;
-    apiKeyInput.value = storedKey;
-  }
 });
-
-const openApiKeyDialog = () => {
-  apiKeyInput.value = userApiKey.value;
-  apiKeyDialogVisible.value = true;
-};
-
-const saveApiKey = () => {
-  if (!apiKeyInput.value.trim()) {
-    toast.warning("请输入有效的 API Key");
-    return;
-  }
-  userApiKey.value = apiKeyInput.value.trim();
-  localStorage.setItem("user_api_key", userApiKey.value);
-  apiKeyDialogVisible.value = false;
-  toast.success("API Key 已保存");
-};
 
 const updateScrollState = () => {
   const el = messagesContainer.value;
@@ -572,7 +439,6 @@ const reset = () => {
   debugRunId.value = null;
   loading.value = false;
   readOnly.value = false;
-  selectedCitation.value = null;
   chatId.value = null;
   messages.value = [];
   followingBottom.value = true;
@@ -581,7 +447,7 @@ const reset = () => {
   if (textareaRef.value) textareaRef.value.style.height = "auto";
 };
 
-defineExpose({ loadHistory, reset, openApiKeyDialog });
+defineExpose({ loadHistory, reset });
 
 watch(input, () => {
   adjustTextareaHeight();

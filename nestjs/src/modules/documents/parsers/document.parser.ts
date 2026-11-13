@@ -2,7 +2,8 @@
 import { Injectable, Optional, Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { ApiError } from '../../../common/api-error';
-import { ParsedDocument, paragraphBlocks } from './parsed-document';
+import { ParsedDocument, PdfSourceAnchor, paragraphBlocks } from './parsed-document';
+import { shiftSourceLocation, sliceSourceLocation } from './source-anchors';
 import { PdfVisualService, ParseContext, markPdfFailure } from './pdf-visual.service';
 import { localRendering } from './vision-scheduler';
 import { textPositions } from './pdf-layout';
@@ -54,11 +55,7 @@ export class DocumentParser {
       for (const block of page.blocks)
         blocks.push({
           ...block,
-          location: {
-            ...block.location,
-            start: block.location.start + offset,
-            end: block.location.end + offset,
-          },
+          location: shiftSourceLocation(block.location, offset),
         });
       offset += page.text.length + 1;
     }
@@ -203,6 +200,9 @@ export class DocumentParser {
         let previous: any;
         let pageText = '';
         const itemRanges: { start: number; end: number }[] = [];
+        const viewport = page.getViewport({ scale: 1 });
+        const positions = textPositions(content, viewport);
+        const sourcePositions = textPositions(content, viewport, { fontMetrics: true });
         for (const item of content.items as any[]) {
           if (!('str' in item)) continue;
           // PDF.js 可能用一个宽空白 item 表示栏间距。
@@ -220,14 +220,26 @@ export class DocumentParser {
           )
             pageText += '\n\n';
           const itemStart = pageText.length;
-          pageText += item.str + (item.hasEOL ? '\n' : '');
+          pageText += item.str;
           itemRanges.push({ start: itemStart, end: pageText.length });
+          if (item.hasEOL) pageText += '\n';
           previous = item;
         }
+        const nativeAnchors: PdfSourceAnchor[] = itemRanges.flatMap((range, index) => {
+          const position = sourcePositions[index];
+          if (!position?.text.trim() || range.end <= range.start) return [];
+          const box = position.bbox;
+          if (box[2] <= box[0] || box[3] <= box[1]) return [];
+          return [{ page: i, ...range, rects: [box], kind: 'native' as const }];
+        });
         // 每页独立保留局部偏移；收集整份文档时统一平移为全局偏移。
         const nativeBlocks = paragraphBlocks(pageText, i).map((b) => ({
           ...b,
-          location: { ...b.location, contentType: 'native' as const },
+          location: sliceSourceLocation(
+            { ...b.location, contentType: 'native' as const, anchorVersion: 1, anchors: nativeAnchors },
+            b.location.start,
+            b.location.end,
+          ),
         }));
         const entries: { order: number; block: ParsedDocument['blocks'][number] }[] =
           nativeBlocks.map((block, n) => ({ order: n, block }));
@@ -237,9 +249,6 @@ export class DocumentParser {
             if (result.stats)
               for (const key of Object.keys(counts) as (keyof typeof counts)[])
                 counts[key] += result.stats[key];
-            const positions = result.blocks.some((block) => block.regionImage?.kind === 'region')
-              ? textPositions(content, page.getViewport({ scale: 1 }))
-              : [];
             const paragraphItems = result.blocks.length
               ? nativeBlocks.map((b) =>
                   itemRanges
@@ -253,6 +262,9 @@ export class DocumentParser {
               const labels = { ocr: '图片文字识别', table: '表格识别', figure: '模型生成的图解' };
               const value = `[${labels[supplement.type]}]\n${supplement.text}`;
               const ref = supplement.regionImage;
+              // Labels are generated metadata; only recognized body text has source geometry.
+              const sourceBox = supplement.sourceBox ?? ref?.bbox;
+              const sourceStart = value.length - supplement.text.length;
               const related = paragraphItems
                 .map((items, index) =>
                   items.some((n) => supplement.textIndexes?.includes(n)) ? index + 1 : -1,
@@ -282,11 +294,23 @@ export class DocumentParser {
                     paragraph: null,
                     heading: null,
                     start: 0,
-                    end: 0,
+                    end: value.length,
                     contentType: supplement.type,
                     pageImage: result.image,
                     regionImage: ref,
                     relatedParagraphs: related,
+                    ...(sourceBox
+                      ? {
+                          anchorVersion: 1 as const,
+                          anchors: [{
+                            page: i,
+                            start: sourceStart,
+                            end: value.length,
+                            rects: [sourceBox],
+                            kind: supplement.anchorKind ?? ('region' as const),
+                          }],
+                        }
+                      : {}),
                   },
                 },
               });
@@ -303,7 +327,11 @@ export class DocumentParser {
           const start = pageText.length;
           blocks.push({
             ...block,
-            location: { ...block.location, start, end: start + block.text.length },
+            location: {
+              ...shiftSourceLocation(block.location, start - block.location.start),
+              start,
+              end: start + block.text.length,
+            },
           });
           pageText += block.text;
         }

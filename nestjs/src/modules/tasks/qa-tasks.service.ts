@@ -7,6 +7,7 @@ import { ApiError } from '../../common/api-error';
 import { SummaryService } from '../rag/summary.service';
 import { AgentQaTasksService } from './agent-qa.service';
 import { sealQaCredential, openQaCredential } from './qa-credentials';
+import { runWithTaskModels, sealRuntimeModels } from '../model-settings/model-runtime';
 
 const ended = (s: string) => ['completed', 'failed', 'partial_failed', 'canceled'].includes(s);
 
@@ -82,7 +83,7 @@ export class QaTasksService {
         retryable: 1,
         error: null,
         updatedAt: now(),
-        payload: { chatId, requestId, fingerprint, snapshot, credential: this.seal(apiKey) },
+        payload: { chatId, requestId, fingerprint, snapshot, credential: this.seal(apiKey), modelSnapshot: sealRuntimeModels(this.config) },
       });
       await tx.save('messages', {
         chatId,
@@ -97,6 +98,12 @@ export class QaTasksService {
     return this.accepted(accepted);
   }
   async process(id: number, attempt = 1, report?: (progress: object) => Promise<void>) {
+    const task = await this.store.get('tasks', id);
+    if (!task) return 'done';
+    return runWithTaskModels(this.config, { userId: task.userId, payload: task.payload }, () => this.processScoped(id, attempt, report));
+  }
+
+  private async processScoped(id: number, attempt: number, report?: (progress: object) => Promise<void>) {
     const current = await this.store.get('tasks', id);
     if (current?.payload?.engine === 'agentic-v1') {
       if (!this.agentTasks) throw new ApiError(503, 'Agent执行服务尚未加载');

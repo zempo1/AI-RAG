@@ -356,12 +356,15 @@ import {
   type UploadScope,
 } from "../../api/upload";
 import { useToast } from "../../composables/useToast";
+import type { DocumentTarget } from '../reader/types';
 
 const props = defineProps<{
   knowledgeBaseId: number | null;
   documentId: number | null;
 }>();
 const emit = defineEmits<{
+  (event: 'knowledge-base-deleted', id: number): void;
+  (event: "preview-document", target: DocumentTarget): void;
   (event: "knowledge-base-change", id: number): void;
   (event: "activated", filename: string, id: number | null): void;
   (event: "deleted", id: number): void;
@@ -589,7 +592,11 @@ function libraryCommand(command: string) {
   else if (command === "delete") void deleteLibrary();
 }
 function documentAction(command: string, doc: ManagedDocument) {
-  if (command === "activate") activate(doc);
+  if (command === 'preview') {
+    visible.value = false;
+    emit('preview-document', { documentId: doc.id, ...(doc.activeVersionId ? { versionId: doc.activeVersionId } : {}) });
+  }
+  else if (command === "activate") activate(doc);
   else if (command === "replace") chooseFile(doc);
   else if (command === "rename") renameDocument(doc);
   else if (command === "reindex") void run(() => api.reindexDocument(doc.id));
@@ -678,6 +685,7 @@ async function deleteLibrary() {
     return;
   await run(async () => {
     await api.deleteKnowledgeBase(props.knowledgeBaseId!);
+    emit('knowledge-base-deleted', props.knowledgeBaseId!);
     emit("activated", "", null);
     visible.value = false;
     const result = await api.listKnowledgeBases();

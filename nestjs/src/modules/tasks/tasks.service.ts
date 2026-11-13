@@ -23,6 +23,7 @@ export class TasksService {
       waitingUntil && Date.parse(waitingUntil) > Date.now() && !terminalTask(row.status);
     return {
       ...result,
+      payload: row.payload ? Object.fromEntries(['notBefore', 'indexProgress'].filter(key => row.payload[key] !== undefined).map(key => [key, row.payload[key]])) : null,
       ...(row.kind === 'qa'
         ? {
             payload: {

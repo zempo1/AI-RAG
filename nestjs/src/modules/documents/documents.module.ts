@@ -13,12 +13,14 @@ import { KnowledgeBasesController } from '../knowledge-bases/knowledge-bases.con
 import { LlmModule } from '../llm/llm.module';
 import { PageAssetsService } from './page-assets.service';
 import { PdfVisualService } from './parsers/pdf-visual.service';
+import { DocumentOriginalsService } from './document-originals.service';
 
 @Module({
   imports: [EmbeddingsModule, VectorStoreModule, KnowledgeBasesModule, TasksModule, LlmModule],
   controllers: [DocumentsController, KnowledgeBasesController],
   providers: [
     DocumentsService,
+    DocumentOriginalsService,
     DocumentParser,
     RecursiveChunker,
     ChunkUploadService,

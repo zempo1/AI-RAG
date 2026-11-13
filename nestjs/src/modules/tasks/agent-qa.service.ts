@@ -11,6 +11,7 @@ import { INTERRUPT } from '@langchain/langgraph-checkpoint';
 import { AgentExecutionRevoked, agentThreadId } from '../agent/agent-graph-owner';
 import { MysqlAgentCheckpointer } from '../agent/mysql-agent-checkpointer';
 import { sealQaCredential, openQaCredential } from './qa-credentials';
+import { runWithTaskModels, sealRuntimeModels } from '../model-settings/model-runtime';
 
 export { AgentExecutionRevoked } from '../agent/agent-graph-owner';
 interface AgentRequest {
@@ -86,7 +87,7 @@ export class AgentQaTasksService {
         payload: { engine: 'agentic-v1', chatId: chat.id, requestId: input.requestId, fingerprint: input.fingerprint,
           foreground: true, leaseUntil: Date.now() + 300000, graphVersion: 2,
           input: { question: input.question, documentIds: input.documentIds, mode: input.mode || 'auto', history: messages },
-          credential: sealQaCredential(this.config.getOrThrow('JWT_SECRET'), input.apiKey) },
+          credential: sealQaCredential(this.config.getOrThrow('JWT_SECRET'), input.apiKey), modelSnapshot: sealRuntimeModels(this.config) },
       });
       task = await tx.save('tasks', { id: task.id, payload: {
         ...task.payload, graphThreadId: agentThreadId(task.id),
@@ -249,6 +250,12 @@ export class AgentQaTasksService {
   }
 
   async process(id: number, attempt = 1, report?: (progress: object) => Promise<void>) {
+    const task = await this.store.get('tasks', id);
+    if (!task) return 'done';
+    return runWithTaskModels(this.config, { userId: task.userId, payload: task.payload }, () => this.processScoped(id, attempt, report));
+  }
+
+  private async processScoped(id: number, attempt: number, report?: (progress: object) => Promise<void>) {
     const initial = await this.store.get('tasks', id);
     if (!initial || initial.payload?.engine !== 'agentic-v1') return 'done';
     const token = randomUUID();

@@ -44,10 +44,8 @@ export async function sendStreamChat(
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    const token = localStorage.getItem("token"),
-      apiKey = localStorage.getItem("user_api_key");
+    const token = localStorage.getItem("token");
     if (token) headers.Authorization = "Bearer " + token;
-    if (apiKey) headers["X-Api-Key"] = apiKey;
     const response = await fetch("/api/stream-chat", {
       method: "POST",
       headers,

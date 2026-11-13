@@ -9,10 +9,10 @@
           <h2>RAG 问答</h2>
         </div>
         <div v-if="!isCollapsed" class="settings-icon-wrapper">
-          <el-tooltip content="API Key 设置" placement="bottom">
-            <div class="settings-icon" @click="handleOpenSettings">
+          <el-tooltip content="模型设置" placement="bottom">
+            <button type="button" class="settings-icon" aria-label="模型设置" @click="handleOpenSettings">
               <el-icon><Key /></el-icon>
-            </div>
+            </button>
           </el-tooltip>
         </div>
       </div>
@@ -75,6 +75,8 @@
           @activated="handleFileActivated"
           @deleted="(id) => emit('file-deleted', id)"
           @version-changed="emit('version-changed')"
+          @preview-document="target => emit('preview-document', target)"
+          @knowledge-base-deleted="id => emit('knowledge-base-deleted', id)"
         />
       </div>
       <div class="upload-collapsed" v-show="isCollapsed">
@@ -137,6 +139,7 @@ import { useConfirm } from "../../composables/useConfirm";
 import { useToast } from "../../composables/useToast";
 import type { ChatItem } from "../../types";
 import request from "../../utils/request";
+import type { DocumentTarget } from '../reader/types';
 
 const props = defineProps<{
   username: string;
@@ -146,6 +149,8 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  (e: 'knowledge-base-deleted', id: number): void;
+  (e: 'preview-document', target: DocumentTarget): void;
   (e: "new-chat"): void;
   (e: "select-chat", id: number): void;
   (e: "delete-chat", id: number): void;

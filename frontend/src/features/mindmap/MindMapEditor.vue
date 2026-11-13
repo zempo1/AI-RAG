@@ -279,6 +279,8 @@ onBeforeUnmount(() => {
     mindMap.destroy();
   }
 });
+
+
 </script>
 
 <style lang="scss" src="./MindMapEditor.scss" scoped></style>

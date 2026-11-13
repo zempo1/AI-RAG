@@ -11,6 +11,7 @@ import { TasksService, terminalTask } from '../tasks/tasks.service';
 import { currentModelProfile } from '../embeddings/model-profile';
 import { embeddingFingerprint } from '../vector-store/qdrant-vector-store.service';
 import { ApiError } from '../../common/api-error';
+import { sealRuntimeModels } from '../model-settings/model-runtime';
 import { expandCitationContext } from './citation-context';
 
 export interface IngestOptions {
@@ -198,6 +199,7 @@ export class DocumentsService {
       parentTaskId,
       kind: 'index',
       idempotencyKey,
+      payload: { modelSnapshot: sealRuntimeModels(this.config) },
     });
     // 同一文档以最新目标索引为准；取消未完成的旧构建，防止旧结果晚到后覆盖新版本。
     for (const previous of await tx.list('tasks', { documentId: doc.id })) {

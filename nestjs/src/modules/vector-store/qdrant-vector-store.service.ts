@@ -1,5 +1,6 @@
 /** 实现 Qdrant 向量读写、检索及范围过滤。 */
 import { Injectable } from '@nestjs/common';
+import { withoutSourceGeometry } from '../documents/parsers/source-anchors';
 import { ConfigService } from '@nestjs/config';
 import { QdrantClient } from '@qdrant/js-client-rest';
 import {
@@ -97,7 +98,7 @@ export class QdrantVectorStore extends VectorStore {
       points: segments.map((segment, i) => ({
         id: pointId(segment),
         vector: vectors[i],
-        payload: { ...segment },
+        payload: withoutSourceGeometry({ ...segment }),
       })),
     });
   }

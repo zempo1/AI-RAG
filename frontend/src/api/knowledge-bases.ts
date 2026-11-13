@@ -81,6 +81,15 @@ export interface Citation {
     heading: string | null;
     start: number;
     end: number;
+    anchorVersion?: 1;
+    anchors?: {
+      page: number;
+      /** 所属 indexRevision 最终正文中的 UTF-16 范围。 */
+      start: number;
+      end: number;
+      rects: [number, number, number, number][];
+      kind: 'native' | 'ocr' | 'region';
+    }[];
     contentType?: 'native' | 'ocr' | 'table' | 'figure';
     pageImage?: { versionId: number; page: number; profile: string };
     regionImage?: { versionId: number; page: number; profile: string; regionId: string;

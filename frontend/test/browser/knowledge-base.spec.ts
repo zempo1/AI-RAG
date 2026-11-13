@@ -665,7 +665,7 @@ test("loads deleted-library history as read-only and starts a fresh conversation
   await expect(
     page.getByText("来源已删除，下面展示回答时保存的原文快照。"),
   ).toBeVisible();
-  await page.locator(".el-drawer__close-btn:visible").click();
+  await page.getByRole('button', { name: '关闭阅读器' }).click();
   await page.locator(".library-picker > .el-select").click();
   await page
     .locator(".el-select-dropdown__item:visible")
@@ -1030,8 +1030,11 @@ test("empty states and task failures remain useful without clearing current docu
   ).toBeVisible();
   unavailable = true;
   await page.getByRole("button", { name: "刷新文档", exact: true }).click();
-  await expect(page.locator(".load-error")).toContainText("暂时无法更新文档");
+  await expect(page.locator(".load-error")).toContainText("自动重试");
   await expect(page.locator(".task-list")).toContainText("部分失败");
+  unavailable = false;
+  await expect(page.locator('.load-error')).toBeHidden({ timeout: 10000 });
+  await expect(page.locator('.task-list')).toContainText('部分失败');
 });
 
 test('chat scroll navigation preserves reading position when an answer finishes', async ({ page }) => {

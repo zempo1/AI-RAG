@@ -26,6 +26,7 @@ import {
 import { VectorStore, Segment } from '../vector-store/vector-store.interface';
 import { TasksService, terminalTask } from '../tasks/tasks.service';
 import { PageAssetsService } from './page-assets.service';
+import { runWithTaskModels } from '../model-settings/model-runtime';
 
 class Superseded extends Error {}
 class DependencyPending extends Error {}
@@ -53,6 +54,12 @@ export class IndexingService {
   ) {}
 
   async process(id: number, attempt = 1, report?: (progress: object) => Promise<void>) {
+    const task = await this.store.get('tasks', id);
+    if (!task) return;
+    return runWithTaskModels(this.config, { userId: task.userId, payload: task.payload }, () => this.processScoped(id, attempt, report));
+  }
+
+  private async processScoped(id: number, attempt: number, report?: (progress: object) => Promise<void>) {
     let task = await this.store.get('tasks', id);
     if (!task || task.kind === 'rebuild') return;
     if (terminalTask(task.status)) {
@@ -365,8 +372,8 @@ export class IndexingService {
       await this.withVectorExecution(task, token, () =>
         Promise.resolve(this.vectors.removeRevision(revision.id, task.userId, profile)),
       );
-    const batchSize = profile.provider === 'dashscope' ? REMOTE_EMBEDDING_BATCH_SIZE : 16;
-    const concurrency = profile.provider === 'dashscope' ? REMOTE_EMBEDDING_CONCURRENCY : 1;
+    const batchSize = profile.provider !== 'local' ? REMOTE_EMBEDDING_BATCH_SIZE : 16;
+    const concurrency = profile.provider !== 'local' ? REMOTE_EMBEDDING_CONCURRENCY : 1;
     const metrics = {
       chunkMs: 0,
       embeddingBatchMs: 0,
@@ -561,7 +568,7 @@ export class IndexingService {
         kind: 'embedding-batch-v1',
         profile,
         baseUrl:
-          profile.provider === 'dashscope' ? this.config.get('EMBEDDING_BASE_URL') : undefined,
+          profile.provider !== 'local' ? profile.baseUrl || this.config.get('EMBEDDING_BASE_URL') : undefined,
       }),
     );
     const directory = this.assets?.directory(context, cacheProfile);

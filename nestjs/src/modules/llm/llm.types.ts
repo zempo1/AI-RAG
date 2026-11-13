@@ -34,6 +34,7 @@ export interface ModelCallObserver {
   settle(reservationId: string, outcome: ModelCallOutcome): Promise<void>;
 }
 export interface ModelExecutionOptions {
+  role?: 'chat' | 'agent';
   signal?: AbortSignal;
   observer?: ModelCallObserver;
   model?: string;

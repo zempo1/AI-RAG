@@ -2,6 +2,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiError } from '../../common/api-error';
+import { modelBinding, redactModelError } from '../model-settings/model-runtime';
 import { ModelUsage, ModelOutputError, ModelExecutionOptions, ModelCallRequest, ModelCallOutcome, ToolMessage, ToolDefinition, ToolInvocationOptions, ToolInvocationResult } from './llm.types';
 export * from './llm.types';
 
@@ -16,26 +17,22 @@ export class LlmService {
   constructor(private readonly config: ConfigService) {}
 
   private async model(apiKey?: string, streaming = false, vision = false, execution: ModelExecutionOptions = {}): Promise<any> {
-    // 优先使用本次请求携带的 Key，否则使用服务端配置。
-    const key =
-      (vision && this.config.get<string>('VISION_API_KEY')) ||
-      apiKey?.trim() ||
-      this.config.get<string>('CHAT_API_KEY');
+    const binding = modelBinding(this.config, vision ? 'vision' : execution.role || 'chat');
+    // Account bindings are indivisible; stale browser headers cannot override their credential.
+    const key = binding.custom ? binding.apiKey :
+      (vision && this.config.get<string>('VISION_API_KEY')) || apiKey?.trim() || binding.apiKey;
     if (!key)
       throw new ApiError(
         500,
         vision ? '请配置 VISION_API_KEY 或 CHAT_API_KEY' : '请配置 CHAT_API_KEY 或提供 X-Api-Key',
       );
-    const model = vision
-      ? this.config.get('VISION_MODEL') || 'qwen3.8-flash'
-      : execution.model || this.config.getOrThrow('CHAT_MODEL');
+    const model = binding.custom || vision ? binding.model : execution.model || binding.model;
     const { ChatOpenAI } = await import('@langchain/openai');
     return new ChatOpenAI({
       apiKey: key,
       model,
       configuration: {
-        baseURL:
-          (vision && this.config.get('VISION_BASE_URL')) || this.config.getOrThrow('CHAT_BASE_URL'),
+        baseURL: binding.baseUrl,
       },
       maxRetries: 0,
       // Qwen hybrid models otherwise spend the first part of the stream reasoning.
@@ -73,7 +70,7 @@ export class LlmService {
     this.logger.log(
       JSON.stringify({
         event: 'vision_usage',
-        model: this.config.get('VISION_MODEL') || 'qwen3.8-flash',
+        model: modelBinding(this.config, 'vision').model,
         images: images.length,
         inputTokens: usage?.input_tokens ?? null,
         outputTokens: usage?.output_tokens ?? null,
@@ -94,7 +91,8 @@ export class LlmService {
   }
 
   private request(kind: ModelCallRequest['kind'], input: unknown, execution: ModelExecutionOptions, vision = false): ModelCallRequest {
-    return { kind, input, model: vision ? this.config.get('VISION_MODEL') || 'qwen3.8-flash' : execution.model || this.config.get('CHAT_MODEL') || 'unconfigured', maxOutputTokens: this.outputTokens(execution, vision) };
+    const binding = modelBinding(this.config, vision ? 'vision' : execution.role || 'chat');
+    return { kind, input, model: binding.custom || vision ? binding.model : execution.model || binding.model, maxOutputTokens: this.outputTokens(execution, vision) };
   }
 
   private outputTokens(execution: ModelExecutionOptions, vision: boolean): number {
@@ -113,16 +111,17 @@ export class LlmService {
       execution.signal?.throwIfAborted();
       outcome = { status: 'success', usage };
     } catch (error) {
-      outcome = { status: execution.signal?.aborted ? 'cancelled' : 'error', usage, error };
+      const safe = redactModelError(this.config, error, (execution as ToolInvocationOptions).apiKey);
+      outcome = { status: execution.signal?.aborted ? 'cancelled' : 'error', usage, error: safe };
       if (reservation !== undefined) await execution.observer!.settle(reservation, outcome);
-      throw error;
+      throw safe;
     }
     if (reservation !== undefined) await execution.observer!.settle(reservation, outcome);
     return result!;
   }
 
   async complete(prompt: string, apiKey?: string, images: VisionImage[] = [], signal?: AbortSignal, execution: ModelExecutionOptions = {}): Promise<string> {
-    const options = { ...execution, signal: this.signal(signal, execution) };
+    const options = { ...execution, apiKey, signal: this.signal(signal, execution) };
     const input = this.input(prompt, images);
     return this.observed(this.request('complete', input, execution, images.length > 0), options, async record => {
       const message = await (await this.model(apiKey, false, images.length > 0, execution)).invoke(input, { signal: options.signal });
@@ -169,7 +168,7 @@ export class LlmService {
       if (!hasContent) throw new Error('模型返回空答案，请稍后重试');
       mergedSignal?.throwIfAborted();
       completed = true;
-    } catch (caught) { error = caught; throw caught; }
+    } catch (caught) { error = redactModelError(this.config, caught, apiKey); throw error; }
     finally {
       if (reservation !== undefined) await execution.observer!.settle(reservation, { status: completed ? 'success' : mergedSignal?.aborted || error === undefined ? 'cancelled' : 'error', usage, error });
     }

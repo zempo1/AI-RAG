@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { ParsedBlock, ParsedDocument } from '../parsers/parsed-document';
 import { TokenizerService } from '../../embeddings/tokenizer.service';
 import { ModelProfile } from '../../embeddings/model-profile';
+import { sliceSourceLocation, mergeSourceLocations } from '../parsers/source-anchors';
 
 @Injectable()
 export class RecursiveChunker {
@@ -26,7 +27,7 @@ export class RecursiveChunker {
         previous.contextText === block.contextText &&
         block.location.start >= previous.location.end
       ) {
-        previous.location.end = block.location.end;
+        previous.location = mergeSourceLocations(previous.location, block.location);
         previous.text = document.text.slice(previous.location.start, block.location.end);
       } else groups.push({ ...block, location: { ...block.location } });
     }
@@ -39,11 +40,12 @@ export class RecursiveChunker {
       // 父块保留较完整上下文；子块负责精确检索，命中后可展开父块补足语义。
       for (const parent of await tokenizer.windows(group.text, 1536, 0, profile.tokenizer)) {
         const parentStart = group.location.start + parent.start;
-        const parentLocation = {
-          ...group.location,
-          start: textOffset + parentStart,
-          end: textOffset + group.location.start + parent.end,
-        };
+        const parentLocation = sliceSourceLocation(
+          group.location,
+          parentStart,
+          group.location.start + parent.end,
+          textOffset,
+        );
         const parentId = `${parentLocation.page ?? 'legacy'}:${parentLocation.start}:${parentLocation.end}`;
         // 子块保留 token 重叠，减少句子在切块边缘被截断而导致漏检。
         for (const child of await tokenizer.windows(parent.text, 384, 64, profile.tokenizer)) {
@@ -65,7 +67,7 @@ export class RecursiveChunker {
           output.push({
             text: child.text,
             location: {
-              ...group.location,
+              ...sliceSourceLocation(group.location, start, end, textOffset),
               paragraph: initialBlock?.location.paragraph ?? group.location.paragraph,
               start: start + textOffset,
               end: end + textOffset,
@@ -105,7 +107,12 @@ export class RecursiveChunker {
         const start = textOffset + block.location.start + index;
         result.push({
           text,
-          location: { ...block.location, start, end: start + text.length },
+          location: sliceSourceLocation(
+            block.location,
+            start - textOffset,
+            start - textOffset + text.length,
+            textOffset,
+          ),
           ...(block.contextText
             ? {
                 retrievalMetadata: {

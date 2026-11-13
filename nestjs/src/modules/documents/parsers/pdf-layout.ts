@@ -223,23 +223,43 @@ async function repeatedOperations(document: any, ops: any): Promise<Set<string>>
   return pending;
 }
 
-export function textPositions(content: any, viewport: any): TextPosition[] {
+export function textPositions(
+  content: any,
+  viewport: any,
+  options: { fontMetrics?: boolean } = {},
+): TextPosition[] {
   return content.items
     .filter((i: any) => typeof i.str === 'string')
     .map((item: any, index: number) => {
       const [a, b, c, d, e, f] = viewport.transform;
       const x = item.transform[4],
         y = item.transform[5];
-      const angle = Math.atan2(item.transform[1], item.transform[0]);
-      const w = item.width || 0,
-        h = Math.abs(item.height || 10);
+      // Layout coverage thresholds use the original full-em boxes. Font metrics
+      // are opt-in for source highlighting and must not change recognition routing.
+      const style = options.fontMetrics ? content.styles?.[item.fontName] : undefined;
+      const vertical = style?.vertical === true;
+      // PDF.js TextLayer rotates vertical fonts by +π/2 in DOM coordinates.
+      // In PDF coordinates that is -π/2, with geom.height as the run advance;
+      // the font size still comes from the transform, not the entire run length.
+      const angle = Math.atan2(item.transform[1], item.transform[0]) - (vertical ? Math.PI / 2 : 0);
+      const w = vertical ? Math.abs(item.height || 0) : item.width || 0;
+      const h = vertical
+        ? Math.hypot(item.transform[2], item.transform[3])
+        : Math.abs(item.height || 10);
+      const ascent = Number.isFinite(style?.ascent) ? style.ascent : 1;
+      const descent = Number.isFinite(style?.descent) ? style.descent : 0;
+      const lower = h * descent,
+        upper = h * ascent;
       const corners = [
-        [x, y],
-        [x + w * Math.cos(angle), y + w * Math.sin(angle)],
-        [x - h * Math.sin(angle), y + h * Math.cos(angle)],
+        [x - lower * Math.sin(angle), y + lower * Math.cos(angle)],
         [
-          x + w * Math.cos(angle) - h * Math.sin(angle),
-          y + w * Math.sin(angle) + h * Math.cos(angle),
+          x + w * Math.cos(angle) - lower * Math.sin(angle),
+          y + w * Math.sin(angle) + lower * Math.cos(angle),
+        ],
+        [x - upper * Math.sin(angle), y + upper * Math.cos(angle)],
+        [
+          x + w * Math.cos(angle) - upper * Math.sin(angle),
+          y + w * Math.sin(angle) + upper * Math.cos(angle),
         ],
       ];
       const points = corners.map(([px, py]) => [

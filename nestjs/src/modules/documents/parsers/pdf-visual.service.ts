@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { modelBinding } from '../../model-settings/model-runtime';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -49,6 +50,9 @@ export interface VisualBlock {
   regionImage?: RegionImageRef;
   contextText?: string;
   textIndexes?: number[];
+  /** Source geometry in the current rotated/cropped page viewport, independent of the image crop. */
+  sourceBox?: RegionBox;
+  anchorKind?: 'ocr' | 'region';
 }
 export interface VisualPage {
   image?: PageImageRef;
@@ -112,8 +116,8 @@ export class PdfVisualService {
           prompt: PDF_VISION_PROMPT,
           scale: 2,
           maxPixels: 8000000,
-          model: this.config.get('VISION_MODEL') || 'qwen3.8-flash',
-          url: this.config.get('VISION_BASE_URL') || this.config.get('CHAT_BASE_URL'),
+          model: modelBinding(this.config, 'vision').model,
+          url: modelBinding(this.config, 'vision').baseUrl,
           output: this.config.get('VISION_OUTPUT_TOKENS') || 8192,
           analysisProfile,
         }),
@@ -121,7 +125,7 @@ export class PdfVisualService {
       .digest('hex');
   }
 
-  private blocks(raw: unknown): VisualBlock[] {
+  private blocks(raw: unknown, geometry = false): VisualBlock[] {
     const rows = (raw as any)?.blocks;
     if (!Array.isArray(rows)) throw new VisionOutputError('视觉解析格式错误：blocks 必须为数组');
     const output: VisualBlock[] = [];
@@ -133,7 +137,25 @@ export class PdfVisualService {
         );
       if (typeof b.text !== 'string')
         throw new VisionOutputError('视觉解析格式错误：blocks[' + i + '].text 必须为字符串');
-      if (b.text.trim()) output.push({ type: b.type, text: b.text.trim() });
+      if (
+        geometry &&
+        (!Array.isArray(b.sourceBox) ||
+          b.sourceBox.length !== 4 ||
+          !b.sourceBox.every(
+            (value: unknown) =>
+              typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1,
+          ) ||
+          b.sourceBox[2] <= b.sourceBox[0] ||
+          b.sourceBox[3] <= b.sourceBox[1] ||
+          !['ocr', 'region'].includes(b.anchorKind))
+      )
+        throw new VisionOutputError('视觉解析缓存缺少有效来源坐标');
+      if (b.text.trim())
+        output.push({
+          type: b.type,
+          text: b.text.trim(),
+          ...(geometry ? { sourceBox: [...b.sourceBox] as RegionBox, anchorKind: b.anchorKind } : {}),
+        });
     }
     return output;
   }
@@ -346,7 +368,15 @@ export class PdfVisualService {
     const actual = reliable.map((b) => pageBox(b.bbox));
     const missing = missingOcrText(expected, actual);
     if (!expected.length && !reliable.length) missing.push(region.bbox);
-    return { blocks: reliable.map((b) => ({ type: 'ocr', text: b.text.trim() })), missing };
+    return {
+      blocks: reliable.map((b) => ({
+        type: 'ocr',
+        text: b.text.trim(),
+        sourceBox: pageBox(b.bbox),
+        anchorKind: 'ocr',
+      })),
+      missing,
+    };
   }
 
   private async ocr(
@@ -568,6 +598,7 @@ export class PdfVisualService {
       if (
         cached &&
         typeof cached === 'object' &&
+        cached.geometryVersion === 1 &&
         cached.nativeHash === sha256(native) &&
         cached.contextHash === sha256(region.context) &&
         cached.manifest === manifest &&
@@ -579,7 +610,7 @@ export class PdfVisualService {
           scope,
         ))
       ) {
-        cachedBlocks = this.blocks(cached);
+        cachedBlocks = this.blocks(cached, true);
       }
     } catch (error: any) {
       if (error.code && error.code !== 'ENOENT') throw error;
@@ -629,7 +660,7 @@ export class PdfVisualService {
             profile: this.profile(target.analysisProfile || manifest),
           }),
         );
-        return this.sharedRecognition<VisualBlock[]>(
+        const recognized = await this.sharedRecognition<VisualBlock[]>(
           join(recognitionPath, 'vision-' + key + '.json'),
           scope,
           async () => {
@@ -638,6 +669,13 @@ export class PdfVisualService {
           },
           (raw) => this.blocks({ blocks: raw }),
         );
+        // Recognition caches contain only model output: identical pixels may be used
+        // on another page or crop. Attach the current target after cache lookup.
+        return recognized.map((block) => ({
+          ...block,
+          sourceBox: [...target.bbox] as RegionBox,
+          anchorKind: 'region' as const,
+        }));
       };
       let parsed: VisualBlock[];
       if (local) {
@@ -676,6 +714,7 @@ export class PdfVisualService {
       await this.publish(
         join(path, stem + '.json'),
         JSON.stringify({
+          geometryVersion: 1,
           blocks,
           image,
           nativeHash: sha256(native),

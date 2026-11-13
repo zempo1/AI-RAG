@@ -10,6 +10,7 @@ import { EvidenceSnapshot } from './quality.types';
 import { OriginalEvidence } from './retrieval.types';
 import { ModelExecutionOptions, ModelOutputError } from '../llm/llm.types';
 import { AgentLimitError } from '../agent/agent-budget';
+import { bindingIdentity, modelBinding } from '../model-settings/model-runtime';
 
 @Injectable()
 export class SummaryService {
@@ -87,6 +88,7 @@ export class SummaryService {
           'agent-v3',
           meta.revisions,
           execution.model || this.config.get('CHAT_MODEL'),
+          bindingIdentity(modelBinding(this.config, execution.role || 'chat')),
           meta.question,
           local.map((v) => [v.evidenceId, v.text]),
         ]),
@@ -268,7 +270,7 @@ export class SummaryService {
           .update(
             JSON.stringify([
               snapshot.revisions,
-              this.config.get('CHAT_MODEL'),
+              bindingIdentity(modelBinding(this.config, 'chat')),
               question,
               sources.map((s) => [s.chunkId, s.text]),
             ]),

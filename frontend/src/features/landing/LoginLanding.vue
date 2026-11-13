@@ -235,6 +235,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   clearInterval(streamInterval);
 });
+
+
+
 </script>
 
 <style lang="scss" src="./LoginLanding.scss" scoped></style>

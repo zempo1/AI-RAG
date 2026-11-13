@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Header,
   HttpCode,
   Param,
@@ -10,6 +11,7 @@ import {
   Post,
   Put,
   Query,
+  Req,
   Res,
   UploadedFile,
   UseInterceptors,
@@ -22,7 +24,10 @@ import { DocumentUpdateDto } from '../knowledge-bases/dto/knowledge-base.dto';
 import { UserId } from '../auth/auth.guard';
 import { IdPipe } from '../../common/pipes/id.pipe';
 import { ApiError } from '../../common/api-error';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
+import { createReadStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import { byteRange, DocumentOriginalsService } from './document-originals.service';
 import { PageAssetsService } from './page-assets.service';
 
 const upload = FileInterceptor('file', {
@@ -35,6 +40,7 @@ export class DocumentsController {
     private readonly documents: DocumentsService,
     private readonly chunks: ChunkUploadService,
     private readonly assets: PageAssetsService,
+    private readonly originals: DocumentOriginalsService,
   ) {}
 
   @Post('upload')
@@ -67,6 +73,61 @@ export class DocumentsController {
   @Get('documents')
   list(@UserId() user: number) {
     return this.documents.list(user);
+  }
+
+  @Get('documents/:id/preview')
+  @Header('Cache-Control', 'private, no-store')
+  preview(
+    @Param('id', IdPipe) id: number,
+    @UserId() user: number,
+    @Query('versionId') versionId?: string,
+  ) {
+    const version = versionId === undefined ? undefined : Number(versionId);
+    if (version !== undefined && (!Number.isSafeInteger(version) || version < 1))
+      throw new ApiError(400, '文档版本无效');
+    return this.originals.preview(user, id, version);
+  }
+
+  // Express also routes HEAD through GET; the handler omits the body explicitly.
+  @Get('documents/:id/versions/:versionId/original')
+  async original(
+    @Param('id', IdPipe) id: number,
+    @Param('versionId', IdPipe) versionId: number,
+    @UserId() user: number,
+    @Headers('range') range: string | undefined,
+    @Req() request: Request,
+    @Res() response: Response,
+  ) {
+    const file = await this.originals.file(user, id, versionId);
+    response.setHeader('Content-Type', 'application/pdf');
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename*=UTF-8''${encodeURIComponent(file.filename).replace(/'/g, '%27')}`,
+    );
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('Accept-Ranges', 'bytes');
+    let selected: ReturnType<typeof byteRange>;
+    try {
+      selected = byteRange(request.method === 'HEAD' ? undefined : range, file.size);
+    } catch {
+      response.setHeader('Content-Range', `bytes */${file.size}`);
+      response.status(416).end();
+      return;
+    }
+    response.status(selected ? 206 : 200);
+    response.setHeader('Content-Length', selected ? selected.end - selected.start + 1 : file.size);
+    if (selected)
+      response.setHeader('Content-Range', `bytes ${selected.start}-${selected.end}/${file.size}`);
+    if (request.method === 'HEAD') {
+      response.end();
+      return;
+    }
+    try {
+      await pipeline(createReadStream(file.path, selected || undefined), response);
+    } catch (error) {
+      if (!response.destroyed) throw error;
+    }
   }
 
   @Get('documents/:id/versions/:versionId/pages/:page/image')

@@ -2,6 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiError } from '../../common/api-error';
+import { modelBinding } from '../model-settings/model-runtime';
 import { QueryMode, HistoryTurn } from './quality.types';
 
 @Injectable()
@@ -17,7 +18,8 @@ export class QualityModelsService {
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(Number(this.config.get('QUALITY_MODEL_TIMEOUT_MS') || 20000))]) : AbortSignal.timeout(Number(this.config.get('QUALITY_MODEL_TIMEOUT_MS') || 20000)),
     });
     if (!response.ok) throw new ApiError(503, '检索模型服务不可用（HTTP ' + response.status + '）');
-    return response.json() as Promise<any>;
+    try { return await response.json() as any; }
+    catch { throw new ApiError(503, '检索模型接口返回无效 JSON 响应'); }
   }
   async plan(
     question: string,
@@ -25,17 +27,13 @@ export class QualityModelsService {
     documents: { id: number; filename: string }[],
     signal?: AbortSignal,
   ) {
-    const base =
-      this.config.get<string>('QUERY_PLAN_BASE_URL') ||
-      this.config.get<string>('CHAT_BASE_URL') ||
-      '';
-    const key =
-      this.config.get<string>('QUERY_PLAN_API_KEY') || this.config.get<string>('CHAT_API_KEY');
+    const binding = modelBinding(this.config, 'queryPlan');
+    const base = binding.baseUrl, key = binding.apiKey;
     const response = await this.request(base.replace(/\/$/, '') + '/chat/completions', key, {
-      model: this.config.get('QUERY_PLAN_MODEL') || this.config.get('CHAT_MODEL'),
+      model: binding.model,
       temperature: 0,
       max_tokens: 1024,
-      ...(/^qwen/i.test(this.config.get('QUERY_PLAN_MODEL') || this.config.get('CHAT_MODEL') || '')
+      ...(/^qwen/i.test(binding.model)
         ? { enable_thinking: false }
         : {}),
       response_format: { type: 'json_object' },
@@ -50,7 +48,9 @@ export class QualityModelsService {
     }, signal);
     const text = response.choices?.[0]?.message?.content;
     // 模型生成的 JSON 也必须校验结构；具体文档 ID 的权限还会由 RagService 再核对。
-    const plan = JSON.parse(text);
+    let plan: any;
+    try { plan = JSON.parse(text); }
+    catch { throw new ApiError(503, '查询规划模型返回无效 JSON 内容'); }
     if (
       (plan.route !== undefined && !['general', 'document'].includes(plan.route)) ||
       typeof plan.query !== 'string' ||
@@ -74,17 +74,17 @@ export class QualityModelsService {
     };
   }
   async rerank(question: string, texts: string[], signal?: AbortSignal) {
-    const url =
-      this.config.get<string>('RERANK_URL') ||
-      'https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank';
-    const model = this.config.get<string>('RERANK_MODEL') || 'qwen3.7-text-rerank';
+    const binding = modelBinding(this.config, 'rerank');
+    const url = binding.baseUrl, model = binding.model;
     const parameters = model === 'qwen3.7-text-rerank'
       ? { top_n: texts.length, instruct: 'Given a web search query, retrieve relevant passages that answer the query.' }
       : { top_n: texts.length, return_documents: false };
     const response = await this.request(
       url,
-      this.config.get('RERANK_API_KEY') || this.config.get('CHAT_API_KEY'),
-      {
+      binding.apiKey,
+      binding.provider === 'siliconflow' ? {
+        model, query: question, documents: texts, top_n: texts.length, return_documents: false,
+      } : {
         model,
         input: { query: question, documents: texts },
         parameters,

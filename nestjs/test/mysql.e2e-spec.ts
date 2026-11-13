@@ -17,6 +17,8 @@ import { ConfigService } from '@nestjs/config';
 import { AgentService } from '../src/modules/agent/agent.service';
 import { MysqlAgentCheckpointer } from '../src/modules/agent/mysql-agent-checkpointer';
 import { AgentQaTasksService } from '../src/modules/tasks/agent-qa.service';
+import { ModelSettingsService } from '../src/modules/model-settings/model-settings.service';
+import { ModelSettings1794355200000 } from '../src/persistence/migrations/1794355200000-model-settings';
 import { HistoryService } from '../src/modules/history/history.service';
 import { KnowledgeBasesService } from '../src/modules/knowledge-bases/knowledge-bases.service';
 import type { ModelExecutionOptions } from '../src/modules/llm/llm.types';
@@ -82,6 +84,25 @@ const enabled = process.env.MYSQL_INTEGRATION === '1';
     store = new MysqlStore(source.manager);
     expect((await store.get('documents', doc.id))?.content).toBe('持久化内容');
   });
+  it('persists account models across database reconnects and applies the additive upgrade idempotently', async () => {
+    const runner = source.createQueryRunner();
+    try { await new ModelSettings1794355200000().up(runner); await new ModelSettings1794355200000().up(runner); }
+    finally { await runner.release(); }
+    const user = await store.save('users', { username: 'model-settings-mysql', password: 'hash' });
+    const config = new ConfigService({ JWT_SECRET: 'mysql-model-setting-secret-32-characters' });
+    await new ModelSettingsService(store, config).save(user.id, 'embedding', { provider: 'siliconflow',
+      baseUrl: 'https://api.siliconflow.cn/v1', model: 'BAAI/bge-m3', apiKey: 'mysql-private-key', dimensions: 1024, sendDimensions: false });
+    const [raw] = await source.query('SELECT encrypted_api_key, binding FROM user_model_settings WHERE user_id = ?', [user.id]);
+    expect(JSON.stringify(raw)).not.toContain('mysql-private-key');
+    await source.destroy(); await source.initialize(); store = new MysqlStore(source.manager);
+    const service = new ModelSettingsService(store, config);
+    expect((await service.resolveRuntime(user.id)).bindings.embedding.apiKey).toBe('mysql-private-key');
+    expect((await service.list(user.id)).find(r => r.role === 'embedding')).toMatchObject({ model: 'BAAI/bge-m3', source: 'custom', hasApiKey: true });
+    await service.reset(user.id, 'embedding');
+    expect(await store.list('modelSettings', { userId: user.id })).toHaveLength(0);
+    await store.delete('users', user.id);
+  });
+
   it('serializes a document vector lease across sessions without blocking other documents', async () => {
     let entered!: () => void;
     let release!: () => void;
