@@ -10,6 +10,9 @@ import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.servic
 import { Store, Row } from '../../persistence/store';
 import { ApiError } from '../../common/api-error';
 import { Citation } from './citations';
+import { pdfReadingContext } from './pdf-reading-context';
+import { splitPdfCitation } from './pdf-citation-segments';
+import { structuralPdfCitations } from './pdf-structural-citations';
 import { sliceSourceLocation } from '../documents/parsers/source-anchors';
 import { LexicalIndex, searchLexical, fuse, Scored } from './retrieval-algorithms';
 import { QualityModelsService } from './quality-models.service';
@@ -252,19 +255,33 @@ export class RetrievalService {
     return { evidence: selected.map(c => this.original(this.citation(session,c))), complete, total: rows.length, nextCursor: complete ? undefined : cursor+selected.length };
   }
 
-  context(sources: Citation[]) {
-    return sources.map(s => '['+s.number+'] 文件：'+s.filename+(s.location?.page ? ' 第'+s.location.page+'页' : '')+'\n'+s.text).join('\n\n');
+  context(sources: Citation[], options?: { readingOrder?: boolean }) {
+    if (options?.readingOrder && !sources.some(s => s.sourceSegments)) {
+      const ordered = pdfReadingContext(sources);
+      if (ordered) return ordered;
+    }
+    const note = sources.some(s => s.sourceSegments) && sources.some(s => s.location?.anchors?.some(a => a.kind !== 'native'))
+      ? '原生文字段落优先；识别补充与原生文字冲突时以原生文字为准。\n' : '';
+    return note + sources.map(s => '['+s.number+'] 文件：'+s.filename+(s.location?.page ? ' 第'+s.location.page+'页' : '')+
+      (s.sectionTitle ? ' · '+s.sectionTitle : '')+'\n'+s.text).join('\n\n');
   }
 
-  async pack(evidence: OriginalEvidence[], budget: number) {
+  citationEvidence(evidence: OriginalEvidence[]) {
+    const originals = new Set(evidence);
+    return structuralPdfCitations(evidence).flatMap(source => (source.sourceSegments ? [source] : splitPdfCitation(source))
+      .map(part => originals.has(part) ? part : this.original(part)));
+  }
+
+  async pack(evidence: OriginalEvidence[], budget: number, options?: { readingOrder?: boolean }) {
+    const segments = this.citationEvidence(evidence);
     const sources: OriginalEvidence[] = [];
     let tokens = 0;
-    for (const source of evidence) {
+    for (const source of segments) {
       const candidate = [...sources, { ...source, number: sources.length+1 }];
-      const text = this.context(candidate);
+      const text = this.context(candidate, options);
       const count = this.tokenizer ? await this.tokenizer.count(text,this.config?.get('CHAT_TOKENIZER')) : Array.from(text).length;
       if (count <= Math.max(0,budget)) { sources.push(candidate.at(-1)!); tokens = count; }
     }
-    return { sources, tokens, complete: sources.length === evidence.length };
+    return { sources, tokens, complete: sources.length === segments.length };
   }
 }

@@ -19,6 +19,7 @@ async function fixture(
     | 'short-native'
     | 'table'
     | 'table-short'
+    | 'table-shared-image'
     | 'two-column-prose'
     | 'vector'
     | 'vector-image'
@@ -66,7 +67,7 @@ async function fixture(
     pdf.save().rect(0, 0, 600, 800).clip();
     pdf.text('Another paragraph', 60, 160);
     pdf.restore();
-  } else if (kind === 'table' || kind === 'table-short' || kind === 'grid-table') {
+  } else if (kind === 'table' || kind === 'table-short' || kind === 'grid-table' || kind === 'table-shared-image') {
     for (let row = 0; row < (kind === 'table-short' ? 2 : 4); row++) {
       pdf.text('Item ' + row, 50, 100 + row * 35);
       pdf.text(String(row + 10), 200, 100 + row * 35);
@@ -89,6 +90,11 @@ async function fixture(
       pdf.text('Figure caption', 55, 230);
       pdf.text('RIGHT secret', 390, 230);
     }
+  }
+  if (kind === 'table-shared-image') {
+    const canvas = createCanvas(400, 600);
+    canvas.getContext('2d').fillRect(0, 0, 400, 600);
+    pdf.image(canvas.toBuffer('image/png'), 45, 70, { width: 400, height: 600 });
   }
   if (kind === 'vector-image') {
     const c = createCanvas(100, 50);
@@ -276,10 +282,48 @@ describe('hybrid PDF layout', () => {
       await f.task.destroy();
     }
   });
-  it('still sends a borderless native table to layout when fast path is enabled', async () => {
+  it('uses layout and native cell positions to recover a borderless table without generating its text', async () => {
     regions = [{ kind: 'table', bbox: [0.07, 0.11, 0.67, 0.29], score: 0.96 }];
-    expect(await run('table')).toHaveLength(1);
+    const found = await run('table');
+    expect(found).toHaveLength(1);
+    expect((found[0] as any).nativeTable).toContain('| Item 0 | 10 | 100 |');
+    expect((found[0] as any).nativeTable).toContain('| Item 3 | 13 | 103 |');
     expect(calls).toContain('layout');
+  });
+  it('does not manufacture native table text from a sparse scan layer', async () => {
+    regions = [{ kind: 'table', bbox: [0.06, 0.1, 0.95, 0.85], score: 0.96 }];
+    const found = await run('scan-sparse');
+    expect(found.length).toBeGreaterThan(0);
+    expect(found.every((r: any) => !r.nativeTable)).toBe(true);
+  });
+  it('keeps adjacent tables separate and excludes outside native text from their crops and contexts', async () => {
+    regions = [
+      { kind: 'table', bbox: [0.07, 0.11, 0.67, 0.165], score: 0.96 },
+      { kind: 'table', bbox: [0.07, 0.18, 0.67, 0.24], score: 0.96 },
+    ];
+    const found = await run('table');
+    expect(found).toHaveLength(2);
+    expect(found[0].bbox[3]).toBeLessThan(0.18);
+    expect(found[0].context).not.toContain('Item 2');
+    expect(found[1].context).not.toContain('Item 0');
+  });
+  it('does not expand semantic tables through a shared image geometry candidate', async () => {
+    regions = [
+      { kind: 'table', bbox: [0.07, 0.11, 0.67, 0.165], score: 0.96 },
+      { kind: 'table', bbox: [0.07, 0.18, 0.67, 0.24], score: 0.96 },
+    ];
+    const found = await run('table-shared-image');
+    const tables = found.filter(r => r.table);
+    expect(tables).toHaveLength(2);
+    expect(tables[0].bbox[3]).toBeLessThan(0.18);
+    expect(tables[1].bbox[1]).toBeGreaterThan(0.17);
+    expect(found.every(r => !r.nativeTable)).toBe(true);
+    for (const other of found.filter(r => !r.table)) {
+      for (const table of tables) {
+        expect(other.bbox[2] <= table.bbox[0] || other.bbox[0] >= table.bbox[2] ||
+          other.bbox[3] <= table.bbox[1] || other.bbox[1] >= table.bbox[3]).toBe(true);
+      }
+    }
   });
   it('makes no service request for an entirely blank page', async () => {
     expect(await run('blank')).toEqual([]);

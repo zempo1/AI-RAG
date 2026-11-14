@@ -187,13 +187,13 @@ test("reopening history restores sources and resumes a pending summary task", as
     }),
   );
   await page.getByText("历史问答", { exact: true }).click();
-  await expect(page.locator(".qa-task-status")).toContainText("后台问答");
+  await expect(page.locator(".message-row.assistant .generation-status")).toContainText("后台");
   await expect(page.locator(".qa-controls")).toContainText("全文概览");
   complete = true;
   await expect(
     page.locator(".message-row.assistant .markdown-body"),
   ).toHaveText("恢复后的后台答案", { timeout: 6000 });
-  await expect(page.locator(".qa-task-status")).toHaveCount(0);
+  await expect(page.locator(".message-row.assistant .generation-status")).toHaveCount(0);
   await expect(page.locator(".message-scope")).toContainText("所选 1 份文档");
 });
 
@@ -247,7 +247,7 @@ test("accepted async responses complete from task history without reporting a br
   );
   await page.getByPlaceholder("发送消息...").fill("总结全文");
   await page.getByPlaceholder("发送消息...").press("Enter");
-  await expect(page.locator(".qa-task-status")).toContainText("后台");
+  await expect(page.locator(".message-row.assistant .generation-status")).toContainText("后台");
   complete = true;
   await expect(
     page.locator(".message-row.assistant .markdown-body"),
@@ -1133,6 +1133,7 @@ test(`visual citations load private ${region ? 'region' : 'page'} images and all
   await page.getByText('历史问答', { exact: true }).click();
   await page.locator('[data-citation="1"]').first().click();
   const drawer = page.locator('.citation-drawer');
+  await drawer.locator('.reader-evidence summary').click();
   await expect(drawer).toContainText('模型生成的图解，请结合原图核对');
   await expect(drawer).toContainText('申请 → 审核 → 发布');
   await expect(drawer).toContainText('页面原图暂不可用');

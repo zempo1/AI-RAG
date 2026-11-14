@@ -21,6 +21,7 @@ import {
 } from './pdf-analysis.client';
 import { localRendering } from './vision-scheduler';
 import { discardPdfPageRaster, pdfRegionScale } from './pdf-render-cache';
+import { nativeTableMarkdown } from './pdf-native-table';
 
 export interface AdaptivePdfRegion extends PdfRegion {
   recognition: 'ocr' | 'vision' | 'classify';
@@ -51,6 +52,16 @@ const pad = (b: RegionBox, p: number): RegionBox => [
 const readable = (s: string) => s.trim().length > 0 && !/[\uFFFD\x00-\x08]/.test(s);
 const textKind = (r: LayoutRegion) => ['text', 'title', 'caption'].includes(r.kind);
 const visualKind = (r: LayoutRegion) => ['figure', 'table', 'unknown'].includes(r.kind);
+
+function outsideTable(box: RegionBox, table: RegionBox): RegionBox[] {
+  if (!intersection(box, table)) return [box];
+  const left = Math.max(box[0], table[0]), right = Math.min(box[2], table[2]);
+  const top = Math.max(box[1], table[1]), bottom = Math.min(box[3], table[3]);
+  return ([
+    [box[0], box[1], box[2], top], [box[0], bottom, box[2], box[3]],
+    [box[0], top, left, bottom], [right, top, box[2], bottom],
+  ] as RegionBox[]).filter(b => area(b) > 1e-8);
+}
 
 async function check(scope: ParseContext) {
   scope.signal?.throwIfAborted();
@@ -338,7 +349,7 @@ export async function locateAdaptiveRegions(
   const result = await layout(document, page, scope, client);
   await check(scope);
   const model = result.regions;
-  const profile = hash(JSON.stringify({ version: VERSION, manifest: result.manifest }));
+  const profile = hash(JSON.stringify({ version: 'adaptive-regions-v2-native-tables', manifest: result.manifest }));
   const seeds: AdaptivePdfRegion[] = [];
   const add = (bbox: RegionBox, recognition: AdaptivePdfRegion['recognition'], reason?: string) => {
     seeds.push({
@@ -354,10 +365,21 @@ export async function locateAdaptiveRegions(
   };
   for (const r of model) {
     if (visualKind(r)) {
+      // Native text is authoritative. A sparse scan layer or overlapping real graphic
+      // cannot establish complete coverage, even when the model calls it a table.
+      const nativeOnly = (r.kind === 'table' || r.kind === 'unknown') &&
+        nativeCovers(r.bbox, texts, native) &&
+        !geometry.some(g => intersection(g.inkBox || g.bbox, r.bbox) > 0);
+      if (nativeOnly && r.kind === 'unknown') continue;
       const raster = r.kind === 'figure' &&
         geometry.some((candidate) => candidate.rasterOnly && covered(r.bbox, candidate.bbox) > 0.8);
       add(r.bbox, raster ? 'classify' : 'vision',
         r.kind === 'unknown' ? '版面检测无法确定区域类型' : undefined);
+      if (r.kind === 'table') {
+        const seed = seeds.at(-1)!;
+        seed.table = true;
+        if (nativeOnly) seed.nativeTable = nativeTableMarkdown(texts, pad(r.bbox, 0.008));
+      }
     }
     else if (r.kind === 'decoration' && r.score < 0.75) {
       const margin = r.bbox[3] <= 0.17 || r.bbox[1] >= 0.88;
@@ -387,6 +409,18 @@ export async function locateAdaptiveRegions(
     )
       continue;
     const supplemental = r.inkBox || r.bbox;
+    const tables = seeds.filter(s => s.table).map(s => pad(s.bbox, 0.008));
+    if (tables.some(box => intersection(supplemental, box) > 0)) {
+      // A shared page image/frame cannot enlarge one semantic table to cover its
+      // neighbours. Retain any uncovered graphic fragments as bounded crops.
+      let fragments = [supplemental];
+      for (const box of tables) fragments = fragments.flatMap(fragment => outsideTable(fragment, box));
+      for (const box of fragments) {
+        add(box, r.rasterOnly ? 'classify' : 'vision', '绘图候选按表格边界切分');
+        Object.assign(seeds.at(-1)!, { bounded: true, scaleLimit: r.scaleLimit });
+      }
+      continue;
+    }
     const graphic = seeds.find(
       (s) =>
         s.recognition !== 'ocr' &&
@@ -429,7 +463,7 @@ export async function locateAdaptiveRegions(
   for (const seed of seeds) {
     const anchor = seed.bbox;
     let bounds = anchor;
-    if (seed.recognition !== 'ocr') {
+    if (seed.recognition !== 'ocr' && !seed.table && !seed.bounded) {
       const nearby = [
         ...texts.filter((t) => t.text.trim()).map((t) => t.bbox),
         ...model.filter((r) => r.kind === 'caption').map((r) => r.bbox),
@@ -442,7 +476,7 @@ export async function locateAdaptiveRegions(
           bounds = union(bounds, t);
       }
     }
-    seed.bbox = pad(bounds, 0.008);
+    seed.bbox = seed.bounded ? bounds : pad(bounds, 0.008);
   }
   // Expansion can make two model fragments overlap. Merge then, while requiring real horizontal overlap.
   let merged = true;
@@ -454,6 +488,7 @@ export async function locateAdaptiveRegions(
           b = seeds[j];
         const horizontal = Math.min(a.bbox[2], b.bbox[2]) - Math.max(a.bbox[0], b.bbox[0]);
         if (
+          a.table || b.table || a.bounded || b.bounded ||
           a.recognition !== b.recognition ||
           intersection(a.bbox, b.bbox) <= 0 ||
           horizontal < 0.15 * Math.min(a.bbox[2] - a.bbox[0], b.bbox[2] - b.bbox[0])
@@ -476,6 +511,7 @@ export async function locateAdaptiveRegions(
       }
     }
     const nearby = texts.filter((t) => {
+      if (seed.table || seed.bounded) return t.text.trim() && covered(t.bbox, seed.bbox) > 0.99;
       const horizontal = Math.min(seed.bbox[2], t.bbox[2]) - Math.max(seed.bbox[0], t.bbox[0]);
       return (
         t.text.trim() &&

@@ -13,6 +13,30 @@ async function fixture(page:Page) {
   await page.goto('/');
   await expect(page.getByPlaceholder('发送消息...')).toBeEnabled();
 }
+
+test('execution steps start collapsed, support keyboard expansion and keep cited paragraphs after the answer', async ({ page }) => {
+  await fixture(page);
+  const source = { number: 1, documentId: 1, versionId: 1, filename: '资料.pdf', text: '用于核对的证据正文' };
+  await page.route('**/api/stream-chat', route => route.fulfill({ contentType: 'text/event-stream', body:
+    `event: agent_step\ndata: ${JSON.stringify(step)}\n\nevent: sources\ndata: ${JSON.stringify([source])}\n\nevent: done\ndata: ${JSON.stringify({ answer: '已经完成回答 [1]', citations: [source], chatId: 7, generationStatus: 'completed', retrievalRunId: 88, diagnostics: { agent: { ...agent, status: 'completed' } } })}\n\n` }));
+  await page.getByPlaceholder('发送消息...').fill('核对文档');
+  await page.getByPlaceholder('发送消息...').press('Enter');
+  await expect(page.locator('.markdown-body')).toContainText('已经完成回答');
+  const timeline = page.locator('.agent-progress').first();
+  const summary = timeline.locator('summary');
+  await expect(summary).toHaveText('执行步骤（1）');
+  await expect(timeline.locator('.agent-timeline')).toBeHidden();
+  await summary.focus();
+  await page.keyboard.press('Enter');
+  await expect(timeline.locator('.agent-timeline')).toBeVisible();
+  await expect(timeline.locator('.agent-timeline')).toContainText('资料.pdf');
+  await page.keyboard.press('Enter');
+  await expect(timeline.locator('.agent-timeline')).toBeHidden();
+  const sources = page.locator('.retrieved-sources');
+  await expect(sources.locator('summary')).toHaveText('参考段落（1）');
+  await sources.locator('summary').click();
+  await expect(sources.getByRole('button')).toContainText('用于核对的证据正文');
+});
 test('Agent SSE steps deduplicate, background polling updates and explicit stop survives failures',async({page})=>{
   await fixture(page);
   await page.route('**/api/stream-chat',route=>route.fulfill({contentType:'text/event-stream',body:
@@ -31,7 +55,8 @@ test('Agent SSE steps deduplicate, background polling updates and explicit stop 
   const stop=page.getByRole('button',{name:'停止后台任务',exact:true});
   await expect(page.locator('.input-box').getByRole('button',{name:'停止后台任务',exact:true})).toHaveText('');
   await stop.focus();await page.keyboard.press('Enter');
-  await expect(page.getByText('停止失败，后台任务仍在运行，可重试。')).toBeVisible();
+  await expect(page.locator('.message-row.assistant').getByRole('alert')).toContainText('停止失败，后台任务仍在运行，可重试。');
+  await expect(page.locator('.toast-item')).toHaveCount(0);
   await expect(stop).toBeEnabled();
   await stop.click();
   await expect(page.getByText('后台任务已停止，已获取的来源仍可查看。')).toBeVisible();
@@ -101,13 +126,94 @@ test('background polling merges progress then loads final persisted diagnostics'
   await page.getByPlaceholder('发送消息...').fill('核对文档');
   await page.getByPlaceholder('发送消息...').press('Enter');
   await expect(page.locator('.agent-timeline li')).toHaveCount(2);
-  await expect(page.locator('.agent-activity')).toHaveAttribute('aria-live','polite');
-  await expect(page.locator('.agent-activity')).toContainText('补查第三页');
+  await expect(page.locator('.generation-status')).toHaveAttribute('aria-live','polite');
+  await expect(page.locator('.generation-status')).toContainText('补查第三页');
   await expect(page.locator('.agent-timeline')).toContainText('最终核查完成');
   await expect(page.locator('.agent-timeline li')).toHaveCount(1);
   await expect(page.getByText('后台保存的答案',{exact:true})).toBeVisible();
   await expect(page.getByPlaceholder('发送消息...')).toBeEnabled();
 });
+
+test('background progress stays beside its answer without duplicate activity or placeholder prose', async ({ page }, testInfo) => {
+  await fixture(page);
+  let offline = false;
+  await page.route('**/api/stream-chat', route => route.fulfill({ contentType: 'text/event-stream', body:
+    'event: accepted\ndata: {"taskId":12,"chatId":7,"requestId":"a","retrievalRunId":88}\n\n' }));
+  await page.route('**/api/tasks/12', route => offline
+    ? route.fulfill({ status: 503, json: { message: 'offline' } })
+    : route.fulfill({ json: { data: { id: 12, kind: 'qa', status: 'running', stage: 'agent', agentProgress: agent } } }));
+  await page.getByPlaceholder('发送消息...').fill('核对文档');
+  await page.getByPlaceholder('发送消息...').press('Enter');
+  const answer = page.locator('.message-row.assistant');
+  const status = answer.locator('.generation-status');
+  await expect(status).toContainText('读取原文证据');
+  await expect(status).toContainText('后台');
+  await expect(status).toContainText('可离开');
+  await expect(page.locator('.qa-task-status')).toHaveCount(0);
+  await expect(answer.locator('.markdown-body')).toBeEmpty();
+  await expect(answer.locator('.agent-activity')).toHaveCount(0);
+  await expect(answer.getByRole('status')).toHaveCount(1);
+  await expect(answer.locator('.agent-timeline')).toBeHidden();
+  const statusBox = await status.boundingBox();
+  expect(statusBox!.height).toBeLessThan(70);
+  await page.screenshot({ path: testInfo.outputPath('background-status-wide.png'), fullPage: true });
+  await page.locator('.sidebar .collapse-trigger').click();
+  await page.locator('.workbench .collapse-btn').click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator('.sidebar')).toHaveCSS('width', '72px');
+  await expect(page.locator('.workbench')).toHaveCSS('width', '40px');
+  await expect(status).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('background-status-narrow.png'), fullPage: true });
+  offline = true;
+  await expect(status).toContainText('正在重试');
+  await expect(page.locator('.toast-item')).toHaveCount(0);
+  await expect(answer.getByRole('status')).toHaveCount(1);
+  offline = false;
+  await expect(status).toContainText('读取原文证据');
+  await expect(status).not.toContainText('正在重试');
+});
+
+test('reopening a conversation restores pending progress beside an empty answer', async ({ page }) => {
+  await fixture(page);
+  await page.route('**/api/chats', route => route.fulfill({ json: { data: [{ id: 7, title: '继续后台问答' }] } }));
+  await page.route('**/api/chats/7', route => route.fulfill({ json: { data: {
+    knowledgeBaseId: 1, messages: [{ role: 'user', content: '核对文档' }],
+    pendingTasks: [{ id: 12, kind: 'qa', status: 'running', stage: 'agent', agentProgress: agent }],
+  } } }));
+  await page.route('**/api/tasks/12', route => route.fulfill({ json: { data: {
+    id: 12, kind: 'qa', status: 'running', stage: 'agent', agentProgress: agent,
+  } } }));
+  await page.reload();
+  await page.getByText('继续后台问答', { exact: true }).click();
+  const answer = page.locator('.message-row.assistant');
+  await expect(answer.getByRole('status')).toHaveCount(1);
+  await expect(answer.getByRole('status')).toContainText('读取原文证据');
+  await expect(answer.locator('.markdown-body')).toBeEmpty();
+  await expect(page.getByRole('button', { name: '停止后台任务', exact: true })).toBeEnabled();
+});
+
+for (const terminal of ['failed', 'unreadable']) {
+  test(`background ${terminal} stops the indicator and keeps its error beside the answer`, async ({ page }) => {
+    await fixture(page);
+    let finish = false;
+    await page.route('**/api/stream-chat', route => route.fulfill({ contentType: 'text/event-stream', body:
+      'event: accepted\ndata: {"taskId":12,"chatId":7,"requestId":"a","retrievalRunId":88}\n\n' }));
+    await page.route('**/api/tasks/12', route => finish && terminal === 'unreadable'
+      ? route.fulfill({ status: 404, json: { message: 'not found' } })
+      : route.fulfill({ json: { data: { id: 12, kind: 'qa', status: finish ? 'failed' : 'running', stage: 'agent', agentProgress: agent, error: finish ? '问答未完成，请重试。' : null } } }));
+    await page.getByPlaceholder('发送消息...').fill('核对文档');
+    await page.getByPlaceholder('发送消息...').press('Enter');
+    const answer = page.locator('.message-row.assistant');
+    await expect(answer.locator('.generation-status')).toBeVisible();
+    finish = true;
+    await expect(answer.getByRole('alert')).toContainText(terminal === 'failed' ? '问答未完成' : '重新打开会话');
+    await expect(answer.locator('.generation-status')).toHaveCount(0);
+    await expect(answer.locator('.markdown-body')).toBeEmpty();
+    await expect(page.getByPlaceholder('发送消息...')).toBeEnabled();
+    await expect(page.locator('.toast-item')).toHaveCount(0);
+  });
+}
 
 test('leaving an accepted background task never sends cancellation',async({page})=>{
   await fixture(page);

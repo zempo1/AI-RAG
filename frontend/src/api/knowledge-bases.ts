@@ -72,6 +72,12 @@ export interface Citation {
   chunkId: number;
   filename: string;
   text: string;
+  sectionTitle?: string;
+  sourceSegments?: {
+    text: string;
+    location: NonNullable<Citation['location']>;
+    chunkIds: number[];
+  }[];
   score: number;
   sourceDeleted?: boolean;
   sourceOutdated?: boolean;
@@ -151,8 +157,8 @@ export const reindexKnowledgeBase = (id: number) =>
   request.post<any, { taskId: number }>(
     "/api/knowledge-bases/" + id + "/reindex",
   );
-export const getTask = (id: number) =>
-  request.get<any, ProcessingTask>("/api/tasks/" + id);
+export const getTask = (id: number, silentError = false) =>
+  request.get<any, ProcessingTask>("/api/tasks/" + id, { silentError });
 export const listTasks = (knowledgeBaseId: number, silentError = false) =>
   request.get<any, ProcessingTask[]>("/api/tasks", {
     params: { knowledgeBaseId }, silentError,
@@ -163,5 +169,5 @@ export const dismissTask = (id: number) => request.delete("/api/tasks/" + id);
 export const clearCompletedTasks = (knowledgeBaseId: number) =>
   request.delete("/api/tasks", { params: { knowledgeBaseId } });
 
-export const cancelTask = (id: number) =>
-  requestTaskCancellation(id, (url) => request.post(url));
+export const cancelTask = (id: number, silentError = false) =>
+  requestTaskCancellation(id, (url) => request.post(url, undefined, { silentError }));

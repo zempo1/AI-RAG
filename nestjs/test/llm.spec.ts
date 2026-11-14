@@ -2,6 +2,7 @@ import { createServer, Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { ConfigService } from '@nestjs/config';
 import { LlmService } from '../src/modules/llm/llm.service';
+import { environmentBindings, runWithModels } from '../src/modules/model-settings/model-runtime';
 
 describe('real LangChain HTTP adapter against a local OpenAI-compatible server', () => {
   let server: Server;
@@ -9,6 +10,8 @@ describe('real LangChain HTTP adapter against a local OpenAI-compatible server',
   let received: { auth?: string; body?: any };
   let failure = false;
   let stall = false;
+  let jsonFailure: 'unsupported' | 'auth' | undefined;
+  let jsonRequests: any[] = [];
   beforeAll(async () => {
     server = createServer(async (req, res) => {
       const buffers: Buffer[] = [];
@@ -17,6 +20,15 @@ describe('real LangChain HTTP adapter against a local OpenAI-compatible server',
         auth: req.headers.authorization,
         body: JSON.parse(Buffer.concat(buffers).toString()),
       };
+      if (jsonFailure) {
+        jsonRequests.push(received.body);
+        if (jsonFailure === 'auth' || received.body.response_format) {
+          res.writeHead(jsonFailure === 'auth' ? 401 : 400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: { message: 'response_format is not supported',
+            param: 'response_format', code: 'unsupported_parameter' } }));
+          return;
+        }
+      }
       if (stall) return;
       if (failure) {
         res.writeHead(503, { 'Content-Type': 'application/json' });
@@ -106,6 +118,53 @@ describe('real LangChain HTTP adapter against a local OpenAI-compatible server',
     failure = false;
     const missing = new LlmService(new ConfigService({}));
     await expect(missing.complete('问题')).rejects.toThrow('CHAT_API_KEY');
+  });
+  it('sends the requested non-thinking mode for DashScope Kimi document answers in complete and stream calls', async () => {
+    const config = new ConfigService({ CHAT_API_KEY: 'test-key' });
+    const bindings = environmentBindings(config);
+    bindings.chat = { provider: 'dashscope', model: 'kimi-k3', apiKey: 'test-key',
+      baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`, custom: true };
+    await runWithModels({ userId: 1, bindings }, async () => {
+      const kimi = new LlmService(config);
+      await kimi.complete('总结两页原文', undefined, [], undefined, { thinking: false } as any);
+      expect(received.body.enable_thinking).toBe(false);
+      const tokens: string[] = [];
+      for await (const token of kimi.stream('总结两页原文', undefined, undefined, [], { thinking: false } as any)) tokens.push(token);
+      expect(tokens.join('')).toBe('中文答案');
+      expect(received.body.enable_thinking).toBe(false);
+      await kimi.complete('普通聊天沿用模型默认值');
+      expect(received.body.enable_thinking).toBeUndefined();
+    });
+  });
+  it('does not send an unsupported thinking switch to the Moonshot thinking-only model route', async () => {
+    const config = new ConfigService({ CHAT_API_KEY: 'test-key' });
+    const bindings = environmentBindings(config);
+    bindings.chat = { provider: 'dashscope', model: 'kimi/kimi-k3', apiKey: 'test-key',
+      baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`, custom: true };
+    await runWithModels({ userId: 1, bindings }, async () => {
+      await new LlmService(config).complete('总结原文', undefined, [], undefined, { thinking: false } as any);
+      expect(received.body.enable_thinking).toBeUndefined();
+    });
+  });
+  it('requests JSON mode only when explicitly requested by the caller', async () => {
+    await llm.complete('返回 JSON', undefined, [], undefined, { json: true } as any);
+    expect(received.body.response_format).toEqual({ type: 'json_object' });
+    await llm.complete('普通回答');
+    expect(received.body.response_format).toBeUndefined();
+  });
+  it('retries without JSON mode only when the provider explicitly rejects that parameter', async () => {
+    jsonFailure = 'unsupported'; jsonRequests = [];
+    try {
+      expect(await llm.complete('返回 JSON', undefined, [], undefined, { json: true } as any)).toBe('模型答案');
+      expect(jsonRequests.map(r => r.response_format)).toEqual([{ type: 'json_object' }, undefined]);
+    } finally { jsonFailure = undefined; }
+  });
+  it('does not downgrade JSON mode for authentication errors mentioning response_format', async () => {
+    jsonFailure = 'auth'; jsonRequests = [];
+    try {
+      await expect(llm.complete('返回 JSON', undefined, [], undefined, { json: true } as any)).rejects.toThrow();
+      expect(jsonRequests).toHaveLength(1);
+    } finally { jsonFailure = undefined; }
   });
   it('bounds vision requests with the configured timeout', async () => {
     stall = true;

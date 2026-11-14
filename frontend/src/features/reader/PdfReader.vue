@@ -2,23 +2,23 @@
   <div class="pdf-reader">
     <div class="pdf-toolbar" aria-label="PDF 工具栏">
       <div class="pdf-tool-group">
-        <button type="button" aria-label="上一页" :disabled="!ready || pageNumber <= 1" @click="goToPage(pageNumber - 1)">‹</button>
+        <button type="button" class="pdf-icon-button" aria-label="上一页" :disabled="!ready || pageNumber <= 1" @click="goToPage(pageNumber - 1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6" /></svg></button>
         <label class="pdf-page-control">页码
           <input aria-label="页码" type="number" min="1" :max="pageCount || 1" :value="pageNumber" :disabled="!ready" @change="pageInput" />
         </label><span>/ {{ pageCount || '—' }}</span>
-        <button type="button" aria-label="下一页" :disabled="!ready || pageNumber >= pageCount" @click="goToPage(pageNumber + 1)">›</button>
+        <button type="button" class="pdf-icon-button" aria-label="下一页" :disabled="!ready || pageNumber >= pageCount" @click="goToPage(pageNumber + 1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6" /></svg></button>
       </div>
       <div class="pdf-tool-group">
-        <button type="button" aria-label="缩小" :disabled="!ready" @click="zoom(1 / 1.2)">−</button>
+        <button type="button" class="pdf-icon-button" aria-label="缩小" :disabled="!ready" @click="zoom(1 / 1.2)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /></svg></button>
         <output class="pdf-scale" aria-label="缩放比例">{{ scalePercent }}%</output>
-        <button type="button" aria-label="放大" :disabled="!ready" @click="zoom(1.2)">＋</button>
+        <button type="button" class="pdf-icon-button" aria-label="放大" :disabled="!ready" @click="zoom(1.2)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14" /></svg></button>
         <button type="button" :disabled="!ready" @click="fitWidth">适宽</button>
         <button type="button" aria-label="顺时针旋转 90 度" :disabled="!ready" @click="rotate">旋转</button>
       </div>
       <form class="pdf-search" role="search" @submit.prevent="find(true)">
         <input v-model="query" aria-label="搜索 PDF 文字" placeholder="搜索 PDF 文字" :disabled="!ready" @input="find(false)" />
-        <button type="button" aria-label="上一个匹配" :disabled="!query || !ready" @click="find(true, true)">↑</button>
-        <button type="submit" aria-label="下一个匹配" :disabled="!query || !ready">↓</button>
+        <button type="button" class="pdf-icon-button" aria-label="上一个匹配" :disabled="!query || !ready" @click="find(true, true)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 10 6-6 6 6M12 4v16" /></svg></button>
+        <button type="submit" class="pdf-icon-button" aria-label="下一个匹配" :disabled="!query || !ready"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 14 6 6 6-6M12 4v16" /></svg></button>
         <span class="pdf-find-status" role="status">{{ findStatus }}</span>
       </form>
     </div>

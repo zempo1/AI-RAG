@@ -66,6 +66,71 @@ describe('hybrid PDF recognition', () => {
         visual.region(f.document, p, '', s, profile, r, 1),
     };
   }
+  it('uses verified native table rows without calling vision or rasterizing a crop', async () => {
+    const f = setup(async () => { throw new Error('OCR must not run'); }, async () => {
+      throw new Error('native text must not be regenerated');
+    });
+    f.page.render = () => { throw new Error('native table must not render'); };
+    const completed: number[] = [];
+    const blocks = await f.run({ ...region, recognition: 'vision', table: true,
+      nativeTable: '| | |\n| --- | --- |\n| Item | 42 |' } as any, f.page,
+      { ...scope, completed: async () => { completed.push(1); } } as any);
+    expect(blocks[0]).toMatchObject({ type: 'table', text: '| | |\n| --- | --- |\n| Item | 42 |',
+      sourceBox: [0, 0, 0.5, 0.5], anchorKind: 'region' });
+    expect(completed).toEqual([1]);
+  });
+  it('repairs double-escaped Unicode text before it can become a successful cached result', async () => {
+    let calls = 0;
+    const f = setup(async () => { throw new Error('OCR must not run'); }, async () => {
+      calls++;
+      return JSON.stringify({ blocks: [{ type: 'table', text: calls === 1 ? String.raw`| \u6761 \u4ef6 |` : '| 条件 | 内容 |' }] });
+    });
+    const target = { ...region, recognition: 'vision' };
+    expect((await f.run(target))[0].text).toBe('| 条件 | 内容 |');
+    expect(calls).toBe(2);
+    expect((await f.run(target))[0].text).toBe('| 条件 | 内容 |');
+    expect(calls).toBe(2);
+  });
+  it('rejects repeated invalid text without persisting a recognition or region result', async () => {
+    const f = setup(async () => { throw new Error('OCR must not run'); }, async () =>
+      JSON.stringify({ blocks: [{ type: 'table', text: String.raw`\u6761 \u4ef6` }] }));
+    await expect(f.run({ ...region, recognition: 'vision' })).rejects.toThrow(/转义/);
+    expect((await readdir(dir, { recursive: true })).filter(name => name.endsWith('.json'))).toEqual([]);
+  });
+  it('bounds the initial request and format repair by one shared vision deadline', async () => {
+    let calls = 0;
+    const f = setup(async () => { throw new Error('OCR must not run'); }, async (...args: any[]) => {
+      calls++;
+      if (calls === 1) {
+        await new Promise(resolve => setTimeout(resolve, 65));
+        return 'invalid JSON';
+      }
+      const signal = args[3] as AbortSignal;
+      return new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve('{"blocks":[]}'); }, 130);
+        const abort = () => { clearTimeout(timer); reject(signal.reason); };
+        if (signal?.aborted) abort();
+        else signal?.addEventListener('abort', abort, { once: true });
+      });
+    });
+    const get = f.visual.config.get.bind(f.visual.config);
+    f.visual.config.get = (key: string) => key === 'VISION_TIMEOUT_MS' ? 110 : get(key);
+    await expect(f.run({ ...region, recognition: 'vision' })).rejects.toThrow(/time|超时/i);
+    expect(calls).toBe(2);
+  });
+  it('logs request start, response status and validation failure without logging document contents', async () => {
+    let calls = 0;
+    const logs: any[] = [];
+    const f = setup(async () => { throw new Error('OCR must not run'); }, async () => {
+      return ++calls === 1 ? 'private source invalid JSON' : '{"blocks":[]}';
+    });
+    f.visual.logger = { log: (s: string) => logs.push(JSON.parse(s)), warn: (s: string) => logs.push(JSON.parse(s)) };
+    await f.run({ ...region, recognition: 'vision' });
+    expect(logs).toContainEqual(expect.objectContaining({ event: 'pdf-vision-request-start', page: 1, repair: false }));
+    expect(logs).toContainEqual(expect.objectContaining({ event: 'pdf-vision-request', status: 'success' }));
+    expect(logs).toContainEqual(expect.objectContaining({ event: 'pdf-vision-output-invalid', outputLength: 27 }));
+    expect(JSON.stringify(logs)).not.toContain('private source');
+  });
   it('reports OCR and vision with completed region counts and never regresses the recognition stage', async () => {
     const pdf = new PDFDocument();
     const pieces: Buffer[] = [];

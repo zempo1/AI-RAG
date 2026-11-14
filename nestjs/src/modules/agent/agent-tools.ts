@@ -4,6 +4,7 @@ import { RetrievalService } from '../rag/retrieval.service';
 import { SummaryService } from '../rag/summary.service';
 import { ToolCall, ToolDefinition, ModelExecutionOptions } from '../llm/llm.types';
 import { AgentSnapshot, AgentOptions } from './agent.types';
+import type { OriginalEvidence } from '../rag/retrieval.types';
 
 export const names = [
   'list_documents',
@@ -61,6 +62,7 @@ export class AgentTools {
     private readonly summary: SummaryService,
     private readonly config: ConfigService,
     private readonly execution: (s: AgentSnapshot, o: AgentOptions) => ModelExecutionOptions,
+    private readonly canAnswerDirectly?: (s: AgentSnapshot, call: ToolCall, evidence: OriginalEvidence[]) => Promise<boolean>,
   ) {}
   private limit(key: string, fallback: number) {
     return Number(this.config.get(key)) || fallback;
@@ -205,6 +207,12 @@ export class AgentTools {
           );
           evidence.push(...page.evidence);
           next = page.nextCursor;
+        }
+        evidence = this.retrieval.citationEvidence(evidence);
+        if (await this.canAnswerDirectly?.(s, call, evidence)) {
+          return { evidence, output: JSON.stringify({ complete: true,
+            evidenceCount: evidence.length, pages: [...new Set(evidence.map(e => e.location?.page))],
+            answerFromOriginal: true }) };
         }
         const summarized = await this.summary.summarizeAgent(
           evidence,

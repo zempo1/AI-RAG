@@ -20,25 +20,18 @@
   color: #ff939b;
   font-size: 13px;
 }
+@media (max-width: 768px) {
+  .qa-controls {
+    grid-template-columns: minmax(0, 1fr) 100px;
+    padding: 12px;
+  }
+}
 .qa-control-error button {
   color: #d7c8ff;
   background: transparent;
   border: 0;
   cursor: pointer;
   text-decoration: underline;
-}
-.qa-task-status {
-  display: grid;
-  gap: 5px;
-  padding: 12px 24px;
-  text-align: left;
-  color: #d7c8ff;
-  background: #241d31;
-  border-bottom: 1px solid #4c3b69;
-  font-size: 13px;
-}
-.qa-task-status small {
-  color: var(--text-secondary);
 }
 .message-scope {
   font-size: 12px;

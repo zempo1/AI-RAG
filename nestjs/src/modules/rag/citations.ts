@@ -13,6 +13,9 @@ export interface Citation {
   filename: string;
   text: string;
   location: SourceLocation | null;
+  /** Display title and exact original slices for a paragraph assembled in PDF reading order. */
+  sectionTitle?: string;
+  sourceSegments?: { text: string; location: SourceLocation; chunkIds: number[] }[];
   score: number;
   sourceDeleted?: boolean;
   sourceOutdated?: boolean;

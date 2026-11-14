@@ -18,6 +18,12 @@ export interface PdfRegion {
   rasterOnly?: boolean;
   recognition?: 'ocr' | 'vision' | 'classify';
   analysisProfile?: string;
+  /** Semantic tables retain their own bounds instead of absorbing nearby paragraphs. */
+  table?: boolean;
+  /** Geometry fragments clipped around semantic tables must not grow back over them. */
+  bounded?: boolean;
+  /** Deterministic Markdown assembled only from PDF text items inside this table. */
+  nativeTable?: string;
 }
 
 /** Consolidate adjacent, already-expanded crops within one narrow column. */

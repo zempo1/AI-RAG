@@ -40,6 +40,10 @@ export interface ModelExecutionOptions {
   model?: string;
   maxOutputTokens?: number;
   timeoutMs?: number;
+  /** Request an object response; plain chat and tools keep their existing formats. */
+  json?: boolean;
+  /** Applied only to provider/model combinations with a documented thinking switch. */
+  thinking?: boolean;
 }
 export interface ToolInvocationOptions extends ModelExecutionOptions { apiKey?: string }
 export interface ToolInvocationResult {

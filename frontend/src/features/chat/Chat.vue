@@ -14,14 +14,6 @@
       v-model:mode="mode"
       :disabled="loading || readOnly"
     />
-    <div v-if="activeTask" class="qa-task-status">
-      <strong>后台问答处理中</strong><span>{{ taskLabel(activeTask) }}</span
-      ><small>可离开页面，任务完成后会保存到当前会话。</small>
-    </div>
-    <div v-if="taskConnectionError" class="qa-task-status" role="status">
-      暂时无法更新后台任务，正在重试…
-    </div>
-    <div v-if="cancelError" class="qa-task-status" role="alert">{{ cancelError }}</div>
     <div class="messages-viewport">
       <div
         class="messages-container"
@@ -60,16 +52,26 @@
                   class="markdown-body"
                 ></div>
 
-                <AgentTimeline v-if="messageSteps(msg).length" :steps="messageSteps(msg)" :active="msg.loading" />
-                <p v-if="msg.cancelNotice" class="interrupted-label" role="status">{{ msg.cancelNotice }}</p>
-                <details v-if="msg.sources?.length" class="retrieved-sources">
-                  <summary>检索到的参考资料（{{ msg.sources.length }}）</summary>
+                <GenerationStatus
+                  v-if="msg.role === 'assistant' && msg.loading"
+                  :stage="msg.stage || 'connecting'"
+                  :has-content="!!msg.content"
+                  :summary="progressLabel(msg)"
+                  :background="!!activeTask && index === messages.length - 1"
+                  :reconnecting="taskConnectionError && index === messages.length - 1"
+                />
+                <p v-if="msg.taskError || (cancelError && msg.loading && index === messages.length - 1)" class="task-error" role="alert">{{ msg.taskError || cancelError }}</p>
+                <AgentTimeline v-if="messageSteps(msg).length" :steps="messageSteps(msg)" />
+                <p v-if="msg.cancelNotice && !msg.loading" class="interrupted-label" role="status">{{ msg.cancelNotice }}</p>
+                <details v-if="msg.citations?.length" class="retrieved-sources">
+                  <summary>参考段落（{{ msg.citations.length }}）</summary>
                   <button
-                    v-for="source in msg.sources"
+                    v-for="source in msg.citations"
                     :key="source.number"
+                    type="button"
                     @click="openCitation(source)"
                   >
-                    {{ source.filename }} · {{ source.text.slice(0, 45) }}
+                    [{{ source.number }}] {{ source.filename }} · {{ source.sectionTitle || source.location?.heading || source.text.slice(0, 45) }}
                   </button>
                 </details>
                 <div
@@ -93,11 +95,10 @@
                   查看检索过程
                 </button>
                 <span
-                  v-if="msg.generationStatus === 'interrupted'"
+                  v-if="msg.generationStatus === 'interrupted' && !msg.cancelNotice && !msg.taskError"
                   class="interrupted-label"
                   >生成已中断，内容可能不完整</span
                 >
-                <GenerationStatus v-if="msg.role === 'assistant' && msg.loading" :stage="msg.content ? 'writing' : (msg.stage || 'connecting')" :has-content="!!msg.content" />
               </div>
             </div>
           </div>
@@ -173,6 +174,7 @@ import { type Citation } from "../../api/knowledge-bases";
 interface Message {
   agentSteps?: AgentStep[];
   cancelNotice?: string;
+  taskError?: string;
   role: "user" | "assistant";
   content: string;
   loading?: boolean;
@@ -222,6 +224,15 @@ const taskLabel = (task: ProcessingTask) =>
     task.status
   ] || task.stage) +
   (task.total != null ? " · " + task.completed + "/" + task.total : "");
+const progressLabel = (message: Message) => {
+  if (activeTask.value && message === messages.value.at(-1)) {
+    if (taskConnectionError.value) return "暂时无法更新进度，正在重试…";
+    if (canceling.value || stopRequested.value) return "正在停止后台任务…";
+    if (["queued", "retrying"].includes(activeTask.value.status)) return taskLabel(activeTask.value);
+    return messageSteps(message).at(-1)?.summary || taskLabel(activeTask.value);
+  }
+  return message.content ? undefined : messageSteps(message).at(-1)?.summary;
+};
 function stopTaskPolling() {
   if (taskTimer) clearTimeout(taskTimer);
   taskTimer = undefined;
@@ -247,7 +258,7 @@ function pollTask(
   cancelError.value = "";
   activeTask.value = task;
   loading.value = true;
-  if (!messages.value.at(-1)?.loading) messages.value.push({ role: "assistant", content: "正在后台处理问答任务…", loading: true });
+  if (!messages.value.at(-1)?.loading) messages.value.push({ role: "assistant", content: "", loading: true });
   const applyProgress = (result: ProcessingTask) => {
     const message = messages.value.at(-1);
     if (message?.role !== 'assistant') return;
@@ -261,7 +272,7 @@ function pollTask(
   const tick = async () => {
     if (currentEpoch !== epoch) return;
     try {
-      const result = await getTask(task.id);
+      const result = await getTask(task.id, true);
       if (currentEpoch !== epoch) return;
       activeTask.value = result;
       applyProgress(result);
@@ -284,12 +295,10 @@ function pollTask(
         if (message?.role === "assistant" && message.loading) {
           if (result.status === 'canceled') {
             message.cancelNotice = "后台任务已停止，已获取的来源仍可查看。";
-            if (message.content.startsWith('正在后台')) message.content = '';
-          } else message.content = result.error || "后台问答任务未完成，可稍后重试。";
+          } else message.taskError = result.error || "后台问答任务未完成，可稍后重试。";
           message.loading = false;
           message.generationStatus = "interrupted";
         }
-        if (result.status !== "canceled") toast.error(result.error || "后台问答任务未完成");
         stopTaskPolling();
         loading.value = false;
         return;
@@ -297,7 +306,11 @@ function pollTask(
     } catch (error: any) {
       if (currentEpoch !== epoch) return;
       if ([401, 403, 404].includes(error?.response?.status)) {
-        toast.error("无法继续读取此后台任务，请重新打开会话确认状态。");
+        const message = messages.value.at(-1);
+        if (message?.role === 'assistant') {
+          message.loading = false;
+          message.taskError = "无法继续读取此后台任务，请重新打开会话确认状态。";
+        }
         stopTaskPolling();
         loading.value = false;
         return;
@@ -326,11 +339,9 @@ async function stopGeneration() {
   canceling.value = true;
   cancelError.value = '';
   try {
-    await cancelTask(task.id);
+    await cancelTask(task.id, true);
     if (currentEpoch !== epoch || activeTask.value?.id !== task.id) return;
     stopRequested.value = true;
-    const message = messages.value.at(-1);
-    if (message) message.cancelNotice = '已请求停止，正在确认后台任务状态…';
   } catch {
     if (currentEpoch === epoch) cancelError.value = '停止失败，后台任务仍在运行，可重试。';
   } finally {
@@ -524,7 +535,6 @@ const sendMessage = async () => {
         if (currentEpoch !== epoch) return;
         chatId.value = accepted.chatId;
         emit("chat-created", accepted.chatId);
-        messages.value[aiMsgIndex].content = "正在后台处理问答任务…";
         messages.value[aiMsgIndex].retrievalRunId = accepted.retrievalRunId || messages.value[aiMsgIndex].retrievalRunId;
         pollTask(
           {
@@ -561,8 +571,9 @@ const sendMessage = async () => {
         toast.error(err instanceof Error ? err.message : "获取响应失败");
         const message = messages.value[aiMsgIndex];
         message.generationStatus = "interrupted";
+        // 已确认引用可能已合并多个检索块，中断时优先保留它的完整快照。
         const candidates = new Map(
-          (message.sources || []).map((source) => [source.number, source]),
+          [...(message.sources || []), ...(message.citations || [])].map((source) => [source.number, source]),
         );
         const used = new Map<number, Citation>();
         message.content = message.content.replace(
@@ -661,6 +672,12 @@ onBeforeUnmount(() => {
 .interrupted-label {
   color: #d5bb90;
   font-size: 12px;
+}
+.task-error {
+  margin: 4px 0 8px;
+  color: var(--el-color-danger, #ff939b);
+  font-size: 13px;
+  line-height: 1.6;
 }
 :deep(.inline-citation) {
   border: 0;

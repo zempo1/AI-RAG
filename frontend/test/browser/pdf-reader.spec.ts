@@ -100,6 +100,8 @@ test('引用等待正确页并分别高亮，缩放旋转保持对齐，全文�
   const reader=page.getByRole('region',{name:'文档阅读器'});
   await expect(reader.getByLabel('页码',{exact:true})).toHaveValue('2');
   await expect(reader.locator('.page[data-page-number="2"] .citation-highlight')).toHaveCount(2);
+  await expect(reader.locator('.source-text')).toBeHidden();
+  await reader.locator('.reader-evidence summary').click();
   await expect(reader.locator('.source-text')).toBeVisible();
   const rect=reader.locator('.page[data-page-number="2"] .citation-highlight').first();
   await expect(rect).toBeInViewport();
@@ -195,4 +197,35 @@ test('删除最后一个知识库立即撤下正在查看的原件',async({page}
  await page.getByRole('menuitem',{name:'删除知识库',exact:true}).click();
  await page.locator('.knowledge-confirm').getByRole('button',{name:'确认',exact:true}).click();
  await expect(reader).toHaveCount(0);
+});
+
+test('阅读器使用图标关闭、快照默认折叠，工具栏在窄屏不溢出', async ({page}) => {
+  await page.setViewportSize({width:946,height:667});
+  await fixture(page); await history(page); await page.locator('[data-citation="1"]').click();
+  const reader=page.getByRole('region',{name:'文档阅读器'});
+  await expect(reader.locator('.page canvas').first()).toBeVisible();
+  await expect(reader.getByRole('button',{name:'关闭阅读器'})).not.toContainText('关闭');
+  await expect(reader.locator('.reader-evidence')).not.toHaveAttribute('open');
+  for(const width of [946,390]) {
+    await page.setViewportSize({width,height:667});
+    const metrics=await reader.locator('.pdf-toolbar').evaluate(el=>({width:el.clientWidth,scroll:el.scrollWidth}));
+    expect(metrics.width).toBeGreaterThan(width-4);
+    expect(metrics.scroll).toBeLessThanOrEqual(metrics.width);
+    await page.screenshot({path:`test-results/reader-polish-${width}.png`});
+  }
+});
+
+test('大量对话独立滚动且知识库保持在可见区域', async ({page}) => {
+  await fixture(page);
+  await page.route('**/api/chats',route=>route.fulfill({json:{data:Array.from({length:45},(_,i)=>({id:i+1,title:`历史对话 ${i+1}`,knowledgeBaseId:1}))}}));
+  await page.reload();
+  const list=page.locator('.chat-list');
+  await expect(list.locator('.chat-item')).toHaveCount(45);
+  const metrics=await list.evaluate(el=>({height:el.clientHeight,scroll:el.scrollHeight,overflow:getComputedStyle(el).overflowY}));
+  expect(metrics.height).toBeLessThanOrEqual(360);
+  expect(metrics.scroll).toBeGreaterThan(metrics.height);
+  expect(metrics.overflow).toBe('auto');
+  await expect(page.getByRole('button',{name:'管理文档',exact:true})).toBeInViewport();
+  await list.evaluate(el=>{el.scrollTop=el.scrollHeight;});
+  await expect(list.locator('.chat-item').last()).toBeInViewport();
 });

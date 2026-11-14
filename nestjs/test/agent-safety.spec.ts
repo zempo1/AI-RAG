@@ -1,5 +1,6 @@
 import { AgentService } from '../src/modules/agent/agent.service';
 import { AgentBudget } from '../src/modules/agent/agent-budget';
+import { RetrievalService } from '../src/modules/rag/retrieval.service';
 import { jest } from '@jest/globals';
 
 const scope = {
@@ -22,6 +23,8 @@ const evidence: any = {
 };
 function setup(extra: Record<string, any> = {}) {
   const retrieval: any = {
+    citationEvidence: RetrievalService.prototype.citationEvidence,
+    original: RetrievalService.prototype.original,
     createScope: async () => structuredClone(scope),
     verify: async () => {},
     open: async () => ({ scope }),
@@ -299,13 +302,17 @@ it.each([
   p.llm.complete = async () => JSON.stringify({
     intent, complexity: 'simple', subQuestions: [question], ambiguous: false,
   });
-  const summarizeAgent = jest.fn(async (_sources: any[]) => ({
+  const summarizeAgent = jest.fn(async (_sources: any[], _meta: any, execution: any) => {
+    expect(execution.maxOutputTokens).toBe(output);
+    expect(execution.timeoutMs).toBeGreaterThan(20000);
+    return ({
     groups: [{
       summary: 'CRC用于差错检测[1]。' + (output === 128 ? '另一页要点[2]。'.repeat(12) : ''),
       refs: { '1': 'ev1', '2': 'ev2' },
     }],
     coverage: { complete: true, totalSections: 1, completedSections: 1 },
-  }));
+  });
+  });
   (p.service as any).summary = { summarizeAgent };
   const accepted = await p.service.prepare(question, 1, 2, { documentIds: [3] });
   expect(accepted.requiresAsync).toBe(true);
@@ -322,6 +329,116 @@ it.each([
     expect(result.sources[1].evidenceId).toBe('ev2');
   } else expect(result.directAnswer).toContain('CRC用于差错检测[1]');
   expect(result.sources[0].evidenceId).toBe('ev1');
+});
+
+it.each(['search', 'overview', 'general'])(
+  'automatically reads both resume pages even when the planner proposes %s', async (intent) => {
+    const p = setup();
+    const question = '假如你是资深前端面试官，总结这份简历写了什么，有什么技术亮点';
+    const first = { ...evidence, filename: '前端简历.pdf', text: '第一家公司实习与微前端项目经历',
+      location: { page: 1, start: 0, end: 18 } };
+    const second = { ...evidence, evidenceId: 'ev2', chunkId: 6, filename: '前端简历.pdf',
+      text: '第二页：教育背景，以及混合检索、断点续传、WebSocket技术实践',
+      location: { page: 2, start: 20, end: 58 } };
+    p.retrieval.createScope = async () => ({ ...scope,
+      documents: [{ ...scope.documents[0], filename: '前端简历.pdf' }] });
+    p.retrieval.read = async (_session: any, input: any) => input.cursor === 1
+      ? { evidence: [second], complete: true }
+      : { evidence: [first], complete: false, nextCursor: 1 };
+    p.retrieval.pack = async () => ({ sources: [], complete: false });
+    p.llm.complete = async () => JSON.stringify({ intent, complexity: 'simple', subQuestions: [question], ambiguous: false });
+    (p.service as any).summary = {
+      summarizeAgent: async (sources: any[], meta: any) => {
+        expect(sources.map(s => s.location.page)).toEqual([1, 2]);
+        expect(meta.question).toBe(question);
+        return { groups: [{ summary: '实习与微前端实践[1]；教育背景及检索、通信、上传技术亮点[2]。',
+          refs: { '1': 'ev1', '2': 'ev2' } }],
+          coverage: { complete: true, totalSections: 1, completedSections: 1 } };
+      },
+    };
+    const accepted = await p.service.prepare(question, 1, 2, { documentIds: [3], mode: 'auto' });
+    expect(accepted.requiresAsync).toBe(true);
+    expect(accepted.snapshot.plan.intent).toBe('overview');
+    const result = await p.service.resume(accepted.snapshot, { background: true });
+    expect(result.directAnswer).toContain('教育背景');
+    expect(result.coverageComplete).toBe(true);
+    expect(result.sources.map((s: any) => s.location.page)).toEqual([1, 2]);
+  },
+);
+
+it('answers a complete short resume directly even when it exceeds the search evidence cap', async () => {
+  const p = setup({ RAG_EVIDENCE_TOKENS: 8000 });
+  const question = '假如你是资深前端面试官，总结这份简历写了什么，有什么技术亮点';
+  const firstText = '第一页公司和实习经历：' + 'a'.repeat(4600);
+  const secondText = '第二页教育背景和技术亮点：' + 'b'.repeat(4600);
+  const sources = [
+    { ...evidence, text: firstText, location: { page: 1, start: 0, end: firstText.length } },
+    { ...evidence, evidenceId: 'ev2', chunkId: 6, text: secondText,
+      location: { page: 2, start: firstText.length + 2, end: firstText.length + 2 + secondText.length } },
+  ];
+  p.retrieval.read = async () => ({ evidence: sources, complete: true });
+  p.retrieval.open = async () => ({ scope, chunks: sources.map(s => ({ id: s.chunkId, documentId: 3, location: s.location })) });
+  p.retrieval.pack = async (items: any[], budget: number) => {
+    const included: any[] = [];
+    for (const item of items) {
+      const next = [...included, { ...item, number: included.length + 1 }];
+      if (Buffer.byteLength(p.retrieval.context(next), 'utf8') <= budget) included.push(next.at(-1));
+    }
+    return { sources: included, complete: included.length === items.length };
+  };
+  (p.service as any).summary = { summarizeAgent: async () => { throw new Error('A complete short resume must not depend on intermediate summaries'); } };
+  p.llm.complete = async (prompt: string, _key: any, _images: any, _signal: any, execution: any) => {
+    if (prompt.startsWith('分析用户问题')) return JSON.stringify({ intent: 'overview', complexity: 'complex', subQuestions: [question], ambiguous: false });
+    expect(execution.thinking).toBe(false);
+    expect(prompt).toContain(firstText);
+    expect(prompt).toContain(secondText);
+    expect(prompt).toContain(question);
+    return '公司和实习经历[1]；教育背景与技术亮点[2]。';
+  };
+  const prepared = await p.service.prepare(question, 1, 2, { documentIds: [3], mode: 'auto' });
+  expect(prepared.requiresAsync).toBe(false);
+  expect(prepared.coverageComplete).toBe(true);
+  expect(prepared.directAnswer).toBeUndefined();
+  const answer = await p.service.answerPrepared(prepared);
+  expect(answer.answer).toContain('教育背景');
+  expect(answer.citations.map((c: any) => c.location.page)).toEqual([1, 2]);
+});
+
+it('does not treat a resumed whole-resume request as complete with only one page of evidence', async () => {
+  const p = setup();
+  const first = { ...evidence, text: '第一页的局部经历', location: { page: 1, start: 0, end: 8 } };
+  p.retrieval.open = async () => ({ scope, chunks: [
+    { id: 5, documentId: 3, location: first.location },
+    { id: 6, documentId: 3, location: { page: 2, start: 10, end: 30 } },
+  ] });
+  const snapshot: any = {
+    engine: 'agentic-v1', userId: 1, knowledgeBaseId: 2, runId: 7, scope,
+    question: '总结这份简历写了什么，有什么技术亮点', mode: 'auto',
+    plan: { intent: 'search', complexity: 'simple', subQuestions: ['简历内容与技术亮点'] },
+    phase: 'finalize', steps: [], budget: AgentBudget.initial(), evidence: [first],
+    messages: [], pending: [], journal: {}, noProgress: 0, repairUsed: false, history: [],
+  };
+  const result = await (p.service as any).context(snapshot, {}, false);
+  expect(result.coverageComplete).toBe(false);
+  expect(result.directAnswer).toMatch(/全文|完整|核查/);
+});
+
+it.each([
+  '总结这份简历中的WebSocket实现方案',
+  '这份简历的RAG项目用了什么技术栈',
+  '总结前端简历.pdf中的教育背景',
+  '总结这份简历第2页的内容',
+])('keeps a focused resume question in search mode: %s', async (question) => {
+  const p = setup();
+  p.retrieval.createScope = async () => ({ ...scope,
+    documents: [{ ...scope.documents[0], filename: '前端简历.pdf' }] });
+  p.llm.complete = async (prompt: string) => prompt.startsWith('分析用户问题')
+    ? JSON.stringify({ intent: 'overview', complexity: 'simple', subQuestions: [question], ambiguous: false })
+    : JSON.stringify({ supported: true,
+      subQuestions: [{ question, status: 'supported', evidenceIds: ['ev1'] }] });
+  const result = await p.service.prepare(question, 1, 2, { mode: 'auto', documentIds: [3] });
+  expect(result.requiresAsync).toBe(false);
+  expect(result.diagnostics.agent.plan.intent).toBe('search');
 });
 
 it('returns verified summary sections with original citations and an explicit partial notice', async () => {

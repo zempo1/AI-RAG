@@ -31,7 +31,10 @@ md.renderer.rules.table_close = (tokens, index, options, _env, renderer) =>
   renderer.renderToken(tokens, index, options) + '</div>\n';
 
 md.renderer.rules.text = (tokens, index, _options, env) => {
-  const escaped = md.utils.escapeHtml(tokens[index].content);
+  // Normalize model-generated citation wrappers without enabling arbitrary HTML.
+  // Code spans and code fences use separate renderers and retain their literals.
+  const content = tokens[index].content.replace(/<sup\s*>\s*((?:\[\d+\]\s*)+)<\/sup\s*>/gi, '$1');
+  const escaped = md.utils.escapeHtml(content);
   return escaped.replace(/\[(\d+)\]/g, (marker, number) =>
     env?.citationNumbers?.has(Number(number))
       ? '<button type="button" class="inline-citation" data-citation="' +

@@ -74,3 +74,18 @@ test('宽表格只在表格区域横向滚动，正文保持原宽并可用键�
   await page.keyboard.press('ArrowRight');
   await expect.poll(() => scroll.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
 });
+
+test('清理引用的sup包装，同时保留代码和普通HTML转义', async ({ page }) => {
+  const wrapped = comparison.replace(/\[1\]/g, '<sup>[1]</sup>') +
+    '\n\n代码示例：`<sup>[1]</sup>`\n\n普通标签：<sup>2</sup>\n\n<script>window.injected=true</script>';
+  await openAnswer(page, wrapped);
+  const table = page.locator('.message-row.assistant table');
+  await expect(table).not.toContainText('<sup>');
+  await expect(table.locator('[data-citation="1"]')).toHaveCount(5);
+  await expect(page.locator('.markdown-body code')).toHaveText('<sup>[1]</sup>');
+  await expect(page.locator('.markdown-body')).toContainText('<sup>2</sup>');
+  await expect(page.locator('.markdown-body script')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).injected)).toBeUndefined();
+  await table.locator('[data-citation="1"]').first().click();
+  await expect(page.getByRole('region', { name: '文档阅读器' })).toBeVisible();
+});

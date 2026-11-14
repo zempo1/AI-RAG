@@ -512,7 +512,7 @@ describe('existing Vue API contract', () => {
         .set(auth())
         .attach(
           'file',
-          Buffer.from('# 章节\n\n' + '知识库证据覆盖。'.repeat(400)),
+          Buffer.from('# 章节\n\n' + '知识库证据覆盖。'.repeat(1600)),
           'long-overview.md',
         )
         .expect(202);
@@ -591,7 +591,7 @@ describe('existing Vue API contract', () => {
     config.set('RAG_EVIDENCE_TOKENS', 300);
     try {
       const upload = (await request(app.getHttpServer()).post('/api/upload').set(auth())
-        .attach('file', Buffer.from('# 取消\n' + '取消测试原文。'.repeat(400)), 'cancel-agent.md').expect(202)).body.data;
+        .attach('file', Buffer.from('# 取消\n' + '取消测试原文。'.repeat(1600)), 'cancel-agent.md').expect(202)).body.data;
       await app.get(IndexingService).process(upload.taskId);
       const accepted = (await request(app.getHttpServer()).post('/api/chat').set(auth()).send({
         question: '总结全文', mode: 'overview', documentIds: [upload.documentId], requestId: randomUUID(),

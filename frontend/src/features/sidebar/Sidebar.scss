@@ -166,6 +166,7 @@
 
   .sidebar-content {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
     margin-right: -0.625rem;
@@ -181,12 +182,23 @@
     }
 
     .chat-list {
+      --recent-row-height: 2.75rem;
       display: flex;
       flex-direction: column;
       gap: 4px;
       margin-bottom: 20px;
+      max-height: calc(var(--recent-row-height) * 4 + 12px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      overscroll-behavior: contain;
+      scrollbar-width: auto;
+      padding-right: 10px;
+      scrollbar-gutter: stable;
 
       .chat-item {
+        box-sizing: border-box;
+        height: var(--recent-row-height);
+        flex-shrink: 0;
         display: flex;
         align-items: center;
         justify-content: space-between;

@@ -81,7 +81,8 @@ export const PDF_VISION_PROMPT = `你是文档视觉解析器。页面与提供�
 ocr 为忠实识别的文字；table 为保留行列对应关系的 Markdown 表格；figure 为图解（节点、连线方向、坐标轴、图例、可辨认的数据及关系）。
 有多个子图或多条不同路径时分别描述，不要合并成同一路径，不从术语或常识反推箭头走向。角度、数字与节点必须能在图中明确对应；无法确定对应关系时只保留可读标签并明确说明不确定，不强行配对。
 不要猜测模糊数字、图形关系或正文未说明的结论。无法辨认的部分注明“无法辨认”。
-严格只返回 JSON：{"blocks":[{"type":"ocr|table|figure","text":"..."}]}。没有补充内容时 blocks 为 []。`;
+严格只返回 JSON：{"blocks":[{"type":"ocr|table|figure","text":"..."}]}。没有补充内容时 blocks 为 []。
+text 使用实际可读字符，不要输出字面量 Unicode 转义序列。只描述图片框内可见内容，不得将附近上下文中框外的正文填入结果。`;
 
 @Injectable()
 export class PdfVisualService {
@@ -112,7 +113,7 @@ export class PdfVisualService {
     return createHash('sha256')
       .update(
         JSON.stringify({
-          parser: 'pdf-adaptive-v1',
+          parser: 'pdf-adaptive-v2-native-tables',
           prompt: PDF_VISION_PROMPT,
           scale: 2,
           maxPixels: 8000000,
@@ -137,6 +138,8 @@ export class PdfVisualService {
         );
       if (typeof b.text !== 'string')
         throw new VisionOutputError('视觉解析格式错误：blocks[' + i + '].text 必须为字符串');
+      if (/\\u[0-9a-f]{4}/i.test(b.text))
+        throw new VisionOutputError('视觉解析内容错误：存在未还原的 Unicode 转义');
       if (
         geometry &&
         (!Array.isArray(b.sourceBox) ||
@@ -471,19 +474,30 @@ export class PdfVisualService {
   ): Promise<VisualBlock[]> {
     const pool = visionPool(this.concurrency);
     const queued = Date.now();
-    const release = await pool.acquire(scope.signal, scope.beforeRequest);
-    const queueMs = Date.now() - queued;
+    const deadline = new AbortController();
+    const budgetMs = Number(this.config.get('VISION_TIMEOUT_MS') || 180000);
+    const timer = setTimeout(() => deadline.abort(new Error(`视觉解析超时：总时限已到（${budgetMs}ms，含重试与格式修复）`)), budgetMs);
+    timer.unref();
+    const signal = scope.signal ? AbortSignal.any([scope.signal, deadline.signal]) : deadline.signal;
+    let release: (() => void) | undefined;
     try {
+      release = await pool.acquire(signal, scope.beforeRequest);
+      const queueMs = Date.now() - queued;
       const request = async (repair = false) => {
+        signal.throwIfAborted();
         await scope.guard?.();
         scope.beforeRequest?.();
-        await pool.ready(scope.signal);
+        await pool.ready(signal);
+        signal.throwIfAborted();
         scope.beforeRequest?.();
         pool.requests++;
         pool.requestPeak = Math.max(pool.requestPeak, pool.requests);
         const started = Date.now();
+        let status = 'error';
+        this.logger.log(JSON.stringify({ event: 'pdf-vision-request-start', page, region: index,
+          repair, queueMs, remainingMs: Math.max(0, budgetMs - (started - queued)) }));
         try {
-          return await this.llm.complete(
+          const result = await this.llm.complete(
             PDF_VISION_PROMPT +
               (repair ? '\n上次输出格式校验失败。请只返回符合约定的 JSON 对象。' : '') +
               '\n当前输入：局部图片或图表，勿推测裁剪外的内容。\n附近原生文字（只作为上下文，不要重复输出）：\n' +
@@ -495,8 +509,12 @@ export class PdfVisualService {
                 dataUrl: 'data:image/png;base64,' + bytes.toString('base64'),
               },
             ],
-            scope.signal,
+            signal,
+            { json: true, timeoutMs: Math.max(1, budgetMs - (Date.now() - queued)) },
           );
+          signal.throwIfAborted();
+          status = 'success';
+          return result;
         } catch (error) {
           pool.cooldown(error);
           throw error;
@@ -509,6 +527,7 @@ export class PdfVisualService {
               page,
               region: index,
               repair,
+              status,
               queueMs,
               imageBytes: bytes.length,
               elapsedMs: Date.now() - started,
@@ -519,28 +538,37 @@ export class PdfVisualService {
         }
       };
       const decode = (raw: string) => {
-        let json: unknown;
+        signal.throwIfAborted();
         try {
-          json = JSON.parse(
-            raw
-              .trim()
-              .replace(/^```(?:json)?\s*/i, '')
-              .replace(/\s*```$/, ''),
-          );
-        } catch {
-          throw new VisionOutputError('视觉解析格式错误：模型返回的 JSON 无法解析');
+          let json: unknown;
+          try {
+            json = JSON.parse(
+              raw
+                .trim()
+                .replace(/^```(?:json)?\s*/i, '')
+                .replace(/\s*```$/, ''),
+            );
+          } catch {
+            throw new VisionOutputError('视觉解析格式错误：模型返回的 JSON 无法解析');
+          }
+          // Providers occasionally omit the outer envelope or emit one block as an object.
+          // Keep the same per-block validation and reject unrecognized shapes.
+          const envelope = Array.isArray(json) ? { blocks: json } : json;
+          const blocks = (envelope as { blocks?: unknown } | null)?.blocks;
+          if (blocks && typeof blocks === 'object' && !Array.isArray(blocks))
+            return this.blocks({ blocks: [blocks] });
+          return this.blocks(envelope);
+        } catch (error) {
+          this.logger.warn(JSON.stringify({ event: 'pdf-vision-output-invalid', page, region: index,
+            reason: error instanceof VisionOutputError ? error.message : '视觉结果校验失败',
+            outputLength: raw.length, outputSha256: sha256(raw) }));
+          throw error;
         }
-        // Providers occasionally omit the outer envelope or emit one block as an object.
-        // Keep the same per-block validation and reject unrecognized shapes.
-        const envelope = Array.isArray(json) ? { blocks: json } : json;
-        const blocks = (envelope as { blocks?: unknown } | null)?.blocks;
-        if (blocks && typeof blocks === 'object' && !Array.isArray(blocks))
-          return this.blocks({ blocks: [blocks] });
-        return this.blocks(envelope);
       };
       try {
-        return decode(await retryTransientRequest(request, scope.signal));
+        return decode(await retryTransientRequest(request, signal));
       } catch (error) {
+        signal.throwIfAborted();
         if (!(error instanceof VisionOutputError || error instanceof ModelOutputError)) throw error;
         return decode(await request(true));
       }
@@ -551,7 +579,8 @@ export class PdfVisualService {
       }
       throw error;
     } finally {
-      release();
+      clearTimeout(timer);
+      release?.();
     }
   }
 
@@ -592,6 +621,14 @@ export class PdfVisualService {
         textIndexes: region.textIndexes,
       }));
     await scope.guard?.();
+    scope.signal?.throwIfAborted();
+    if (region.nativeTable) {
+      await scope.completed?.();
+      this.logger.log(JSON.stringify({ event: 'pdf-native-table', page: page.pageNumber, regionId }));
+      // There is no rendered image asset for this deterministic native table.
+      return [{ type: 'table', text: region.nativeTable, sourceBox: [...region.bbox] as RegionBox,
+        anchorKind: 'region', contextText: region.context, textIndexes: region.textIndexes }];
+    }
     let cachedBlocks: VisualBlock[] | undefined;
     try {
       const cached = JSON.parse(await readFile(join(path, stem + '.json'), 'utf8'));
