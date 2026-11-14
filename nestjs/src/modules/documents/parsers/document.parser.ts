@@ -7,6 +7,12 @@ import { shiftSourceLocation, sliceSourceLocation } from './source-anchors';
 import { PdfVisualService, ParseContext, markPdfFailure } from './pdf-visual.service';
 import { localRendering } from './vision-scheduler';
 import { textPositions } from './pdf-layout';
+import {
+  detectPdfTableGrids,
+  hasPageTailTable,
+  linkAdjacentPageTables,
+  splitNativeTableBlocks,
+} from './pdf-table-layout';
 
 type PageProgress = (done: number, total: number) => void | Promise<void>;
 
@@ -233,7 +239,7 @@ export class DocumentParser {
           return [{ page: i, ...range, rects: [box], kind: 'native' as const }];
         });
         // 每页独立保留局部偏移；收集整份文档时统一平移为全局偏移。
-        const nativeBlocks = paragraphBlocks(pageText, i).map((b) => ({
+        const paragraphs = paragraphBlocks(pageText, i).map((b) => ({
           ...b,
           location: sliceSourceLocation(
             { ...b.location, contentType: 'native' as const, anchorVersion: 1, anchors: nativeAnchors },
@@ -241,6 +247,13 @@ export class DocumentParser {
             b.location.end,
           ),
         }));
+        const grids = detectPdfTableGrids(
+          await localRendering.run(() => page.getOperatorList(), signal),
+          pdfjs.OPS,
+          viewport,
+          i,
+        );
+        const nativeBlocks = splitNativeTableBlocks(paragraphs, grids, positions, itemRanges);
         const entries: { order: number; block: ParsedDocument['blocks'][number] }[] =
           nativeBlocks.map((block, n) => ({ order: n, block }));
         if (context && this.visual) {
@@ -341,33 +354,44 @@ export class DocumentParser {
       }
     };
     let next = 1;
+    const prepare = (number: number) => {
+      const page = processPage(number)
+        .then(async (result) => {
+          const completed = ++finished;
+          await report(!enhanced);
+          if (progress && (!enhanced || !original?.stage)) {
+            reporting = reporting.then(async () => {
+              await progress(completed, document.numPages);
+            });
+            await reporting;
+          }
+          return result;
+        })
+        .catch((error) => {
+          firstFailure ||= error;
+          return undefined;
+        });
+      pending.set(number, page);
+    };
     try {
       for (let i = 1; i <= document.numPages; i++) {
         beforeRequest();
         while (pending.size < window && next <= document.numPages) {
-          const number = next++;
-          const page = processPage(number)
-            .then(async (result) => {
-              const completed = ++finished;
-              await report(!enhanced);
-              if (progress && (!enhanced || !original?.stage)) {
-                reporting = reporting.then(async () => {
-                  await progress(completed, document.numPages);
-                });
-                await reporting;
-              }
-              return result;
-            })
-            .catch((error) => {
-              firstFailure ||= error;
-              return undefined;
-            });
-          pending.set(number, page);
+          prepare(next++);
         }
         const result = await pending.get(i);
         pending.delete(i);
         beforeRequest();
         if (!result) throw new Error('PDF 页面未解析完成');
+        // A possible tail table waits for exactly one adjacent page. Ordinary pages
+        // retain the existing streaming latency and recognition concurrency bound.
+        if (i < document.numPages && hasPageTailTable(result)) {
+          if (!pending.has(i + 1)) prepare(next++);
+          const following = await pending.get(i + 1);
+          beforeRequest();
+          if (!following) throw new Error('PDF 续页未解析完成');
+          linkAdjacentPageTables(result, following);
+        }
         hasContent ||= Boolean(result.text.trim());
         yield result;
       }

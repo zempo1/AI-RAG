@@ -24,8 +24,10 @@ export class RecursiveChunker {
         previous.location.contentType === block.location.contentType &&
         previous.location.pageImage?.profile === block.location.pageImage?.profile &&
         previous.location.regionImage?.regionId === block.location.regionImage?.regionId &&
+        previous.location.table?.id === block.location.table?.id &&
         previous.contextText === block.contextText &&
-        block.location.start >= previous.location.end
+        block.location.start >= previous.location.end &&
+        !document.text.slice(previous.location.end, block.location.start).trim()
       ) {
         previous.location = mergeSourceLocations(previous.location, block.location);
         previous.text = document.text.slice(previous.location.start, block.location.end);

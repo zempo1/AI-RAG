@@ -11,7 +11,7 @@ const sublabel = /^(?:项目背景|背景介绍|主要职责|技术亮点|项目
 export function structuralPdfCitations<T extends Citation>(sources: T[]): T[] {
   const buckets = new Map<string, { original: T; slices: T[] }[]>();
   for (const source of sources) {
-    if (!/\.pdf$/i.test(source.filename) || !source.location?.anchors?.length ||
+    if (source.location?.table || !/\.pdf$/i.test(source.filename) || !source.location?.anchors?.length ||
       source.location.anchors.some(a => a.kind !== 'native')) continue;
     const key = `${source.documentId}:${source.versionId}:${source.indexRevisionId}`;
     const slices = source.sourceSegments ? source.sourceSegments.map(part => ({ ...source,

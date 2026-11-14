@@ -19,6 +19,17 @@ export interface PdfSourceAnchor {
   rects: RegionBox[];
   kind: 'native' | 'ocr' | 'region';
 }
+/** A local vector grid. Coordinates follow the same rotated viewport as source anchors. */
+export interface PdfTableLocation {
+  id: string;
+  groupId: string;
+  bbox: RegionBox;
+  columns: number[];
+  rows: number[];
+  title?: string;
+  continuedFrom?: number;
+  continuedTo?: number;
+}
 export interface SourceLocation {
   anchorVersion?: 1;
   anchors?: PdfSourceAnchor[];
@@ -26,6 +37,7 @@ export interface SourceLocation {
   pageImage?: PageImageRef;
   regionImage?: RegionImageRef;
   relatedParagraphs?: number[];
+  table?: PdfTableLocation;
   page: number | null;
   paragraph: number | null;
   heading: string | null;

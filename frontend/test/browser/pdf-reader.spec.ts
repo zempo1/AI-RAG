@@ -35,12 +35,12 @@ const source = (number = 1, page = 2, extra = {}) => ({
   location: { page, paragraph: 1, heading: null, start: 0, end: 29, anchorVersion: 1,
     anchors: [{ page, start: 0, end: 29, rects: [[.1,.12,.75,.15],[.1,.18,.5,.21]], kind: 'native' }] }, ...extra,
 });
-async function fixture(page: Page, options: { missing?: boolean; originalMissing?: boolean; delayed?: boolean; large?: boolean } = {}) {
+async function fixture(page: Page, options: { missing?: boolean; originalMissing?: boolean; delayed?: boolean; large?: boolean; citations?: ReturnType<typeof source>[] } = {}) {
   page.on('pageerror', error => console.error('PDF browser error:', error.message));
   const pdf = await pdfFixture(options.large);
   const state = { originals: 0, previews: 0, auth: '', range: '', ranges: 0, activated: 0 };
   await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('username','tester'); });
-  const citations = [source(), source(2, 3), source(3, 1, { sourceOutdated: true }), source(4, 1, { sourceDeleted: true }),
+  const citations = options.citations ?? [source(), source(2, 3), source(3, 1, { sourceOutdated: true }), source(4, 1, { sourceDeleted: true }),
     source(5, 2, { location: { page: 2, paragraph: null, heading: null, start: 0, end: 29 } }),
     source(6, 1, { filename: '说明.md', documentId: 2, versionId: 12, location: { page: null, paragraph: 1, heading: '说明', start: 0, end: 8 } })];
   await page.route(url => url.pathname.startsWith('/api/'), async route => {
@@ -117,6 +117,87 @@ test('引用等待正确页并分别高亮，缩放旋转保持对齐，全文�
   await expect(reader.locator('.pdf-find-status')).toContainText('3');
   await expect(reader.locator('.textLayer .highlight').first()).toBeAttached();
   await page.screenshot({path:'test-results/pdf-citation-rotated.png'});
+});
+
+test('单条跨页引用保留两页独立高亮，切页缩放旋转后不覆盖续页后继章节', async ({page}) => {
+  // 首页面两行及续页首行模拟一张跨页表；SECOND LINE 2 是表后紧随的章节。
+  // 若只取首个 anchor、续页丢框或将两页矩形合并成区域，此用例都会失败。
+  const firstLocation = { page: 1, paragraph: 1, heading: null, start: 0, end: 43, anchorVersion: 1,
+    anchors: [{page:1,start:0,end:43,rects:[[.1,.12,.75,.15],[.1,.18,.5,.21]],kind:'native'}] };
+  const continuedLocation = { page: 2, paragraph: 1, heading: null, start: 44, end: 73, anchorVersion: 1,
+    anchors: [{page:2,start:44,end:73,rects:[[.1,.12,.6,.15]],kind:'native'}] };
+  const state = await fixture(page, { citations: [source(1, 1, {
+    text: 'PDF PAGE 1 searchable content\nSECOND LINE 1\nPDF PAGE 2 searchable content',
+    sourceSegments: [
+      {text:'PDF PAGE 1 searchable content\nSECOND LINE 1',location:firstLocation,chunkIds:[1]},
+      {text:'PDF PAGE 2 searchable content',location:continuedLocation,chunkIds:[2]},
+    ],
+    location: {...firstLocation,end:73,anchors:[...firstLocation.anchors,...continuedLocation.anchors]},
+  })] });
+  await history(page); await page.locator('[data-citation="1"]').click();
+  const reader = page.getByRole('region', {name:'文档阅读器'});
+  const firstPage = reader.locator('.page[data-page-number="1"]');
+  const continuedPage = reader.locator('.page[data-page-number="2"]');
+  const pageInput = reader.getByLabel('页码', {exact:true});
+  // 期望坐标直接按 400×600 页面手算，不调用生产坐标变换函数。
+  const expectGeometry = async (number: number, expected: number[][]) => {
+    const pdfPage = reader.locator(`.page[data-page-number="${number}"]`);
+    await expect(pdfPage.locator('.citation-highlight')).toHaveCount(expected.length);
+    await expect.poll(async () => pdfPage.evaluate(el => {
+      const bounds = el.getBoundingClientRect();
+      return Array.from(el.querySelectorAll('.citation-highlight'), highlight => {
+        const rect = highlight.getBoundingClientRect();
+        return [(rect.x-bounds.x)/bounds.width,(rect.y-bounds.y)/bounds.height,rect.width/bounds.width,rect.height/bounds.height]
+          .map(value => Math.round(value*100)/100);
+      });
+    })).toEqual(expected);
+  };
+  const expectFollowingSectionClear = async () => {
+    const followingSection = continuedPage.locator('.textLayer').getByText('SECOND LINE 2', {exact:true});
+    await expect(followingSection).toBeAttached();
+    const overlaps = await followingSection.evaluate(el => {
+      const section = el.getBoundingClientRect();
+      return Array.from(el.closest('.page')!.querySelectorAll('.citation-highlight')).some(highlight => {
+        const rect = highlight.getBoundingClientRect();
+        return rect.left < section.right && rect.right > section.left && rect.top < section.bottom && rect.bottom > section.top;
+      });
+    });
+    expect(overlaps).toBe(false);
+    await expect(reader.locator('.page[data-page-number="3"] .citation-highlight')).toHaveCount(0);
+  };
+  await expect(pageInput).toHaveValue('1');
+  await expect(firstPage.locator('.textLayer')).toContainText('PDF PAGE 1');
+  await expectGeometry(1, [[.1,.12,.65,.03],[.1,.18,.4,.03]]);
+  await expect(firstPage.locator('.citation-highlight').first()).toBeInViewport();
+  await page.screenshot({path:resolve('../.shared/cross-page/reader-cross-page-first.png')});
+
+  await reader.getByRole('button', {name:'下一页',exact:true}).click();
+  await expect(pageInput).toHaveValue('2');
+  await expect(continuedPage.locator('.textLayer')).toContainText('PDF PAGE 2');
+  await expectGeometry(2, [[.1,.12,.5,.03]]);
+  await expect(continuedPage.locator('.citation-highlight')).toBeInViewport();
+  await expectFollowingSectionClear();
+  await page.screenshot({path:resolve('../.shared/cross-page/reader-cross-page-continuation.png')});
+
+  const originalCanvasWidth = await continuedPage.locator('canvas').evaluate(el => el.getBoundingClientRect().width);
+  await reader.getByRole('button', {name:'放大',exact:true}).click();
+  await expect.poll(async () => continuedPage.locator('canvas').evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(originalCanvasWidth);
+  await expectGeometry(2, [[.1,.12,.5,.03]]);
+  await reader.getByRole('button', {name:'上一页',exact:true}).click();
+  await expect(pageInput).toHaveValue('1');
+  await expectGeometry(1, [[.1,.12,.65,.03],[.1,.18,.4,.03]]);
+  await reader.getByRole('button', {name:'顺时针旋转 90 度',exact:true}).click();
+  await expectGeometry(1, [[.85,.1,.03,.65],[.79,.1,.03,.4]]);
+  await reader.getByRole('button', {name:'下一页',exact:true}).click();
+  await expect(pageInput).toHaveValue('2');
+  await expectGeometry(2, [[.85,.1,.03,.5]]);
+  // 放大后横向页面宽于侧栏，适宽后再验证续页引用实际可见。
+  await reader.getByRole('button', {name:'适宽',exact:true}).click();
+  await expectGeometry(2, [[.85,.1,.03,.5]]);
+  await expect(continuedPage.locator('.citation-highlight')).toBeInViewport();
+  await expectFollowingSectionClear();
+  await page.screenshot({path:resolve('../.shared/cross-page/reader-cross-page-rotated.png')});
+  expect(state.originals).toBe(1);
 });
 
 test('快速切换同 PDF 引用最后一次生效并复用加载，旧版允许读取且缺位置只跳页', async ({page}) => {

@@ -208,6 +208,7 @@ export class AgentTools {
           evidence.push(...page.evidence);
           next = page.nextCursor;
         }
+        if (evidence.some(e => e.location?.table || e.tableRegions?.length)) evidence = this.retrieval.expandTables(session, evidence);
         evidence = this.retrieval.citationEvidence(evidence);
         if (await this.canAnswerDirectly?.(s, call, evidence)) {
           return { evidence, output: JSON.stringify({ complete: true,

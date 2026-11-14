@@ -8,11 +8,13 @@ import { LlmModule } from '../llm/llm.module';
 import { QualityModelsService } from './quality-models.service';
 import { SummaryService } from './summary.service';
 import { RetrievalRunsController } from './retrieval-runs.controller';
+import { PdfTableBackfillService } from './pdf-table-backfill.service';
+import { DocumentOriginalsService } from '../documents/document-originals.service';
 
 @Module({
   imports: [EmbeddingsModule, VectorStoreModule, KnowledgeBasesModule, LlmModule],
   controllers: [RetrievalRunsController],
-  providers: [RagService, RetrievalService, QualityModelsService, SummaryService],
+  providers: [RagService, RetrievalService, QualityModelsService, SummaryService, PdfTableBackfillService, DocumentOriginalsService],
   exports: [RagService, RetrievalService, SummaryService],
 })
 export class RagModule {}

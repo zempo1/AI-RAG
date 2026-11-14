@@ -47,7 +47,20 @@ it('merges source geometry and omits it only from external model/vector projecti
   const a = sliceSourceLocation(location, 0, 8),
     b = sliceSourceLocation(location, 7, 12);
   expect(mergeSourceLocations(a, b).anchors).toHaveLength(3);
-  const original = { location, retrievalMetadata: { parentLocation: location }, text: '原文' };
+  const table = {
+    id: 'table-1',
+    groupId: 'logical-table',
+    bbox: [0, 0, 1, 1],
+    columns: [0, 0.5, 1],
+    rows: [0, 0.5, 1],
+  };
+  const located = { ...location, table };
+  const original = {
+    location: located,
+    retrievalMetadata: { parentLocation: located },
+    tableRegions: [{ page: 1, table }],
+    text: '原文',
+  };
   const projected = withoutSourceGeometry(original);
   expect(projected).toEqual({
     location: { page: 1, paragraph: 1, heading: null, contentType: 'native', start: 0, end: 12 },
@@ -64,6 +77,7 @@ it('merges source geometry and omits it only from external model/vector projecti
     text: '原文',
   });
   expect(original.location.anchors).toHaveLength(2);
+  expect(original.location.table.groupId).toBe('logical-table');
 });
 
 it('keeps all merged paragraphs but crops anchors to each child range and global offset', () => {

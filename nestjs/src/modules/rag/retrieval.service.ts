@@ -13,6 +13,8 @@ import { Citation } from './citations';
 import { pdfReadingContext } from './pdf-reading-context';
 import { splitPdfCitation } from './pdf-citation-segments';
 import { structuralPdfCitations } from './pdf-structural-citations';
+import { joinTableSources, splitTableSource, tableRegions } from './pdf-table-evidence';
+import { PdfTableBackfillService } from './pdf-table-backfill.service';
 import { sliceSourceLocation } from '../documents/parsers/source-anchors';
 import { LexicalIndex, searchLexical, fuse, Scored } from './retrieval-algorithms';
 import { QualityModelsService } from './quality-models.service';
@@ -29,6 +31,7 @@ export class RetrievalService {
     @Optional() private readonly tokenizer?: TokenizerService,
     @Optional() private readonly models?: QualityModelsService,
     @Optional() private readonly config?: ConfigService,
+    @Optional() private readonly tableBackfill?: PdfTableBackfillService,
   ) {}
 
   async createScope(userId: number, knowledgeBaseId?: number, documentIds?: number[]): Promise<RetrievalScope> {
@@ -136,12 +139,15 @@ export class RetrievalService {
     }
     await this.verify(session.scope, options.signal);
     const limit = Math.max(1, Math.min(20, options.limit ?? 8));
+    await this.tableBackfill?.ensure(session, candidates.slice(0, limit).map(c => c.id), options.signal);
+    await this.verify(session.scope, options.signal);
     return { candidates, evidence: this.expand(session, candidates.slice(0,limit), strategy !== 'vector'), channels: { lexical, vector, fused, reranked: candidates }, degraded };
   }
 
   citation(session: RetrievalSession, chunk: Row, score = 0): Citation {
     if (!session.byChunk.has(chunk.id)) throw new ApiError(404, '片段超出授权范围');
-    return { number: 0, documentId: chunk.documentId, knowledgeBaseId: session.scope.knowledgeBaseId, versionId: chunk.versionId, indexRevisionId: chunk.indexRevisionId, chunkId: chunk.id, filename: session.byDoc.get(chunk.documentId)!.filename, text: chunk.text, location: chunk.location || null, score };
+    return { number: 0, documentId: chunk.documentId, knowledgeBaseId: session.scope.knowledgeBaseId, versionId: chunk.versionId, indexRevisionId: chunk.indexRevisionId, chunkId: chunk.id, filename: session.byDoc.get(chunk.documentId)!.filename, text: chunk.text, location: chunk.location || null, score,
+      ...(session.tables?.get(chunk.id)?.length ? { tableRegions: session.tables.get(chunk.id) } : {}) };
   }
 
   original(source: Citation): OriginalEvidence {
@@ -241,7 +247,32 @@ export class RetrievalService {
           ),
     );
 
-    return evidence.map(source => this.original(source));
+    return this.expandTables(session, evidence);
+  }
+
+  expandTables(session: RetrievalSession, input: Citation[]) {
+    const evidence = input.map(source => {
+      const regions = (source.chunkIds || [source.chunkId]).flatMap(id => session.tables?.get(id) || []);
+      return regions.length ? { ...source, tableRegions: regions } : source;
+    });
+    const linked = new Set(evidence.flatMap(s => tableRegions(s).map(r =>
+      `${s.documentId}:${s.versionId}:${s.indexRevisionId}:${r.table.groupId}`)));
+    if (linked.size) for (const chunk of session.chunks) {
+      const source = this.citation(session, chunk, input[0]?.score || 0);
+      if (!tableRegions(source).some(r => linked.has(`${source.documentId}:${source.versionId}:${source.indexRevisionId}:${r.table.groupId}`))) continue;
+      evidence.push(...splitTableSource(source).filter(s => s.location?.table && linked.has(
+        `${s.documentId}:${s.versionId}:${s.indexRevisionId}:${s.location.table.groupId}`)));
+    }
+    return [...new Map(evidence.map(source => { const original = this.original(source); return [original.evidenceId, original] as const; })).values()];
+  }
+
+  async resolveTableEvidence(session: RetrievalSession, input: Citation[], signal?: AbortSignal) {
+    await this.verify(session.scope, signal);
+    // Checkpoints retain evidence, while a newly opened Worker session has no
+    // request-local legacy table map. Rehydrate it before following continuations.
+    await this.tableBackfill?.ensure(session, input.flatMap(source => source.chunkIds || [source.chunkId]), signal);
+    await this.verify(session.scope, signal);
+    return this.expandTables(session, input);
   }
 
   async read(session: RetrievalSession, range: ReadRange, signal?: AbortSignal) {
@@ -251,6 +282,8 @@ export class RetrievalService {
     const rows = session.chunks.filter(c => c.documentId === range.documentId && (range.pageStart === undefined || c.location?.page >= range.pageStart) && (range.pageEnd === undefined || c.location?.page <= range.pageEnd) && (range.heading === undefined || c.location?.heading === range.heading));
     const cursor = range.cursor || 0, limit = Math.max(1,Math.min(100,range.limit ?? 20));
     const selected = rows.slice(cursor,cursor+limit);
+    await this.tableBackfill?.ensure(session, selected.map(c => c.id), signal);
+    await this.verify(session.scope, signal);
     const complete = cursor + selected.length >= rows.length;
     return { evidence: selected.map(c => this.original(this.citation(session,c))), complete, total: rows.length, nextCursor: complete ? undefined : cursor+selected.length };
   }
@@ -268,7 +301,7 @@ export class RetrievalService {
 
   citationEvidence(evidence: OriginalEvidence[]) {
     const originals = new Set(evidence);
-    return structuralPdfCitations(evidence).flatMap(source => (source.sourceSegments ? [source] : splitPdfCitation(source))
+    return structuralPdfCitations(joinTableSources(evidence.flatMap(splitTableSource))).flatMap(source => (source.sourceSegments || source.location?.table ? [source] : splitPdfCitation(source))
       .map(part => originals.has(part) ? part : this.original(part)));
   }
 

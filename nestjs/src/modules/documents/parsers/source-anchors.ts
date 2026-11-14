@@ -52,7 +52,7 @@ export function withoutSourceGeometry<T>(value: T): T {
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key]) => key !== 'anchors' && key !== 'anchorVersion' && key !== 'sourceSegments')
+      .filter(([key]) => key !== 'anchors' && key !== 'anchorVersion' && key !== 'sourceSegments' && key !== 'tableRegions' && key !== 'table')
       .map(([key, v]) => [key, withoutSourceGeometry(v)]),
   ) as T;
 }

@@ -1,6 +1,7 @@
 import { Row } from '../../persistence/store';
 import { Citation } from './citations';
 import { Scored } from './retrieval-algorithms';
+import type { PdfTableLocation } from '../documents/parsers/parsed-document';
 
 /** Serializable authorization snapshot. Capture once; tools may only narrow it. */
 export interface RetrievalScope {
@@ -15,6 +16,7 @@ export interface RetrievalSession {
   revisions: Map<number, Row>;
   byChunk: Map<number, Row>;
   byDoc: Map<number, Row>;
+  tables?: Map<number, { page: number; table: PdfTableLocation }[]>;
 }
 export interface OriginalEvidence extends Citation { evidenceId: string }
 export interface SearchOptions {

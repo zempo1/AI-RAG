@@ -1,5 +1,5 @@
 /** 定义引用结构并清除答案中无效的引用编号。 */
-import { SourceLocation } from '../documents/parsers/parsed-document';
+import { SourceLocation, PdfTableLocation } from '../documents/parsers/parsed-document';
 
 export interface Citation {
   number: number;
@@ -16,6 +16,8 @@ export interface Citation {
   /** Display title and exact original slices for a paragraph assembled in PDF reading order. */
   sectionTitle?: string;
   sourceSegments?: { text: string; location: SourceLocation; chunkIds: number[] }[];
+  /** Request-local geometry for legacy chunks; removed when forming citation slices. */
+  tableRegions?: { page: number; table: PdfTableLocation }[];
   score: number;
   sourceDeleted?: boolean;
   sourceOutdated?: boolean;

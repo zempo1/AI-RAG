@@ -819,9 +819,11 @@ export class AgentService {
   }
   private async context(s: AgentSnapshot, o: AgentOptions, requiresAsync: boolean) {
     const { base, window, output, budget } = this.contextInput(s);
+    const originals = s.evidence.some(e => e.location?.table || e.tableRegions?.length)
+      ? await this.retrieval.resolveTableEvidence(await this.session(s, o), s.evidence, o.signal) : s.evidence;
     const evidence = s.plan?.intent === 'search'
-      ? compactSearchEvidence(s.evidence, (source) => this.retrieval.original(source))
-      : s.evidence;
+      ? compactSearchEvidence(originals, (source) => this.retrieval.original(source))
+      : originals;
     const packed = await this.retrieval.pack(evidence, budget, { readingOrder: this.fullCoverageRequired(s) });
     let sources = packed.sources,
       directAnswer = s.directAnswer,
