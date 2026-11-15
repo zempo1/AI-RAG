@@ -1,8 +1,8 @@
 {
-  "singleQuote": true,
-  "trailingComma": "all",
   "printWidth": 100,
   "tabWidth": 2,
-  "endOfLine": "lf",
-  "proseWrap": "preserve"
+  "useTabs": false,
+  "trailingComma": "all",
+  "bracketSpacing": true,
+  "endOfLine": "lf"
 }

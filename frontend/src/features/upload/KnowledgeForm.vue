@@ -10,12 +10,7 @@
     :show-close="!saving"
     @closed="reset"
   >
-    <el-form
-      ref="form"
-      :model="values"
-      label-position="top"
-      @submit.prevent="save"
-    >
+    <el-form ref="form" :model="values" label-position="top" @submit.prevent="save">
       <el-form-item
         label="名称"
         prop="name"
@@ -47,12 +42,7 @@
       <p v-if="error" class="error-text" role="alert">{{ error }}</p>
       <div class="form-actions">
         <el-button :disabled="saving" @click="visible = false">取消</el-button
-        ><el-button
-          class="gradient-button"
-          :loading="saving"
-          native-type="submit"
-          >保存</el-button
-        >
+        ><el-button class="gradient-button" :loading="saving" native-type="submit">保存</el-button>
       </div>
     </el-form>
   </el-dialog>
@@ -68,15 +58,9 @@ const visible = ref(false),
 const values = reactive({ name: "", description: "" });
 const form = ref<FormInstance>();
 let submit: (name: string, description: string) => Promise<unknown>;
-function validateName(
-  _rule: unknown,
-  value: string,
-  callback: (error?: Error) => void,
-) {
+function validateName(_rule: unknown, value: string, callback: (error?: Error) => void) {
   callback(
-    value?.trim() && value.trim().length <= 120
-      ? undefined
-      : new Error("名称须为 1～120 个字符"),
+    value?.trim() && value.trim().length <= 120 ? undefined : new Error("名称须为 1～120 个字符"),
   );
 }
 function open(options: {

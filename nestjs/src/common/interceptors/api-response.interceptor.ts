@@ -1,5 +1,5 @@
-import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
-import { map } from 'rxjs';
+import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from "@nestjs/common";
+import { map } from "rxjs";
 
 @Injectable()
 export class ApiResponseInterceptor implements NestInterceptor {
@@ -9,8 +9,8 @@ export class ApiResponseInterceptor implements NestInterceptor {
       .pipe(
         map((data) =>
           data == null
-            ? { code: 200, message: 'success' }
-            : { code: 200, message: 'success', data },
+            ? { code: 200, message: "success" }
+            : { code: 200, message: "success", data },
         ),
       );
   }

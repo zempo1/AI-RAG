@@ -1,9 +1,9 @@
 /** 实现业务处理；所属能力：会话与消息历史保存、读取及引用状态补充。 */
-import { Injectable } from '@nestjs/common';
-import { Store, publicRow } from '../../persistence/store';
-import { ApiError } from '../../common/api-error';
-import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service';
-import { Citation } from '../rag/citations';
+import { Injectable } from "@nestjs/common";
+import { Store, publicRow } from "../../persistence/store";
+import { ApiError } from "../../common/api-error";
+import { KnowledgeBasesService } from "../knowledge-bases/knowledge-bases.service";
+import { Citation } from "../rag/citations";
 
 @Injectable()
 export class HistoryService {
@@ -13,22 +13,25 @@ export class HistoryService {
   ) {}
 
   async get(id: number, userId: number) {
-    let chat = await this.store.get('chats', id);
-    if (!chat || chat.userId !== userId) throw new ApiError(404, 'Chat not found');
+    let chat = await this.store.get("chats", id);
+    if (!chat || chat.userId !== userId) throw new ApiError(404, "Chat not found");
     if (!chat.knowledgeBaseId)
-      chat = await this.store.save('chats', {
+      chat = await this.store.save("chats", {
         id,
         knowledgeBaseId: (await this.libraries.default(userId)).id,
       });
-    const kb = await this.store.get('knowledgeBases', chat.knowledgeBaseId);
-    const rows = (await this.store.list('messages', { chatId: id })).sort(
+    const kb = await this.store.get("knowledgeBases", chat.knowledgeBaseId);
+    const rows = (await this.store.list("messages", { chatId: id })).sort(
       (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id - b.id,
     );
     // Repeated citations share a lookup within this response, never across users/requests.
-    const documents = new Map<number, Promise<Awaited<ReturnType<Store['get']>>>>();
+    const documents = new Map<number, Promise<Awaited<ReturnType<Store["get"]>>>>();
     const document = (id: number) => {
       let pending = documents.get(id);
-      if (!pending) { pending = this.store.get('documents', id); documents.set(id, pending); }
+      if (!pending) {
+        pending = this.store.get("documents", id);
+        documents.set(id, pending);
+      }
       return pending;
     };
     const messages = await Promise.all(
@@ -53,12 +56,12 @@ export class HistoryService {
       knowledgeBaseId: chat.knowledgeBaseId as number,
       readOnly: !kb || !!kb.deletedAt,
       messages,
-      pendingTasks: (await this.store.list('tasks', { userId }))
+      pendingTasks: (await this.store.list("tasks", { userId }))
         .filter(
           (t) =>
-            t.kind === 'qa' &&
+            t.kind === "qa" &&
             t.payload?.chatId === id &&
-            !['completed', 'partial_failed', 'failed', 'canceled'].includes(t.status),
+            !["completed", "partial_failed", "failed", "canceled"].includes(t.status),
         )
         .map(({ id, status, stage, completed, total, error }) => ({
           id,
@@ -74,17 +77,19 @@ export class HistoryService {
   async writable(id: number, userId: number, knowledgeBaseId?: number) {
     // 历史可以查看，但知识库删除后不允许继续提问；跨知识库提问需要新建会话。
     const chat = await this.get(id, userId);
-    if (chat.readOnly) throw new ApiError(409, '知识库已删除，此会话仅可查看');
+    if (chat.readOnly) throw new ApiError(409, "知识库已删除，此会话仅可查看");
     if (knowledgeBaseId != null && chat.knowledgeBaseId !== knowledgeBaseId)
-      throw new ApiError(400, '会话知识库不匹配，请新建会话');
+      throw new ApiError(400, "会话知识库不匹配，请新建会话");
     return chat;
   }
 
   async list(userId: number) {
-    const chats = (await this.store.list('chats', { userId })).sort((a, b) => b.id - a.id);
-    const libraries = new Map((await this.store.list('knowledgeBases', { userId })).map(kb => [kb.id, kb]));
+    const chats = (await this.store.list("chats", { userId })).sort((a, b) => b.id - a.id);
+    const libraries = new Map(
+      (await this.store.list("knowledgeBases", { userId })).map((kb) => [kb.id, kb]),
+    );
     // Sidebar metadata only. Full messages, citation snapshots and tasks belong to GET /:id.
-    return chats.map(chat => {
+    return chats.map((chat) => {
       const kb = libraries.get(chat.knowledgeBaseId);
       return { ...publicRow(chat), readOnly: chat.knowledgeBaseId ? !kb || !!kb.deletedAt : false };
     });
@@ -92,7 +97,7 @@ export class HistoryService {
 
   async create(title: string, userId: number, knowledgeBaseId?: number) {
     const kb = await this.libraries.resolve(userId, knowledgeBaseId);
-    const chat = await this.store.save('chats', { title, userId, knowledgeBaseId: kb.id });
+    const chat = await this.store.save("chats", { title, userId, knowledgeBaseId: kb.id });
     return {
       ...publicRow(chat),
       id: chat.id,
@@ -108,13 +113,13 @@ export class HistoryService {
     role: string,
     content: string,
     citations: Citation[] = [],
-    generationStatus = 'completed',
+    generationStatus = "completed",
     metadata: { retrievalContext?: unknown; retrievalRunId?: number; diagnostics?: unknown } = {},
   ): Promise<void> {
     // Historical writes from a request that began before deletion are allowed to settle.
-    const chat = await this.store.get('chats', chatId);
-    if (!chat || chat.userId !== userId) throw new ApiError(404, 'Chat not found');
-    await this.store.save('messages', {
+    const chat = await this.store.get("chats", chatId);
+    if (!chat || chat.userId !== userId) throw new ApiError(404, "Chat not found");
+    await this.store.save("messages", {
       chatId,
       role,
       content,
@@ -127,10 +132,10 @@ export class HistoryService {
   async delete(id: number, userId: number): Promise<void> {
     const chat = await this.get(id, userId);
     await this.store.transaction(async (tx) => {
-      await tx.lock('knowledgeBases', chat.knowledgeBaseId);
-      for (const message of await tx.list('messages', { chatId: id }))
-        await tx.delete('messages', message.id);
-      await tx.delete('chats', id);
+      await tx.lock("knowledgeBases", chat.knowledgeBaseId);
+      for (const message of await tx.list("messages", { chatId: id }))
+        await tx.delete("messages", message.id);
+      await tx.delete("chats", id);
     });
   }
 }

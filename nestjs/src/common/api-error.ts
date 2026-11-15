@@ -1,4 +1,4 @@
-import { HttpException } from '@nestjs/common';
+import { HttpException } from "@nestjs/common";
 
 export class ApiError extends HttpException {
   constructor(code: number, message: string) {
@@ -7,5 +7,5 @@ export class ApiError extends HttpException {
 }
 
 export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unknown error';
+  return error instanceof Error ? error.message : "Unknown error";
 }

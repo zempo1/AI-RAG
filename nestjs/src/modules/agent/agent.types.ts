@@ -1,13 +1,13 @@
-import { RetrievalScope, OriginalEvidence } from '../rag/retrieval.types';
-import { RetrievalOptions } from '../rag/quality.types';
-import { AgentBudgetState } from './agent-budget';
-import { ToolMessage, ToolCall } from '../llm/llm.types';
-import type { AgentGraphOwner } from './agent-graph-owner';
-import type { AgentGraphRun } from './agent-graph-run';
+import { RetrievalScope, OriginalEvidence } from "../rag/retrieval.types";
+import { RetrievalOptions } from "../rag/quality.types";
+import { AgentBudgetState } from "./agent-budget";
+import { ToolMessage, ToolCall } from "../llm/llm.types";
+import type { AgentGraphOwner } from "./agent-graph-owner";
+import type { AgentGraphRun } from "./agent-graph-run";
 export interface PublicStep {
   runId: number;
   sequence: number;
-  kind: 'plan' | 'tool_start' | 'tool_end' | 'assessment' | 'handoff' | 'stop';
+  kind: "plan" | "tool_start" | "tool_end" | "assessment" | "handoff" | "stop";
   summary: string;
   tool?: string;
   evidenceCount?: number;
@@ -19,18 +19,18 @@ export interface AgentOptions extends RetrievalOptions {
   onCheckpoint?: (snapshot: AgentSnapshot) => Promise<void>;
   guard?: () => Promise<unknown> | unknown;
   background?: boolean;
-  evaluation?: 'single-round' | 'no-feedback';
+  evaluation?: "single-round" | "no-feedback";
   graphOwner?: AgentGraphOwner;
   graphRun?: AgentGraphRun;
   graphEventPrefix?: string;
 }
 export interface AgentPlan {
-  intent: 'general' | 'search' | 'overview' | 'compare';
-  complexity: 'simple' | 'complex';
+  intent: "general" | "search" | "overview" | "compare";
+  complexity: "simple" | "complex";
   subQuestions: string[];
 }
 export interface AgentSnapshot {
-  engine: 'agentic-v1';
+  engine: "agentic-v1";
   userId: number;
   knowledgeBaseId: number;
   chatId?: number;
@@ -57,7 +57,7 @@ export interface AgentSnapshot {
       fullDocument?: boolean;
     }
   >;
-  status?: 'running' | 'ready' | 'completed' | 'partial' | 'insufficient' | 'clarification';
+  status?: "running" | "ready" | "completed" | "partial" | "insufficient" | "clarification";
   noProgress: number;
   roundEvidenceCount?: number;
   evidenceGaps?: string[];

@@ -1,7 +1,7 @@
 /** 实现业务处理；所属能力：知识库、分类、文档范围和所属用户校验。 */
-import { Injectable } from '@nestjs/common';
-import { Store, Row } from '../../persistence/store';
-import { ApiError } from '../../common/api-error';
+import { Injectable } from "@nestjs/common";
+import { Store, Row } from "../../persistence/store";
+import { ApiError } from "../../common/api-error";
 
 @Injectable()
 export class KnowledgeBasesService {
@@ -9,16 +9,16 @@ export class KnowledgeBasesService {
 
   async default(userId: number): Promise<Row> {
     return this.store.transaction(async (tx) => {
-      await tx.lock('users', userId);
-      const existing = (await tx.list('knowledgeBases', { userId })).find(
+      await tx.lock("users", userId);
+      const existing = (await tx.list("knowledgeBases", { userId })).find(
         (k) => k.isDefault === 1 && !k.deletedAt,
       );
       return (
         existing ||
-        tx.save('knowledgeBases', {
+        tx.save("knowledgeBases", {
           userId,
-          name: '默认知识库',
-          description: '',
+          name: "默认知识库",
+          description: "",
           isDefault: 1,
           rebuildTaskId: null,
           deletedAt: null,
@@ -32,31 +32,31 @@ export class KnowledgeBasesService {
   }
 
   async owned(id: number, userId: number, tx = this.store): Promise<Row> {
-    const kb = await tx.get('knowledgeBases', id);
-    if (!kb || kb.userId !== userId || kb.deletedAt) throw new ApiError(404, '知识库不存在');
+    const kb = await tx.get("knowledgeBases", id);
+    if (!kb || kb.userId !== userId || kb.deletedAt) throw new ApiError(404, "知识库不存在");
     return kb;
   }
 
   async writable(tx: Store, id: number, userId: number): Promise<Row> {
-    const kb = await tx.lock('knowledgeBases', id);
-    if (!kb || kb.userId !== userId || kb.deletedAt) throw new ApiError(404, '知识库不存在');
-    if (kb.rebuildTaskId) throw new ApiError(409, '知识库正在重建，请稍后再修改文档');
+    const kb = await tx.lock("knowledgeBases", id);
+    if (!kb || kb.userId !== userId || kb.deletedAt) throw new ApiError(404, "知识库不存在");
+    if (kb.rebuildTaskId) throw new ApiError(409, "知识库正在重建，请稍后再修改文档");
     return kb;
   }
 
   async list(userId: number) {
-    let rows = await this.store.list('knowledgeBases', { userId });
+    let rows = await this.store.list("knowledgeBases", { userId });
     // Ordinary reads need no creation lock. Missing defaults still use the
     // existing locked, rechecked creation path to handle concurrent first visits.
-    if (!rows.some(k => k.isDefault === 1 && !k.deletedAt)) {
+    if (!rows.some((k) => k.isDefault === 1 && !k.deletedAt)) {
       await this.default(userId);
-      rows = await this.store.list('knowledgeBases', { userId });
+      rows = await this.store.list("knowledgeBases", { userId });
     }
-    return rows.filter(k => !k.deletedAt);
+    return rows.filter((k) => !k.deletedAt);
   }
 
-  create(userId: number, name: string, description = '') {
-    return this.store.save('knowledgeBases', {
+  create(userId: number, name: string, description = "") {
+    return this.store.save("knowledgeBases", {
       userId,
       name: this.name(name),
       description,
@@ -66,62 +66,62 @@ export class KnowledgeBasesService {
     });
   }
 
-  async update(id: number, userId: number, name: string, description = '') {
+  async update(id: number, userId: number, name: string, description = "") {
     return this.store.transaction(async (tx) => {
-      await tx.lock('knowledgeBases', id);
+      await tx.lock("knowledgeBases", id);
       await this.owned(id, userId, tx);
-      return tx.save('knowledgeBases', { id, name: this.name(name), description });
+      return tx.save("knowledgeBases", { id, name: this.name(name), description });
     });
   }
 
   async categories(id: number, userId: number) {
     await this.owned(id, userId);
-    return this.store.list('categories', { knowledgeBaseId: id });
+    return this.store.list("categories", { knowledgeBaseId: id });
   }
 
   async category(kbId: number, categoryId: number, userId: number, tx = this.store) {
     await this.owned(kbId, userId, tx);
-    const category = await tx.get('categories', categoryId);
-    if (!category || category.knowledgeBaseId !== kbId) throw new ApiError(404, '分类不存在');
+    const category = await tx.get("categories", categoryId);
+    if (!category || category.knowledgeBaseId !== kbId) throw new ApiError(404, "分类不存在");
     return category;
   }
 
   async createCategory(id: number, userId: number, name: string) {
     return this.store.transaction(async (tx) => {
-      await tx.lock('knowledgeBases', id);
+      await tx.lock("knowledgeBases", id);
       await this.owned(id, userId, tx);
       name = this.name(name);
-      if ((await tx.list('categories', { knowledgeBaseId: id, name })).length)
-        throw new ApiError(409, '分类已存在');
-      return tx.save('categories', { knowledgeBaseId: id, name });
+      if ((await tx.list("categories", { knowledgeBaseId: id, name })).length)
+        throw new ApiError(409, "分类已存在");
+      return tx.save("categories", { knowledgeBaseId: id, name });
     });
   }
 
   async updateCategory(kbId: number, id: number, userId: number, name: string) {
     return this.store.transaction(async (tx) => {
-      await tx.lock('knowledgeBases', kbId);
+      await tx.lock("knowledgeBases", kbId);
       await this.category(kbId, id, userId, tx);
       name = this.name(name);
-      if ((await tx.list('categories', { knowledgeBaseId: kbId, name })).some((c) => c.id !== id))
-        throw new ApiError(409, '分类已存在');
-      return tx.save('categories', { id, name });
+      if ((await tx.list("categories", { knowledgeBaseId: kbId, name })).some((c) => c.id !== id))
+        throw new ApiError(409, "分类已存在");
+      return tx.save("categories", { id, name });
     });
   }
 
   async deleteCategory(kbId: number, id: number, userId: number) {
     await this.store.transaction(async (tx) => {
-      await tx.lock('knowledgeBases', kbId);
+      await tx.lock("knowledgeBases", kbId);
       await this.category(kbId, id, userId, tx);
-      for (const doc of await tx.list('documents', { knowledgeBaseId: kbId, categoryId: id })) {
-        await tx.save('documents', { id: doc.id, categoryId: null });
+      for (const doc of await tx.list("documents", { knowledgeBaseId: kbId, categoryId: id })) {
+        await tx.save("documents", { id: doc.id, categoryId: null });
       }
-      await tx.delete('categories', id);
+      await tx.delete("categories", id);
     });
   }
 
   private name(value: string) {
-    if (typeof value !== 'string' || !value.trim() || value.trim().length > 120)
-      throw new ApiError(400, '名称须为 1～120 个字符');
+    if (typeof value !== "string" || !value.trim() || value.trim().length > 120)
+      throw new ApiError(400, "名称须为 1～120 个字符");
     return value.trim();
   }
 }

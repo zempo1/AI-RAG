@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class ModelSettings1794355200000 implements MigrationInterface {
   async up(runner: QueryRunner): Promise<void> {
@@ -10,5 +10,7 @@ export class ModelSettings1794355200000 implements MigrationInterface {
       CONSTRAINT fk_model_settings_user FOREIGN KEY (user_id) REFERENCES app_user(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
   }
-  async down(runner: QueryRunner): Promise<void> { await runner.query('DROP TABLE IF EXISTS user_model_settings'); }
+  async down(runner: QueryRunner): Promise<void> {
+    await runner.query("DROP TABLE IF EXISTS user_model_settings");
+  }
 }

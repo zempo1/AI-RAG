@@ -4,39 +4,39 @@ import {
   legacyModelProfile,
   ModelProfile,
   profileFingerprint,
-} from '../embeddings/model-profile';
-import { TokenizerService } from '../embeddings/tokenizer.service';
-import { Injectable, Logger, Optional } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
-import { join, basename } from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
-import { Store, Row, now } from '../../persistence/store';
-import { ApiError, errorMessage } from '../../common/api-error';
-import { retryTransientRequest } from '../../common/transient-request';
-import { DocumentParser } from './parsers/document.parser';
-import { ParsedBlock, ParsedDocument, paragraphBlocks } from './parsers/parsed-document';
-import type { ParseContext } from './parsers/pdf-visual.service';
-import { RecursiveChunker } from './chunkers/recursive.chunker';
+} from "../embeddings/model-profile";
+import { TokenizerService } from "../embeddings/tokenizer.service";
+import { Injectable, Logger, Optional } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { join, basename } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { Store, Row, now } from "../../persistence/store";
+import { ApiError, errorMessage } from "../../common/api-error";
+import { retryTransientRequest } from "../../common/transient-request";
+import { DocumentParser } from "./parsers/document.parser";
+import { ParsedBlock, ParsedDocument, paragraphBlocks } from "./parsers/parsed-document";
+import type { ParseContext } from "./parsers/pdf-visual.service";
+import { RecursiveChunker } from "./chunkers/recursive.chunker";
 import {
   EmbeddingsService,
   REMOTE_EMBEDDING_BATCH_SIZE,
   REMOTE_EMBEDDING_CONCURRENCY,
-} from '../embeddings/embeddings.service';
-import { VectorStore, Segment } from '../vector-store/vector-store.interface';
-import { TasksService, terminalTask } from '../tasks/tasks.service';
-import { PageAssetsService } from './page-assets.service';
-import { runWithTaskModels } from '../model-settings/model-runtime';
+} from "../embeddings/embeddings.service";
+import { VectorStore, Segment } from "../vector-store/vector-store.interface";
+import { TasksService, terminalTask } from "../tasks/tasks.service";
+import { PageAssetsService } from "./page-assets.service";
+import { runWithTaskModels } from "../model-settings/model-runtime";
 
 class Superseded extends Error {}
 class DependencyPending extends Error {}
-const wallTime = (value: string) => Date.parse(value.replace(' ', 'T') + 'Z');
+const wallTime = (value: string) => Date.parse(value.replace(" ", "T") + "Z");
 type IndexBlock = ParsedBlock & { retrievalMetadata?: Record<string, unknown> };
 type Count = { completed: number; total: number | null };
-type IndexProgress = Record<'pages' | 'regions' | 'embedding' | 'indexing', Count> & {
+type IndexProgress = Record<"pages" | "regions" | "embedding" | "indexing", Count> & {
   previousRecognition?: { pages: number; regions: number };
 };
-const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 
 @Injectable()
 export class IndexingService {
@@ -54,18 +54,24 @@ export class IndexingService {
   ) {}
 
   async process(id: number, attempt = 1, report?: (progress: object) => Promise<void>) {
-    const task = await this.store.get('tasks', id);
+    const task = await this.store.get("tasks", id);
     if (!task) return;
-    return runWithTaskModels(this.config, { userId: task.userId, payload: task.payload }, () => this.processScoped(id, attempt, report));
+    return runWithTaskModels(this.config, { userId: task.userId, payload: task.payload }, () =>
+      this.processScoped(id, attempt, report),
+    );
   }
 
-  private async processScoped(id: number, attempt: number, report?: (progress: object) => Promise<void>) {
-    let task = await this.store.get('tasks', id);
-    if (!task || task.kind === 'rebuild') return;
+  private async processScoped(
+    id: number,
+    attempt: number,
+    report?: (progress: object) => Promise<void>,
+  ) {
+    let task = await this.store.get("tasks", id);
+    if (!task || task.kind === "rebuild") return;
     if (terminalTask(task.status)) {
       // A stalled job can be delivered again after its document was canceled.
-      if (task.status === 'canceled') {
-        await this.store.save('tasks', { id, executionToken: null });
+      if (task.status === "canceled") {
+        await this.store.save("tasks", { id, executionToken: null });
         await this.ensureDeletedCleanup(task);
       }
       await this.tasks.refreshParent(task.parentTaskId);
@@ -75,56 +81,56 @@ export class IndexingService {
     const token = randomUUID();
     try {
       await this.store.transaction(async (tx) => {
-        await tx.lock('knowledgeBases', task!.knowledgeBaseId);
-        if (task!.documentId) await tx.lock('documents', task!.documentId);
-        task = await tx.lock('tasks', id);
+        await tx.lock("knowledgeBases", task!.knowledgeBaseId);
+        if (task!.documentId) await tx.lock("documents", task!.documentId);
+        task = await tx.lock("tasks", id);
         if (!task || terminalTask(task.status)) throw new Superseded();
-        if (task.kind === 'index') await this.guard(task, undefined, tx);
-        task = await tx.save('tasks', {
+        if (task.kind === "index") await this.guard(task, undefined, tx);
+        task = await tx.save("tasks", {
           id,
           executionToken: token,
-          status: 'running',
+          status: "running",
           attempts: attempt,
           updatedAt: now(),
           error: null,
         });
       });
-      if (task!.kind === 'index') await this.index(task!, token, report);
+      if (task!.kind === "index") await this.index(task!, token, report);
       else await this.cleanup(task!, token);
     } catch (error) {
       if (error instanceof DependencyPending) {
         await this.store.transaction(async (tx) => {
-          const current = await tx.lock('tasks', id);
+          const current = await tx.lock("tasks", id);
           if (current?.executionToken === token && !terminalTask(current.status))
-            await tx.save('tasks', {
+            await tx.save("tasks", {
               id,
-              status: 'queued',
-              stage: 'waiting',
+              status: "queued",
+              stage: "waiting",
               executionToken: null,
               updatedAt: now(),
             });
         });
-        return 'waiting' as const;
+        return "waiting" as const;
       }
       const canceled = error instanceof Superseded;
       // 参数或文档本身的问题无需自动重试；临时故障最多尝试三次。
       const fatal = error instanceof ApiError && error.getStatus() < 500;
       await this.store.transaction(async (tx) => {
-        await tx.lock('knowledgeBases', task!.knowledgeBaseId);
-        const doc = task!.documentId ? await tx.lock('documents', task!.documentId) : undefined;
-        const current = await tx.lock('tasks', id);
-        if (!current || current.executionToken !== token || current.status === 'completed') return;
-        if (current.status === 'canceled' || canceled) {
-          await tx.save('tasks', {
+        await tx.lock("knowledgeBases", task!.knowledgeBaseId);
+        const doc = task!.documentId ? await tx.lock("documents", task!.documentId) : undefined;
+        const current = await tx.lock("tasks", id);
+        if (!current || current.executionToken !== token || current.status === "completed") return;
+        if (current.status === "canceled" || canceled) {
+          await tx.save("tasks", {
             id,
-            status: 'canceled',
-            stage: 'canceled',
+            status: "canceled",
+            stage: "canceled",
             executionToken: null,
             updatedAt: now(),
           });
         } else {
-          const status = fatal || attempt >= 3 ? 'failed' : 'retrying';
-          await tx.save('tasks', {
+          const status = fatal || attempt >= 3 ? "failed" : "retrying";
+          await tx.save("tasks", {
             id,
             status,
             stage: status,
@@ -134,26 +140,26 @@ export class IndexingService {
             updatedAt: now(),
           });
           if (
-            task!.kind === 'index' &&
+            task!.kind === "index" &&
             doc &&
             !doc.deletedAt &&
             doc.desiredIndexRevisionId === task!.indexRevisionId
           )
-            await tx.save('documents', {
+            await tx.save("documents", {
               id: doc.id,
-              status: status === 'failed' ? 'failed' : 'queued',
+              status: status === "failed" ? "failed" : "queued",
             });
         }
       });
-      if (!canceled && (await this.store.get('tasks', id))?.status !== 'canceled') throw error;
+      if (!canceled && (await this.store.get("tasks", id))?.status !== "canceled") throw error;
     } finally {
       if (task) {
         await this.store.transaction(async (tx) => {
-          const current = await tx.lock('tasks', id);
+          const current = await tx.lock("tasks", id);
           if (current?.executionToken === token)
-            await tx.save('tasks', { id, executionToken: null, updatedAt: now() });
+            await tx.save("tasks", { id, executionToken: null, updatedAt: now() });
         });
-        if (task.kind === 'index') await this.ensureDeletedCleanup(task);
+        if (task.kind === "index") await this.ensureDeletedCleanup(task);
         await this.tasks.refreshParent(task.parentTaskId);
       }
     }
@@ -161,9 +167,9 @@ export class IndexingService {
 
   // 统一检查文档是否删除、目标版本是否变更、任务是否取消；耗时步骤之间也要检查。
   private async guard(task: Row, token?: string, tx = this.store) {
-    const doc = await tx.get('documents', task.documentId);
-    const kb = await tx.get('knowledgeBases', task.knowledgeBaseId);
-    const current = await tx.get('tasks', task.id);
+    const doc = await tx.get("documents", task.documentId);
+    const kb = await tx.get("knowledgeBases", task.knowledgeBaseId);
+    const current = await tx.get("tasks", task.id);
     if (
       !doc ||
       doc.deletedAt ||
@@ -171,7 +177,7 @@ export class IndexingService {
       kb.deletedAt ||
       doc.desiredIndexRevisionId !== task.indexRevisionId ||
       !current ||
-      current.status === 'canceled' ||
+      current.status === "canceled" ||
       (token && current.executionToken !== token)
     )
       throw new Superseded();
@@ -188,12 +194,12 @@ export class IndexingService {
     indexProgress?: IndexProgress,
   ) {
     await this.store.transaction(async (tx) => {
-      await tx.lock('knowledgeBases', task.knowledgeBaseId);
-      await tx.lock('documents', task.documentId);
-      await tx.lock('tasks', task.id);
+      await tx.lock("knowledgeBases", task.knowledgeBaseId);
+      await tx.lock("documents", task.documentId);
+      await tx.lock("tasks", task.id);
       await this.guard(task, token, tx);
-      const current = await tx.get('tasks', task.id);
-      await tx.save('tasks', {
+      const current = await tx.get("tasks", task.id);
+      await tx.save("tasks", {
         id: task.id,
         stage,
         completed,
@@ -206,26 +212,26 @@ export class IndexingService {
   }
 
   private async index(task: Row, token: string, report?: (progress: object) => Promise<void>) {
-    const revision = (await this.store.get('indexRevisions', task.indexRevisionId))!;
-    if (!revision) throw new ApiError(409, '索引版本不存在');
+    const revision = (await this.store.get("indexRevisions", task.indexRevisionId))!;
+    if (!revision) throw new ApiError(409, "索引版本不存在");
     const profile = (revision.modelProfile || legacyModelProfile(this.config)) as ModelProfile;
     if (revision.embeddingFingerprint !== profileFingerprint(profile))
-      throw new ApiError(409, '索引模型配置不匹配');
-    const version = (await this.store.get('versions', revision.versionId))!;
-    if (!version) throw new ApiError(400, '文档版本不存在');
+      throw new ApiError(409, "索引模型配置不匹配");
+    const version = (await this.store.get("versions", revision.versionId))!;
+    if (!version) throw new ApiError(400, "文档版本不存在");
     assertTokenizerProfile(profile);
     const started = Date.now();
     const content = await this.buildRevision(task, token, version, revision, profile, report);
     await this.store.transaction(async (tx) => {
-      await tx.lock('knowledgeBases', task.knowledgeBaseId);
-      await tx.lock('documents', task.documentId);
-      await tx.lock('tasks', task.id);
+      await tx.lock("knowledgeBases", task.knowledgeBaseId);
+      await tx.lock("documents", task.documentId);
+      await tx.lock("tasks", task.id);
       const doc = await this.guard(task, token, tx);
       // 新版本可查询后才切换生效指针；旧版本延迟清理，为已经开始的问答保留证据。
       if (doc.activeIndexRevisionId && doc.activeIndexRevisionId !== revision.id) {
-        await tx.save('indexRevisions', {
+        await tx.save("indexRevisions", {
           id: doc.activeIndexRevisionId,
-          status: 'retired',
+          status: "retired",
           retiredAt: now(),
         });
         await this.tasks.create(tx, {
@@ -233,30 +239,30 @@ export class IndexingService {
           knowledgeBaseId: doc.knowledgeBaseId,
           documentId: doc.id,
           indexRevisionId: doc.activeIndexRevisionId,
-          kind: 'retire',
+          kind: "retire",
           payload: {
             notBefore: new Date(
-              wallTime(now()) + this.config.getOrThrow<number>('INDEX_RETENTION_MS'),
+              wallTime(now()) + this.config.getOrThrow<number>("INDEX_RETENTION_MS"),
             )
               .toISOString()
               .slice(0, 23),
           },
         });
       }
-      await tx.save('versions', { id: version.id, content: content.text });
-      await tx.save('documents', {
+      await tx.save("versions", { id: version.id, content: content.text });
+      await tx.save("documents", {
         id: doc.id,
         activeIndexRevisionId: revision.id,
         activeVersionId: version.id,
-        status: 'ready',
+        status: "ready",
         content: content.text,
         ...(doc.activeVersionId !== version.id ? { filename: version.filename } : {}),
       });
-      await tx.save('indexRevisions', { id: revision.id, status: 'published' });
-      await tx.save('tasks', {
+      await tx.save("indexRevisions", { id: revision.id, status: "published" });
+      await tx.save("tasks", {
         id: task.id,
-        status: 'completed',
-        stage: 'completed',
+        status: "completed",
+        stage: "completed",
         completed: content.count,
         total: content.count,
         executionToken: null,
@@ -266,7 +272,7 @@ export class IndexingService {
     if (content.metrics)
       this.logger.log(
         JSON.stringify({
-          event: 'pdf-index-published',
+          event: "pdf-index-published",
           elapsedMs: Date.now() - started,
           chunks: content.count,
           ...content.metrics,
@@ -276,9 +282,9 @@ export class IndexingService {
 
   private withExecution<T>(task: Row, token: string, work: (tx: Store, doc: Row) => Promise<T>) {
     return this.store.transaction(async (tx) => {
-      await tx.lock('knowledgeBases', task.knowledgeBaseId);
-      await tx.lock('documents', task.documentId);
-      await tx.lock('tasks', task.id);
+      await tx.lock("knowledgeBases", task.knowledgeBaseId);
+      await tx.lock("documents", task.documentId);
+      await tx.lock("tasks", task.id);
       const doc = await this.guard(task, token, tx);
       return work(tx, doc);
     });
@@ -310,7 +316,10 @@ export class IndexingService {
     if (pdf && previous) {
       counters.pages.total = previous.pages.total;
       const pages = Math.max(previous.pages.completed, previous.previousRecognition?.pages ?? 0);
-      const regions = Math.max(previous.regions.completed, previous.previousRecognition?.regions ?? 0);
+      const regions = Math.max(
+        previous.regions.completed,
+        previous.previousRecognition?.regions ?? 0,
+      );
       if (pages || regions) counters.previousRecognition = { pages, regions };
     }
     const controller = new AbortController();
@@ -330,7 +339,7 @@ export class IndexingService {
     };
     let progressQueue = Promise.resolve();
     let lastReport = 0;
-    let lastStage = { stage: 'parsing', completed: 0, total: null as number | null };
+    let lastStage = { stage: "parsing", completed: 0, total: null as number | null };
     const update = (stage: string, completed: number, total: number | null, force = false) => {
       const time = Date.now();
       const changed = stage !== lastStage.stage;
@@ -362,9 +371,9 @@ export class IndexingService {
     };
     const existing = await this.withExecution(task, token, async (tx, doc) => {
       if (doc.activeIndexRevisionId === revision.id)
-        throw new ApiError(409, '不能重建正在使用的索引版本');
-      await tx.save('indexRevisions', { id: revision.id, status: 'building' });
-      const chunks = await tx.list('chunks', { indexRevisionId: revision.id });
+        throw new ApiError(409, "不能重建正在使用的索引版本");
+      await tx.save("indexRevisions", { id: revision.id, status: "building" });
+      const chunks = await tx.list("chunks", { indexRevisionId: revision.id });
       return new Map(chunks.map((chunk) => [chunk.chunkIndex, chunk.id]));
     });
     // 重试重写隐藏版本，清掉上次执行可能留下的尾部向量。
@@ -372,8 +381,8 @@ export class IndexingService {
       await this.withVectorExecution(task, token, () =>
         Promise.resolve(this.vectors.removeRevision(revision.id, task.userId, profile)),
       );
-    const batchSize = profile.provider !== 'local' ? REMOTE_EMBEDDING_BATCH_SIZE : 16;
-    const concurrency = profile.provider !== 'local' ? REMOTE_EMBEDDING_CONCURRENCY : 1;
+    const batchSize = profile.provider !== "local" ? REMOTE_EMBEDDING_BATCH_SIZE : 16;
+    const concurrency = profile.provider !== "local" ? REMOTE_EMBEDDING_CONCURRENCY : 1;
     const metrics = {
       chunkMs: 0,
       embeddingBatchMs: 0,
@@ -403,7 +412,7 @@ export class IndexingService {
           const result: Segment[] = [];
           for (const [index, block] of current.entries()) {
             const chunkIndex = offset + index;
-            const chunk = await tx.save('chunks', {
+            const chunk = await tx.save("chunks", {
               id: existing.get(chunkIndex),
               documentId: doc.id,
               versionId: version.id,
@@ -426,8 +435,8 @@ export class IndexingService {
           return result;
         });
         checkPending();
-        if (parseDone && lastStage.stage !== 'indexing')
-          await update('embedding', counters.embedding.completed, counters.embedding.total);
+        if (parseDone && lastStage.stage !== "indexing")
+          await update("embedding", counters.embedding.completed, counters.embedding.total);
         const embeddingStarted = Date.now();
         if (!parseDone) metrics.startedWhileParsing++;
         const { vectors, cacheHit } = await this.embedBatch(context, profile, segments, checkOwned);
@@ -443,14 +452,14 @@ export class IndexingService {
             return this.vectors.addAll(vectors, segments, profile);
           }, controller.signal).catch((error) => {
             controller.signal.throwIfAborted();
-            throw new Error('写入向量库失败：' + errorMessage(error), { cause: error });
+            throw new Error("写入向量库失败：" + errorMessage(error), { cause: error });
           }),
         );
         metrics.vectorWriteMs += Date.now() - writeStarted;
         firstVector ||= vectors[0];
         counters.indexing.completed += segments.length;
         await update(
-          parseDone ? 'indexing' : lastStage.stage,
+          parseDone ? "indexing" : lastStage.stage,
           parseDone ? counters.indexing.completed : lastStage.completed,
           parseDone ? counters.indexing.total : lastStage.total,
         );
@@ -477,7 +486,7 @@ export class IndexingService {
     const pages: string[] = [];
     let textOffset = 0;
     try {
-      await update('parsing', 0, null, true);
+      await update("parsing", 0, null, true);
       const parts = await this.parseParts(version, context, pdf);
       const tokenizer = new TokenizerService(this.config);
       for await (const part of parts) {
@@ -496,8 +505,8 @@ export class IndexingService {
       }
       parseDone = true;
       counters.embedding.total = counters.indexing.total = count + batch.length;
-      if (!counters.indexing.total) throw new ApiError(400, '文档未提取到有效片段');
-      await update('embedding', counters.embedding.completed, counters.embedding.total, true);
+      if (!counters.indexing.total) throw new ApiError(400, "文档未提取到有效片段");
+      await update("embedding", counters.embedding.completed, counters.embedding.total, true);
       if (batch.length) await submit();
       await Promise.all(pending);
       checkPending();
@@ -509,14 +518,14 @@ export class IndexingService {
         indexRevisionIds: [revision.id],
         modelProfile: profile,
       });
-      if (!check.length) throw new Error('向量写入后无法查询，尚未发布索引');
+      if (!check.length) throw new Error("向量写入后无法查询，尚未发布索引");
       await this.withExecution(task, token, async (tx) => {
         for (const [index, id] of existing) {
-          if (index >= count) await tx.delete('chunks', id);
+          if (index >= count) await tx.delete("chunks", id);
         }
       });
-      await update('indexing', count, count, true);
-      return { text: pages.join('\n'), count, metrics: pdf ? metrics : undefined };
+      await update("indexing", count, count, true);
+      return { text: pages.join("\n"), count, metrics: pdf ? metrics : undefined };
     } catch (error) {
       failure ||= error;
       // 失败时先收敛已发请求，等待期间仍可检测删除或任务取代。
@@ -533,21 +542,21 @@ export class IndexingService {
   private async parseParts(version: Row, context: ParseContext, pdf: boolean) {
     if (version.originalPath) {
       if (basename(version.originalPath) !== version.originalPath)
-        throw new ApiError(400, '原件路径无效');
+        throw new ApiError(400, "原件路径无效");
       const bytes = await readFile(
-        join(this.config.getOrThrow('ORIGINALS_DIR'), version.originalPath),
+        join(this.config.getOrThrow("ORIGINALS_DIR"), version.originalPath),
       );
       const progress = async (done: number, total: number) => {
-        await context.stage?.('parsing', done, total);
+        await context.stage?.("parsing", done, total);
       };
       return pdf
         ? this.parser.parsePages(bytes, context, progress)
         : [await this.parser.parseStructured(bytes, version.filename, progress, context)];
     }
-    if (/\.pdf$/i.test(version.filename) && this.config.get('VISION_ENABLED'))
-      throw new ApiError(400, '历史 PDF 没有保留原件，无法识别图片，请重新上传原 PDF');
-    if (!version.content?.trim()) throw new ApiError(400, '历史文档无正文，请重新上传');
-    await context.stage?.('parsing', 1, 1);
+    if (/\.pdf$/i.test(version.filename) && this.config.get("VISION_ENABLED"))
+      throw new ApiError(400, "历史 PDF 没有保留原件，无法识别图片，请重新上传原 PDF");
+    if (!version.content?.trim()) throw new ApiError(400, "历史文档无正文，请重新上传");
+    await context.stage?.("parsing", 1, 1);
     const text = version.content as string;
     return [{ text, blocks: paragraphBlocks(text, null) }];
   }
@@ -559,16 +568,18 @@ export class IndexingService {
     checkOwned: () => Promise<void>,
   ) {
     const texts = batch.map((s) =>
-      typeof s.retrievalMetadata?.embeddingText === 'string'
+      typeof s.retrievalMetadata?.embeddingText === "string"
         ? s.retrievalMetadata.embeddingText
         : s.text,
     );
     const cacheProfile = digest(
       JSON.stringify({
-        kind: 'embedding-batch-v1',
+        kind: "embedding-batch-v1",
         profile,
         baseUrl:
-          profile.provider !== 'local' ? profile.baseUrl || this.config.get('EMBEDDING_BASE_URL') : undefined,
+          profile.provider !== "local"
+            ? profile.baseUrl || this.config.get("EMBEDDING_BASE_URL")
+            : undefined,
       }),
     );
     const directory = this.assets?.directory(context, cacheProfile);
@@ -588,7 +599,7 @@ export class IndexingService {
     await checkOwned();
     if (path) {
       try {
-        const cached = JSON.parse(await readFile(path, 'utf8'));
+        const cached = JSON.parse(await readFile(path, "utf8"));
         if (
           cached?.profile === cacheProfile &&
           cached?.input === input &&
@@ -596,15 +607,15 @@ export class IndexingService {
         )
           return { vectors: cached.vectors as number[][], cacheHit: true };
       } catch (error: any) {
-        if (!(error instanceof SyntaxError) && error.code !== 'ENOENT') throw error;
+        if (!(error instanceof SyntaxError) && error.code !== "ENOENT") throw error;
       }
     }
     context.beforeRequest?.();
     const vectors = await this.embeddings.embedDocuments(texts, profile, context.signal);
-    if (!valid(vectors)) throw new Error('Invalid embedding response');
+    if (!valid(vectors)) throw new Error("Invalid embedding response");
     await checkOwned();
     if (path && directory && valid(vectors, profile.dimensions)) {
-      const temporary = path + '.' + randomUUID() + '.tmp';
+      const temporary = path + "." + randomUUID() + ".tmp";
       try {
         await mkdir(directory, { recursive: true });
         await writeFile(temporary, JSON.stringify({ profile: cacheProfile, input, vectors }));
@@ -619,81 +630,81 @@ export class IndexingService {
   // 清理必须等待保留期和写入任务结束，否则可能删掉正在使用或刚写入的索引。
   private async cleanup(task: Row, token: string) {
     if (task.payload?.notBefore && wallTime(task.payload.notBefore) > wallTime(now()))
-      throw new DependencyPending('索引仍在请求快照保留窗口');
-    if (task.kind === 'retire') {
+      throw new DependencyPending("索引仍在请求快照保留窗口");
+    if (task.kind === "retire") {
       if (task.payload?.notBefore && wallTime(task.payload.notBefore) > wallTime(now()))
-        throw new DependencyPending('旧版索引仍在保留窗口');
+        throw new DependencyPending("旧版索引仍在保留窗口");
       await this.store.withDocumentVectorLock(task.documentId, async (store) => {
-        const doc = await store.get('documents', task.documentId);
+        const doc = await store.get("documents", task.documentId);
         if (
           doc?.activeIndexRevisionId === task.indexRevisionId ||
           doc?.desiredIndexRevisionId === task.indexRevisionId
         )
-          throw new ApiError(409, '不能清理生效或待发布的索引');
+          throw new ApiError(409, "不能清理生效或待发布的索引");
         if (
-          (await store.list('tasks', { indexRevisionId: task.indexRevisionId })).some(
-            (t) => t.kind === 'index' && t.executionToken,
+          (await store.list("tasks", { indexRevisionId: task.indexRevisionId })).some(
+            (t) => t.kind === "index" && t.executionToken,
           )
         )
-          throw new DependencyPending('等待索引写入任务终止');
+          throw new DependencyPending("等待索引写入任务终止");
         await this.vectors.removeRevision(task.indexRevisionId, task.userId);
       });
-      for (const chunk of await this.store.list('chunks', {
+      for (const chunk of await this.store.list("chunks", {
         indexRevisionId: task.indexRevisionId,
       }))
-        await this.store.delete('chunks', chunk.id);
-      await this.store.save('indexRevisions', { id: task.indexRevisionId, status: 'cleaned' });
-    } else if (task.kind === 'cleanup') {
+        await this.store.delete("chunks", chunk.id);
+      await this.store.save("indexRevisions", { id: task.indexRevisionId, status: "cleaned" });
+    } else if (task.kind === "cleanup") {
       await this.store.withDocumentVectorLock(task.documentId, async (store) => {
-        const doc = await store.get('documents', task.documentId);
-        if (!doc?.deletedAt) throw new ApiError(409, '文档未删除，拒绝清理');
-        const active = (await store.list('tasks', { documentId: task.documentId })).some(
-          (t) => t.kind === 'index' && t.executionToken,
+        const doc = await store.get("documents", task.documentId);
+        if (!doc?.deletedAt) throw new ApiError(409, "文档未删除，拒绝清理");
+        const active = (await store.list("tasks", { documentId: task.documentId })).some(
+          (t) => t.kind === "index" && t.executionToken,
         );
-        if (active) throw new DependencyPending('等待文档处理任务终止后清理');
+        if (active) throw new DependencyPending("等待文档处理任务终止后清理");
         await this.vectors.removeDocument(task.documentId, task.userId);
       });
       await this.assets?.removeDocument(task.userId, task.documentId);
-      for (const version of await this.store.list('versions', { documentId: task.documentId })) {
+      for (const version of await this.store.list("versions", { documentId: task.documentId })) {
         if (version.originalPath) {
           if (basename(version.originalPath) !== version.originalPath)
-            throw new ApiError(400, '原件路径无效');
-          await unlink(join(this.config.getOrThrow('ORIGINALS_DIR'), version.originalPath)).catch(
+            throw new ApiError(400, "原件路径无效");
+          await unlink(join(this.config.getOrThrow("ORIGINALS_DIR"), version.originalPath)).catch(
             (error) => {
-              if (error.code !== 'ENOENT') throw error;
+              if (error.code !== "ENOENT") throw error;
             },
           );
         }
-        await this.store.delete('versions', version.id);
+        await this.store.delete("versions", version.id);
       }
-      for (const chunk of await this.store.list('chunks', { documentId: task.documentId }))
-        await this.store.delete('chunks', chunk.id);
-      for (const revision of await this.store.list('indexRevisions', {
+      for (const chunk of await this.store.list("chunks", { documentId: task.documentId }))
+        await this.store.delete("chunks", chunk.id);
+      for (const revision of await this.store.list("indexRevisions", {
         documentId: task.documentId,
       }))
-        await this.store.delete('indexRevisions', revision.id);
-      await this.store.save('documents', {
+        await this.store.delete("indexRevisions", revision.id);
+      await this.store.save("documents", {
         id: task.documentId,
-        content: '',
+        content: "",
         activeVersionId: null,
-        status: 'deleted',
+        status: "deleted",
       });
-    } else if (task.kind === 'cleanup-library') {
-      const docs = await this.store.list('documents', { knowledgeBaseId: task.knowledgeBaseId });
-      if (docs.some((d) => d.status !== 'deleted'))
-        throw new DependencyPending('等待知识库文档清理完成');
-      for (const category of await this.store.list('categories', {
+    } else if (task.kind === "cleanup-library") {
+      const docs = await this.store.list("documents", { knowledgeBaseId: task.knowledgeBaseId });
+      if (docs.some((d) => d.status !== "deleted"))
+        throw new DependencyPending("等待知识库文档清理完成");
+      for (const category of await this.store.list("categories", {
         knowledgeBaseId: task.knowledgeBaseId,
       }))
-        await this.store.delete('categories', category.id);
+        await this.store.delete("categories", category.id);
     }
     await this.store.transaction(async (tx) => {
-      const current = await tx.lock('tasks', task.id);
+      const current = await tx.lock("tasks", task.id);
       if (current?.executionToken !== token) return;
-      await tx.save('tasks', {
+      await tx.save("tasks", {
         id: task.id,
-        status: 'completed',
-        stage: 'completed',
+        status: "completed",
+        stage: "completed",
         completed: 1,
         total: 1,
         executionToken: null,
@@ -703,22 +714,22 @@ export class IndexingService {
   }
 
   private async ensureDeletedCleanup(task: Row) {
-    const doc = await this.store.get('documents', task.documentId);
+    const doc = await this.store.get("documents", task.documentId);
     if (!doc?.deletedAt) {
       // Superseded staging revisions never become visible and can be removed immediately.
-      const current = await this.store.get('tasks', task.id);
+      const current = await this.store.get("tasks", task.id);
       if (
-        current?.status === 'canceled' &&
+        current?.status === "canceled" &&
         task.indexRevisionId &&
         doc?.activeIndexRevisionId !== task.indexRevisionId &&
         doc?.desiredIndexRevisionId !== task.indexRevisionId
       ) {
         await this.store.transaction(async (tx) => {
-          await tx.lock('knowledgeBases', task.knowledgeBaseId);
-          await tx.lock('documents', task.documentId);
+          await tx.lock("knowledgeBases", task.knowledgeBaseId);
+          await tx.lock("documents", task.documentId);
           if (
-            !(await tx.list('tasks', { indexRevisionId: task.indexRevisionId })).some(
-              (t) => t.kind === 'retire' && !terminalTask(t.status),
+            !(await tx.list("tasks", { indexRevisionId: task.indexRevisionId })).some(
+              (t) => t.kind === "retire" && !terminalTask(t.status),
             )
           )
             await this.tasks.create(tx, {
@@ -726,27 +737,27 @@ export class IndexingService {
               knowledgeBaseId: task.knowledgeBaseId,
               documentId: task.documentId,
               indexRevisionId: task.indexRevisionId,
-              kind: 'retire',
+              kind: "retire",
             });
         });
       }
       return;
     }
     await this.store.transaction(async (tx) => {
-      await tx.lock('knowledgeBases', task.knowledgeBaseId);
-      await tx.lock('documents', task.documentId);
-      const tasks = await tx.list('tasks', { documentId: task.documentId });
-      const existing = tasks.find((t) => t.kind === 'cleanup' && !terminalTask(t.status));
+      await tx.lock("knowledgeBases", task.knowledgeBaseId);
+      await tx.lock("documents", task.documentId);
+      const tasks = await tx.list("tasks", { documentId: task.documentId });
+      const existing = tasks.find((t) => t.kind === "cleanup" && !terminalTask(t.status));
       if (!existing) {
         const cleanup = await this.tasks.create(tx, {
           userId: task.userId,
           knowledgeBaseId: task.knowledgeBaseId,
           documentId: task.documentId,
-          kind: 'cleanup',
+          kind: "cleanup",
         });
-        await tx.save('documents', {
+        await tx.save("documents", {
           id: task.documentId,
-          status: 'deleting',
+          status: "deleting",
           latestTaskId: cleanup.id,
         });
       }

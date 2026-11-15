@@ -1,27 +1,31 @@
 import axios from "axios";
 import { toast } from "../composables/useToast";
 declare module "axios" {
-  interface AxiosRequestConfig { silentError?: boolean }
+  interface AxiosRequestConfig {
+    silentError?: boolean;
+  }
 }
 
 let authExpiredNotified = false;
 
 export function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem("token");
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
 }
 
 /** Axios 与 PDF.js 的流式/Range 请求共享一次登录失效处理。 */
 export function handleUnauthorized() {
-  localStorage.removeItem('token');
-  localStorage.removeItem('username');
+  localStorage.removeItem("token");
+  localStorage.removeItem("username");
   if (authExpiredNotified) return;
   authExpiredNotified = true;
-  toast.error('登录已过期，请重新登录');
-  window.dispatchEvent(new Event('auth-expired'));
-  setTimeout(() => { authExpiredNotified = false; }, 3000);
+  toast.error("登录已过期，请重新登录");
+  window.dispatchEvent(new Event("auth-expired"));
+  setTimeout(() => {
+    authExpiredNotified = false;
+  }, 3000);
 }
 
 const service = axios.create({

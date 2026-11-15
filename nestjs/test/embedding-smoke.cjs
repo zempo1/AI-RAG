@@ -1,33 +1,33 @@
-require('reflect-metadata');
+require("reflect-metadata");
 
-const { ConfigService } = require('@nestjs/config');
+const { ConfigService } = require("@nestjs/config");
 
-const { validateConfig } = require('../dist/config/configuration');
+const { validateConfig } = require("../dist/config/configuration");
 
-const { EmbeddingsService } = require('../dist/modules/embeddings/embeddings.service');
+const { EmbeddingsService } = require("../dist/modules/embeddings/embeddings.service");
 
 (async () => {
   const config = new ConfigService(
     validateConfig({
       ...process.env,
-      STORAGE_DRIVER: 'memory',
-      JWT_SECRET: 'embedding-smoke-only-secret-32-chars',
+      STORAGE_DRIVER: "memory",
+      JWT_SECRET: "embedding-smoke-only-secret-32-chars",
     }),
   );
   const service = new EmbeddingsService(config);
   try {
     const vectors = await service.embedDocuments([
-      '知识库用于文档检索和回答问题',
-      'A knowledge base supports retrieval and questions',
+      "知识库用于文档检索和回答问题",
+      "A knowledge base supports retrieval and questions",
     ]);
-    const query = await service.embedQuery('知识库用于文档检索和回答问题');
+    const query = await service.embedQuery("知识库用于文档检索和回答问题");
     if (vectors.length !== 2 || vectors.some((v) => v.length !== 384 || !v.every(Number.isFinite)))
-      throw new Error('Invalid vectors');
+      throw new Error("Invalid vectors");
     const cosine = vectors[0].reduce((s, x, i) => s + x * query[i], 0);
-    if (cosine < 0.999) throw new Error('Inconsistent query/document vectors');
+    if (cosine < 0.999) throw new Error("Inconsistent query/document vectors");
     console.log(
       JSON.stringify({
-        model: config.get('EMBEDDING_MODEL'),
+        model: config.get("EMBEDDING_MODEL"),
         dimensions: query.length,
         sameTextCosine: cosine,
       }),

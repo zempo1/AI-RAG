@@ -17,9 +17,7 @@ const md: MarkdownIt = new MarkdownIt({
       } catch (__) {}
     }
 
-    return (
-      '<pre class="hljs"><code>' + md.utils.escapeHtml(str) + "</code></pre>"
-    );
+    return '<pre class="hljs"><code>' + md.utils.escapeHtml(str) + "</code></pre>";
   },
 });
 
@@ -28,12 +26,12 @@ md.renderer.rules.table_open = (tokens, index, options, _env, renderer) =>
   '<div class="markdown-table" role="region" aria-label="回答表格，可横向滚动" tabindex="0">' +
   renderer.renderToken(tokens, index, options);
 md.renderer.rules.table_close = (tokens, index, options, _env, renderer) =>
-  renderer.renderToken(tokens, index, options) + '</div>\n';
+  renderer.renderToken(tokens, index, options) + "</div>\n";
 
 md.renderer.rules.text = (tokens, index, _options, env) => {
   // Normalize model-generated citation wrappers without enabling arbitrary HTML.
   // Code spans and code fences use separate renderers and retain their literals.
-  const content = tokens[index].content.replace(/<sup\s*>\s*((?:\[\d+\]\s*)+)<\/sup\s*>/gi, '$1');
+  const content = tokens[index].content.replace(/<sup\s*>\s*((?:\[\d+\]\s*)+)<\/sup\s*>/gi, "$1");
   const escaped = md.utils.escapeHtml(content);
   return escaped.replace(/\[(\d+)\]/g, (marker, number) =>
     env?.citationNumbers?.has(Number(number))
@@ -46,9 +44,6 @@ md.renderer.rules.text = (tokens, index, _options, env) => {
   );
 };
 
-export const renderMarkdown = (
-  text: string,
-  citationNumbers: number[] = [],
-): string => {
+export const renderMarkdown = (text: string, citationNumbers: number[] = []): string => {
   return md.render(text, { citationNumbers: new Set(citationNumbers) });
 };

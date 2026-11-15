@@ -1,27 +1,33 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { modelBinding } from '../../model-settings/model-runtime';
-import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
-import { join } from 'node:path';
-import { LlmService } from '../../llm/llm.service';
-import { ModelOutputError } from '../../llm/llm.types';
-import { PageAssetsService, ParseScope } from '../page-assets.service';
-import { ContentType, PageImageRef, RegionImageRef } from './parsed-document';
-import { PdfRegion } from './pdf-layout';
-import { localRendering, visionPool } from './vision-scheduler';
-import { VisionScheduler } from './vision-scheduler';
-import { analysisHealth, PdfAnalysisClient, OcrResult, validateOcr, verifyAnalysisManifest } from './pdf-analysis.client';
+import { Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { modelBinding } from "../../model-settings/model-runtime";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
+import { join } from "node:path";
+import { LlmService } from "../../llm/llm.service";
+import { ModelOutputError } from "../../llm/llm.types";
+import { PageAssetsService, ParseScope } from "../page-assets.service";
+import { ContentType, PageImageRef, RegionImageRef } from "./parsed-document";
+import { PdfRegion } from "./pdf-layout";
+import { localRendering, visionPool } from "./vision-scheduler";
+import { VisionScheduler } from "./vision-scheduler";
+import {
+  analysisHealth,
+  PdfAnalysisClient,
+  OcrResult,
+  validateOcr,
+  verifyAnalysisManifest,
+} from "./pdf-analysis.client";
 import {
   renderPdfRegion,
   withPdfPageRaster,
   pdfRegionScale,
   verifyCachedPdfImage,
-} from './pdf-render-cache';
-import { locateAdaptiveRegions } from './adaptive-layout';
-import { RegionBox } from './parsed-document';
-import { missingOcrText } from './pdf-ocr-coverage';
-import { retryTransientRequest } from '../../../common/transient-request';
+} from "./pdf-render-cache";
+import { locateAdaptiveRegions } from "./adaptive-layout";
+import { RegionBox } from "./parsed-document";
+import { missingOcrText } from "./pdf-ocr-coverage";
+import { retryTransientRequest } from "../../../common/transient-request";
 const imagePools = new Map<number, VisionScheduler>();
 const fallbackImageSlot = new VisionScheduler(1);
 const sessionFlights = new WeakMap<object, Map<string, Promise<any>>>();
@@ -34,25 +40,25 @@ function flightsFor(scope: ParseContext) {
   }
   return flights;
 }
-const sha256 = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
+const sha256 = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 class VisionOutputError extends Error {}
 const locatedFailures = new WeakSet<Error>();
 export function markPdfFailure(error: unknown, page: number, region?: number) {
   if (error instanceof Error && !locatedFailures.has(error)) {
     locatedFailures.add(error);
-    error.message = `PDF 第${page}页视觉解析失败：${region ? `图片区域${region}：` : ''}${error.message}`;
+    error.message = `PDF 第${page}页视觉解析失败：${region ? `图片区域${region}：` : ""}${error.message}`;
   }
 }
 
 export interface VisualBlock {
-  type: Exclude<ContentType, 'native'>;
+  type: Exclude<ContentType, "native">;
   text: string;
   regionImage?: RegionImageRef;
   contextText?: string;
   textIndexes?: number[];
   /** Source geometry in the current rotated/cropped page viewport, independent of the image crop. */
   sourceBox?: RegionBox;
-  anchorKind?: 'ocr' | 'region';
+  anchorKind?: "ocr" | "region";
 }
 export interface VisualPage {
   image?: PageImageRef;
@@ -61,7 +67,12 @@ export interface VisualPage {
 }
 export interface ParseContext extends ParseScope {
   sourceHash?: string;
-  progress?: (counts: { pages: number; totalPages: number; regions: number; totalRegions: number | null }) => Promise<unknown>;
+  progress?: (counts: {
+    pages: number;
+    totalPages: number;
+    regions: number;
+    totalRegions: number | null;
+  }) => Promise<unknown>;
   signal?: AbortSignal;
   beforeRequest?: () => void;
   failed?: (error: unknown) => void;
@@ -69,7 +80,7 @@ export interface ParseContext extends ParseScope {
   completed?: () => Promise<void>;
   guard?: () => Promise<unknown>;
   stage?: (
-    stage: 'parsing' | 'layout' | 'ocr' | 'vision',
+    stage: "parsing" | "layout" | "ocr" | "vision",
     page: number,
     total: number | null,
   ) => Promise<unknown>;
@@ -87,7 +98,7 @@ text 使用实际可读字符，不要输出字面量 Unicode 转义序列。只
 @Injectable()
 export class PdfVisualService {
   get concurrency(): number {
-    return Number(this.config.get('VISION_CONCURRENCY') ?? 3);
+    return Number(this.config.get("VISION_CONCURRENCY") ?? 3);
   }
   private readonly analysis: PdfAnalysisClient;
   private readonly logger = new Logger(PdfVisualService.name);
@@ -106,58 +117,60 @@ export class PdfVisualService {
   }
 
   get enabled() {
-    return this.config.get('VISION_ENABLED') !== false;
+    return this.config.get("VISION_ENABLED") !== false;
   }
 
   private profile(analysisProfile?: string) {
-    return createHash('sha256')
+    return createHash("sha256")
       .update(
         JSON.stringify({
-          parser: 'pdf-adaptive-v2-native-tables',
+          parser: "pdf-adaptive-v2-native-tables",
           prompt: PDF_VISION_PROMPT,
           scale: 2,
           maxPixels: 8000000,
-          model: modelBinding(this.config, 'vision').model,
-          url: modelBinding(this.config, 'vision').baseUrl,
-          output: this.config.get('VISION_OUTPUT_TOKENS') || 8192,
+          model: modelBinding(this.config, "vision").model,
+          url: modelBinding(this.config, "vision").baseUrl,
+          output: this.config.get("VISION_OUTPUT_TOKENS") || 8192,
           analysisProfile,
         }),
       )
-      .digest('hex');
+      .digest("hex");
   }
 
   private blocks(raw: unknown, geometry = false): VisualBlock[] {
     const rows = (raw as any)?.blocks;
-    if (!Array.isArray(rows)) throw new VisionOutputError('视觉解析格式错误：blocks 必须为数组');
+    if (!Array.isArray(rows)) throw new VisionOutputError("视觉解析格式错误：blocks 必须为数组");
     const output: VisualBlock[] = [];
     for (let i = 0; i < rows.length; i++) {
       const b = rows[i];
-      if (!b || !['ocr', 'table', 'figure'].includes(b.type))
+      if (!b || !["ocr", "table", "figure"].includes(b.type))
         throw new VisionOutputError(
-          '视觉解析格式错误：blocks[' + i + '].type 必须为 ocr/table/figure',
+          "视觉解析格式错误：blocks[" + i + "].type 必须为 ocr/table/figure",
         );
-      if (typeof b.text !== 'string')
-        throw new VisionOutputError('视觉解析格式错误：blocks[' + i + '].text 必须为字符串');
+      if (typeof b.text !== "string")
+        throw new VisionOutputError("视觉解析格式错误：blocks[" + i + "].text 必须为字符串");
       if (/\\u[0-9a-f]{4}/i.test(b.text))
-        throw new VisionOutputError('视觉解析内容错误：存在未还原的 Unicode 转义');
+        throw new VisionOutputError("视觉解析内容错误：存在未还原的 Unicode 转义");
       if (
         geometry &&
         (!Array.isArray(b.sourceBox) ||
           b.sourceBox.length !== 4 ||
           !b.sourceBox.every(
             (value: unknown) =>
-              typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1,
+              typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1,
           ) ||
           b.sourceBox[2] <= b.sourceBox[0] ||
           b.sourceBox[3] <= b.sourceBox[1] ||
-          !['ocr', 'region'].includes(b.anchorKind))
+          !["ocr", "region"].includes(b.anchorKind))
       )
-        throw new VisionOutputError('视觉解析缓存缺少有效来源坐标');
+        throw new VisionOutputError("视觉解析缓存缺少有效来源坐标");
       if (b.text.trim())
         output.push({
           type: b.type,
           text: b.text.trim(),
-          ...(geometry ? { sourceBox: [...b.sourceBox] as RegionBox, anchorKind: b.anchorKind } : {}),
+          ...(geometry
+            ? { sourceBox: [...b.sourceBox] as RegionBox, anchorKind: b.anchorKind }
+            : {}),
         });
     }
     return output;
@@ -187,7 +200,7 @@ export class PdfVisualService {
     const started = Date.now();
     await scope.guard?.();
     scope.beforeRequest?.();
-    await scope.stage?.('layout', page.pageNumber, document.numPages);
+    await scope.stage?.("layout", page.pageNumber, document.numPages);
     const regions = await locateAdaptiveRegions(
       document,
       page,
@@ -206,13 +219,13 @@ export class PdfVisualService {
     const blocks = await this.recognizeRegions(document, page, native, scope, profile, regions);
     this.logger.log(
       JSON.stringify({
-        event: 'pdf-page-layout',
-        mode: 'adaptive',
+        event: "pdf-page-layout",
+        mode: "adaptive",
         page: page.pageNumber,
         textOnly: regions.length === 0,
         regions: regions.length,
-        ocrRegions: regions.filter((r) => r.recognition === 'ocr').length,
-        fullPages: regions.filter((r) => r.kind !== 'region').length,
+        ocrRegions: regions.filter((r) => r.recognition === "ocr").length,
+        fullPages: regions.filter((r) => r.kind !== "region").length,
         fallbackReasons: regions.filter((r) => r.reason).map((r) => r.reason),
         layoutMs,
         elapsedMs: Date.now() - started,
@@ -223,8 +236,8 @@ export class PdfVisualService {
       stats: {
         textPages: regions.length ? 0 : 1,
         regions: regions.length,
-        scanPages: regions.some((r) => r.kind === 'scan') ? 1 : 0,
-        fallbackPages: regions.some((r) => r.kind === 'fallback') ? 1 : 0,
+        scanPages: regions.some((r) => r.kind === "scan") ? 1 : 0,
+        fallbackPages: regions.some((r) => r.kind === "fallback") ? 1 : 0,
       },
     };
   }
@@ -269,7 +282,7 @@ export class PdfVisualService {
   }
 
   private deduplicate(parsed: VisualBlock[], native: string) {
-    const normalize = (value: string) => value.normalize('NFKC').replace(/\s+/g, '');
+    const normalize = (value: string) => value.normalize("NFKC").replace(/\s+/g, "");
     const nativeLines = new Set(
       native
         .split(/[\r\n]+/)
@@ -281,7 +294,7 @@ export class PdfVisualService {
       const text = normalize(block.text);
       if (!text || seen.has(text)) return false;
       if (
-        block.type === 'ocr' &&
+        block.type === "ocr" &&
         (normalize(native) === text ||
           block.text
             .split(/[\r\n]+/)
@@ -296,7 +309,7 @@ export class PdfVisualService {
   }
 
   private async publish(path: string, value: string | Buffer) {
-    const temp = path + '.' + randomUUID() + '.tmp';
+    const temp = path + "." + randomUUID() + ".tmp";
     await writeFile(temp, value);
     await rename(temp, path);
   }
@@ -310,18 +323,18 @@ export class PdfVisualService {
     await scope.guard?.();
     scope.signal?.throwIfAborted();
     try {
-      const hit = validate(JSON.parse(await readFile(path, 'utf8')));
+      const hit = validate(JSON.parse(await readFile(path, "utf8")));
       await scope.guard?.();
       scope.signal?.throwIfAborted();
       this.logger.log(
-        JSON.stringify({ event: 'pdf-recognition-cache', recognition: 'vision', cacheHit: true }),
+        JSON.stringify({ event: "pdf-recognition-cache", recognition: "vision", cacheHit: true }),
       );
       return hit;
     } catch (error: any) {
       if (scope.signal?.aborted) throw scope.signal.reason;
       if (
         !(error instanceof VisionOutputError) &&
-        error.code !== 'ENOENT' &&
+        error.code !== "ENOENT" &&
         !(error instanceof SyntaxError)
       )
         throw error;
@@ -361,8 +374,10 @@ export class PdfVisualService {
     const width = x1 - x0,
       height = y1 - y0;
     const pageBox = (b: RegionBox): RegionBox => [
-      x0 + b[0] * width, y0 + b[1] * height,
-      x0 + b[2] * width, y0 + b[3] * height,
+      x0 + b[0] * width,
+      y0 + b[1] * height,
+      x0 + b[2] * width,
+      y0 + b[3] * height,
     ];
     const expected = [
       ...((region as PdfRegion & { ocrExpectedBoxes?: RegionBox[] }).ocrExpectedBoxes || []),
@@ -373,10 +388,10 @@ export class PdfVisualService {
     if (!expected.length && !reliable.length) missing.push(region.bbox);
     return {
       blocks: reliable.map((b) => ({
-        type: 'ocr',
+        type: "ocr",
         text: b.text.trim(),
         sourceBox: pageBox(b.bbox),
-        anchorKind: 'ocr',
+        anchorKind: "ocr",
       })),
       missing,
     };
@@ -393,29 +408,36 @@ export class PdfVisualService {
     const resultPath = (ocrManifest: string) =>
       join(
         directory,
-        'ocr-' + sha256(JSON.stringify({ image: imageHash, manifest: ocrManifest, classify })) + '.json',
+        "ocr-" +
+          sha256(JSON.stringify({ image: imageHash, manifest: ocrManifest, classify })) +
+          ".json",
       );
     await scope.guard?.();
     scope.signal?.throwIfAborted();
     let hit: OcrResult | undefined;
     try {
-      const raw = JSON.parse(await readFile(resultPath(manifest), 'utf8'));
+      const raw = JSON.parse(await readFile(resultPath(manifest), "utf8"));
       try {
         const valid = validateOcr(raw);
-        if (valid.manifest === manifest && raw.imageSha256 === imageHash && (!classify || valid.textOnly !== undefined)) hit = valid;
+        if (
+          valid.manifest === manifest &&
+          raw.imageSha256 === imageHash &&
+          (!classify || valid.textOnly !== undefined)
+        )
+          hit = valid;
       } catch {
         /* Invalid cache is a miss, never an OCR transport fallback. */
       }
     } catch (error: any) {
-      if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
+      if (error.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
     }
     if (hit) {
       await scope.guard?.();
       scope.signal?.throwIfAborted();
       this.logger.log(
         JSON.stringify({
-          event: 'pdf-recognition-cache',
-          recognition: 'ocr',
+          event: "pdf-recognition-cache",
+          recognition: "ocr",
           cacheHit: true,
           imageBytes: bytes.length,
         }),
@@ -425,7 +447,7 @@ export class PdfVisualService {
     // The flight identity uses the health bundle only until the service tells
     // us its OCR manifest. Persisted OCR keys use exactly OCR manifest + pixels.
     const flightKey =
-      directory + '/ocr-flight-' + sha256(JSON.stringify({ image: imageHash, manifest, classify }));
+      directory + "/ocr-flight-" + sha256(JSON.stringify({ image: imageHash, manifest, classify }));
     const recognitionFlights = flightsFor(scope);
     let flight = recognitionFlights.get(flightKey);
     if (!flight) {
@@ -437,7 +459,7 @@ export class PdfVisualService {
         verifyAnalysisManifest(result, manifest);
         this.logger.log(
           JSON.stringify({
-            event: 'pdf-ocr-request',
+            event: "pdf-ocr-request",
             imageBytes: bytes.length,
             elapsedMs: Date.now() - started,
             blocks: result.blocks.length,
@@ -475,10 +497,16 @@ export class PdfVisualService {
     const pool = visionPool(this.concurrency);
     const queued = Date.now();
     const deadline = new AbortController();
-    const budgetMs = Number(this.config.get('VISION_TIMEOUT_MS') || 180000);
-    const timer = setTimeout(() => deadline.abort(new Error(`视觉解析超时：总时限已到（${budgetMs}ms，含重试与格式修复）`)), budgetMs);
+    const budgetMs = Number(this.config.get("VISION_TIMEOUT_MS") || 180000);
+    const timer = setTimeout(
+      () =>
+        deadline.abort(new Error(`视觉解析超时：总时限已到（${budgetMs}ms，含重试与格式修复）`)),
+      budgetMs,
+    );
     timer.unref();
-    const signal = scope.signal ? AbortSignal.any([scope.signal, deadline.signal]) : deadline.signal;
+    const signal = scope.signal
+      ? AbortSignal.any([scope.signal, deadline.signal])
+      : deadline.signal;
     let release: (() => void) | undefined;
     try {
       release = await pool.acquire(signal, scope.beforeRequest);
@@ -493,27 +521,35 @@ export class PdfVisualService {
         pool.requests++;
         pool.requestPeak = Math.max(pool.requestPeak, pool.requests);
         const started = Date.now();
-        let status = 'error';
-        this.logger.log(JSON.stringify({ event: 'pdf-vision-request-start', page, region: index,
-          repair, queueMs, remainingMs: Math.max(0, budgetMs - (started - queued)) }));
+        let status = "error";
+        this.logger.log(
+          JSON.stringify({
+            event: "pdf-vision-request-start",
+            page,
+            region: index,
+            repair,
+            queueMs,
+            remainingMs: Math.max(0, budgetMs - (started - queued)),
+          }),
+        );
         try {
           const result = await this.llm.complete(
             PDF_VISION_PROMPT +
-              (repair ? '\n上次输出格式校验失败。请只返回符合约定的 JSON 对象。' : '') +
-              '\n当前输入：局部图片或图表，勿推测裁剪外的内容。\n附近原生文字（只作为上下文，不要重复输出）：\n' +
+              (repair ? "\n上次输出格式校验失败。请只返回符合约定的 JSON 对象。" : "") +
+              "\n当前输入：局部图片或图表，勿推测裁剪外的内容。\n附近原生文字（只作为上下文，不要重复输出）：\n" +
               region.context,
             undefined,
             [
               {
                 label: `第${page}页`,
-                dataUrl: 'data:image/png;base64,' + bytes.toString('base64'),
+                dataUrl: "data:image/png;base64," + bytes.toString("base64"),
               },
             ],
             signal,
             { json: true, timeoutMs: Math.max(1, budgetMs - (Date.now() - queued)) },
           );
           signal.throwIfAborted();
-          status = 'success';
+          status = "success";
           return result;
         } catch (error) {
           pool.cooldown(error);
@@ -522,8 +558,8 @@ export class PdfVisualService {
           pool.requests--;
           this.logger.log(
             JSON.stringify({
-              event: 'pdf-vision-request',
-              mode: 'adaptive',
+              event: "pdf-vision-request",
+              mode: "adaptive",
               page,
               region: index,
               repair,
@@ -545,23 +581,30 @@ export class PdfVisualService {
             json = JSON.parse(
               raw
                 .trim()
-                .replace(/^```(?:json)?\s*/i, '')
-                .replace(/\s*```$/, ''),
+                .replace(/^```(?:json)?\s*/i, "")
+                .replace(/\s*```$/, ""),
             );
           } catch {
-            throw new VisionOutputError('视觉解析格式错误：模型返回的 JSON 无法解析');
+            throw new VisionOutputError("视觉解析格式错误：模型返回的 JSON 无法解析");
           }
           // Providers occasionally omit the outer envelope or emit one block as an object.
           // Keep the same per-block validation and reject unrecognized shapes.
           const envelope = Array.isArray(json) ? { blocks: json } : json;
           const blocks = (envelope as { blocks?: unknown } | null)?.blocks;
-          if (blocks && typeof blocks === 'object' && !Array.isArray(blocks))
+          if (blocks && typeof blocks === "object" && !Array.isArray(blocks))
             return this.blocks({ blocks: [blocks] });
           return this.blocks(envelope);
         } catch (error) {
-          this.logger.warn(JSON.stringify({ event: 'pdf-vision-output-invalid', page, region: index,
-            reason: error instanceof VisionOutputError ? error.message : '视觉结果校验失败',
-            outputLength: raw.length, outputSha256: sha256(raw) }));
+          this.logger.warn(
+            JSON.stringify({
+              event: "pdf-vision-output-invalid",
+              page,
+              region: index,
+              reason: error instanceof VisionOutputError ? error.message : "视觉结果校验失败",
+              outputLength: raw.length,
+              outputSha256: sha256(raw),
+            }),
+          );
           throw error;
         }
       };
@@ -605,7 +648,7 @@ export class PdfVisualService {
     };
     const path = this.assets.directory(scope, profile),
       stem = `${page.pageNumber}-${regionId}`;
-    const local = region.recognition === 'ocr' || region.recognition === 'classify';
+    const local = region.recognition === "ocr" || region.recognition === "classify";
     if (local) {
       await scope.guard?.();
       scope.beforeRequest?.();
@@ -624,24 +667,34 @@ export class PdfVisualService {
     scope.signal?.throwIfAborted();
     if (region.nativeTable) {
       await scope.completed?.();
-      this.logger.log(JSON.stringify({ event: 'pdf-native-table', page: page.pageNumber, regionId }));
+      this.logger.log(
+        JSON.stringify({ event: "pdf-native-table", page: page.pageNumber, regionId }),
+      );
       // There is no rendered image asset for this deterministic native table.
-      return [{ type: 'table', text: region.nativeTable, sourceBox: [...region.bbox] as RegionBox,
-        anchorKind: 'region', contextText: region.context, textIndexes: region.textIndexes }];
+      return [
+        {
+          type: "table",
+          text: region.nativeTable,
+          sourceBox: [...region.bbox] as RegionBox,
+          anchorKind: "region",
+          contextText: region.context,
+          textIndexes: region.textIndexes,
+        },
+      ];
     }
     let cachedBlocks: VisualBlock[] | undefined;
     try {
-      const cached = JSON.parse(await readFile(join(path, stem + '.json'), 'utf8'));
+      const cached = JSON.parse(await readFile(join(path, stem + ".json"), "utf8"));
       if (
         cached &&
-        typeof cached === 'object' &&
+        typeof cached === "object" &&
         cached.geometryVersion === 1 &&
         cached.nativeHash === sha256(native) &&
         cached.contextHash === sha256(region.context) &&
         cached.manifest === manifest &&
         cached.recognition === region.recognition &&
         (await verifyCachedPdfImage(
-          join(path, stem + '.png'),
+          join(path, stem + ".png"),
           cached.imageBytes,
           cached.imageSha256,
           scope,
@@ -650,7 +703,7 @@ export class PdfVisualService {
         cachedBlocks = this.blocks(cached, true);
       }
     } catch (error: any) {
-      if (error.code && error.code !== 'ENOENT') throw error;
+      if (error.code && error.code !== "ENOENT") throw error;
       if (!error.code && !(error instanceof SyntaxError) && !(error instanceof VisionOutputError))
         throw error;
     }
@@ -660,8 +713,8 @@ export class PdfVisualService {
       await scope.completed?.();
       this.logger.log(
         JSON.stringify({
-          event: 'pdf-region',
-          mode: 'adaptive',
+          event: "pdf-region",
+          mode: "adaptive",
           page: page.pageNumber,
           regionId,
           recognition: region.recognition,
@@ -685,8 +738,8 @@ export class PdfVisualService {
       // Recognition cache is scoped to user/document/version, independently of
       // the citation/render profile, so layout changes cannot prevent OCR reuse.
       const recognitionPath = join(
-        this.assets.directory(scope, sha256('pdf-adaptive-recognition-v1')),
-        'recognition',
+        this.assets.directory(scope, sha256("pdf-adaptive-recognition-v1")),
+        "recognition",
       );
       await mkdir(recognitionPath, { recursive: true });
       const vision = async (input: Buffer, target: PdfRegion) => {
@@ -698,10 +751,10 @@ export class PdfVisualService {
           }),
         );
         const recognized = await this.sharedRecognition<VisualBlock[]>(
-          join(recognitionPath, 'vision-' + key + '.json'),
+          join(recognitionPath, "vision-" + key + ".json"),
           scope,
           async () => {
-            await scope.stage?.('vision', page.pageNumber, document.numPages);
+            await scope.stage?.("vision", page.pageNumber, document.numPages);
             return this.vision(input, target, page.pageNumber, index, scope);
           },
           (raw) => this.blocks({ blocks: raw }),
@@ -711,14 +764,18 @@ export class PdfVisualService {
         return recognized.map((block) => ({
           ...block,
           sourceBox: [...target.bbox] as RegionBox,
-          anchorKind: 'region' as const,
+          anchorKind: "region" as const,
         }));
       };
       let parsed: VisualBlock[];
       if (local) {
-        await scope.stage?.('ocr', page.pageNumber, document.numPages);
+        await scope.stage?.("ocr", page.pageNumber, document.numPages);
         const result = await this.ocr(
-          bytes, recognitionPath, manifest, scope, region.recognition === 'classify',
+          bytes,
+          recognitionPath,
+          manifest,
+          scope,
+          region.recognition === "classify",
         );
         if (result.textOnly === false) parsed = await vision(bytes, region);
         else {
@@ -728,13 +785,18 @@ export class PdfVisualService {
             const target = {
               ...region,
               bbox: box,
-              recognition: 'vision' as const,
-              reason: 'ocr-quality-fallback',
+              recognition: "vision" as const,
+              reason: "ocr-quality-fallback",
             };
-            this.logger.log(JSON.stringify({ event: 'ocr-quality-fallback', page: page.pageNumber, regionId }));
+            this.logger.log(
+              JSON.stringify({ event: "ocr-quality-fallback", page: page.pageNumber, regionId }),
+            );
             if (box === region.bbox) parsed.push(...(await vision(bytes, target)));
             else {
-              const releaseFallback = await fallbackImageSlot.acquire(scope.signal, scope.beforeRequest);
+              const releaseFallback = await fallbackImageSlot.acquire(
+                scope.signal,
+                scope.beforeRequest,
+              );
               try {
                 const cropped = await renderPdfRegion(document, page, target, scope);
                 parsed.push(...(await vision(cropped, target)));
@@ -747,9 +809,9 @@ export class PdfVisualService {
       } else parsed = await vision(bytes, region);
       const blocks = this.deduplicate(parsed, native);
       await scope.guard?.();
-      await this.publish(join(path, stem + '.png'), bytes);
+      await this.publish(join(path, stem + ".png"), bytes);
       await this.publish(
-        join(path, stem + '.json'),
+        join(path, stem + ".json"),
         JSON.stringify({
           geometryVersion: 1,
           blocks,
@@ -769,8 +831,8 @@ export class PdfVisualService {
       const scale = pdfRegionScale(width, height, region.scaleLimit);
       this.logger.log(
         JSON.stringify({
-          event: 'pdf-region',
-          mode: 'adaptive',
+          event: "pdf-region",
+          mode: "adaptive",
           page: page.pageNumber,
           regionId,
           recognition: region.recognition,
@@ -791,5 +853,4 @@ export class PdfVisualService {
       release();
     }
   }
-
 }

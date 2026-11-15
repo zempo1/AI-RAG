@@ -1,5 +1,5 @@
-import { Store, Table, Row, LatestRows, now } from './store';
-import { ApiError } from '../common/api-error';
+import { Store, Table, Row, LatestRows, now } from "./store";
+import { ApiError } from "../common/api-error";
 
 export class MemoryStore extends Store {
   async lock(table: Table, id: number): Promise<Row | undefined> {
@@ -18,14 +18,21 @@ export class MemoryStore extends Store {
     return this.tables.get(name)!;
   }
 
-  async list(table: Table, where: Record<string, unknown> = {}, latest?: LatestRows): Promise<Row[]> {
-    let rows = [...this.table(table).values()]
-      .filter((row) => Object.entries(where).every(([k, v]) => row[k] === v));
+  async list(
+    table: Table,
+    where: Record<string, unknown> = {},
+    latest?: LatestRows,
+  ): Promise<Row[]> {
+    let rows = [...this.table(table).values()].filter((row) =>
+      Object.entries(where).every(([k, v]) => row[k] === v),
+    );
     if (latest) {
       const key = latest.orderBy;
-      rows = rows.sort((a, b) => a[key] === b[key] ? 0 : a[key] > b[key] ? -1 : 1).slice(0, latest.limit);
+      rows = rows
+        .sort((a, b) => (a[key] === b[key] ? 0 : a[key] > b[key] ? -1 : 1))
+        .slice(0, latest.limit);
     }
-    return rows.map(row => structuredClone(row));
+    return rows.map((row) => structuredClone(row));
   }
 
   async get(table: Table, id: number): Promise<Row | undefined> {
@@ -37,13 +44,13 @@ export class MemoryStore extends Store {
     const execute = async () => {
       const rows = this.table(table);
       if (
-        table === 'users' &&
+        table === "users" &&
         [...rows.values()].some((r) => r.username === row.username && r.id !== row.id)
       )
-        throw new ApiError(400, 'Username already exists');
+        throw new ApiError(400, "Username already exists");
       const id = row.id ?? (this.counters.get(table) || 0) + 1;
       this.counters.set(table, Math.max(id, this.counters.get(table) || 0));
-      const timeKey = table === 'documents' ? 'uploadTime' : 'createdAt';
+      const timeKey = table === "documents" ? "uploadTime" : "createdAt";
       const defined = Object.fromEntries(
         Object.entries(row).filter(([, value]) => value !== undefined),
       );
@@ -66,7 +73,7 @@ export class MemoryStore extends Store {
   }
 
   async deleteAgentThread(threadId: string): Promise<void> {
-    for (const table of ['agentCheckpointWrites', 'agentCheckpoints'] as const) {
+    for (const table of ["agentCheckpointWrites", "agentCheckpoints"] as const) {
       for (const row of await this.list(table, { threadId })) await this.delete(table, row.id);
     }
   }

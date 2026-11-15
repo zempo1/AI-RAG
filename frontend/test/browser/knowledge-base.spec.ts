@@ -1,64 +1,122 @@
 import { test, expect, type Page } from "@playwright/test";
 
-test('document polling recovers from backend failures without refresh or repeated error toasts', async ({page}) => {
+test("document polling recovers from backend failures without refresh or repeated error toasts", async ({
+  page,
+}) => {
   await fixture(page);
-  let failed=true,requests=0;
-  await page.route('**/api/knowledge-bases/1/documents?*',route=>{
+  let failed = true,
+    requests = 0;
+  await page.route("**/api/knowledge-bases/1/documents?*", (route) => {
     requests++;
-    return failed ? route.fulfill({status:500,json:{message:'temporary backend outage'}}) : route.fulfill({json:{data:{items:[],total:0}}});
+    return failed
+      ? route.fulfill({ status: 500, json: { message: "temporary backend outage" } })
+      : route.fulfill({ json: { data: { items: [], total: 0 } } });
   });
-  await page.route('**/api/tasks?*',route=>failed ? route.fulfill({status:500,json:{message:'temporary backend outage'}}) : route.fulfill({json:{data:[]}}));
-  let navigations=0;page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigations++;});
-  await page.getByRole('button',{name:'管理文档',exact:true}).click();
-  await expect(page.locator('.load-error')).toContainText('自动重试');
-  await expect.poll(()=>requests,{timeout:15000}).toBeGreaterThan(1);
-  await expect(page.getByText('temporary backend outage',{exact:true})).toHaveCount(0);
-  failed=false;
-  await expect(page.locator('.load-error')).toHaveCount(0,{timeout:20000});
+  await page.route("**/api/tasks?*", (route) =>
+    failed
+      ? route.fulfill({ status: 500, json: { message: "temporary backend outage" } })
+      : route.fulfill({ json: { data: [] } }),
+  );
+  let navigations = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) navigations++;
+  });
+  await page.getByRole("button", { name: "管理文档", exact: true }).click();
+  await expect(page.locator(".load-error")).toContainText("自动重试");
+  await expect.poll(() => requests, { timeout: 15000 }).toBeGreaterThan(1);
+  await expect(page.getByText("temporary backend outage", { exact: true })).toHaveCount(0);
+  failed = false;
+  await expect(page.locator(".load-error")).toHaveCount(0, { timeout: 20000 });
   expect(navigations).toBe(0);
 });
 
-for (const stage of ['vision', 'ocr']) {
-test(`${stage} indexing shows activity and completed count before the total is known`, async ({page}) => {
-  await fixture(page);
-  let completed=5,total:number|null=null;
-  await page.route('**/api/knowledge-bases/1/documents?*',route=>route.fulfill({json:{data:{items:[{
-    id:1,filename:'物理层.pdf',knowledgeBaseId:1,categoryId:null,status:'queued',activeIndexRevisionId:null,
-    activeVersionId:null,latestTaskId:2,task:{id:2,kind:'index',status:'running',stage,completed,total,retryable:1},
-  }],total:1}}}));
-  await page.getByRole('button',{name:'管理文档',exact:true}).click();
-  const card=page.locator('.document-card');
-  await expect(card).toContainText('已识别 5 个区域');
-  const bar=card.getByRole('progressbar');await expect(bar).toBeVisible();
-  await expect(bar).not.toHaveAttribute('aria-valuenow');
-  completed=8;await expect(card).toContainText('已识别 8 个区域',{timeout:10000});
-  total=10;await expect(card).toContainText('8/10',{timeout:10000});
-  await expect(bar).toHaveAttribute('aria-valuenow','80');
-});
+for (const stage of ["vision", "ocr"]) {
+  test(`${stage} indexing shows activity and completed count before the total is known`, async ({
+    page,
+  }) => {
+    await fixture(page);
+    let completed = 5,
+      total: number | null = null;
+    await page.route("**/api/knowledge-bases/1/documents?*", (route) =>
+      route.fulfill({
+        json: {
+          data: {
+            items: [
+              {
+                id: 1,
+                filename: "物理层.pdf",
+                knowledgeBaseId: 1,
+                categoryId: null,
+                status: "queued",
+                activeIndexRevisionId: null,
+                activeVersionId: null,
+                latestTaskId: 2,
+                task: {
+                  id: 2,
+                  kind: "index",
+                  status: "running",
+                  stage,
+                  completed,
+                  total,
+                  retryable: 1,
+                },
+              },
+            ],
+            total: 1,
+          },
+        },
+      }),
+    );
+    await page.getByRole("button", { name: "管理文档", exact: true }).click();
+    const card = page.locator(".document-card");
+    await expect(card).toContainText("已识别 5 个区域");
+    const bar = card.getByRole("progressbar");
+    await expect(bar).toBeVisible();
+    await expect(bar).not.toHaveAttribute("aria-valuenow");
+    completed = 8;
+    await expect(card).toContainText("已识别 8 个区域", { timeout: 10000 });
+    total = 10;
+    await expect(card).toContainText("8/10", { timeout: 10000 });
+    await expect(bar).toHaveAttribute("aria-valuenow", "80");
+  });
 }
 
-test('first upload completes without navigation with a cold dependency cache', async ({ page }) => {
+test("first upload completes without navigation with a cold dependency cache", async ({ page }) => {
   test.setTimeout(90000);
-  const { createServer } = await import('vite');
-  const { mkdtemp, rm } = await import('node:fs/promises');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  const cache = await mkdtemp(join(tmpdir(), 'rag-cold-vite-'));
-  const server = await createServer({ cacheDir: cache, server: { host: '127.0.0.1', port: 0, strictPort: false } });
+  const { createServer } = await import("vite");
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const cache = await mkdtemp(join(tmpdir(), "rag-cold-vite-"));
+  const server = await createServer({
+    cacheDir: cache,
+    server: { host: "127.0.0.1", port: 0, strictPort: false },
+  });
   try {
     await server.listen();
     const port = (server.httpServer!.address() as { port: number }).port;
     const state = await fixture(page, false, false, `http://127.0.0.1:${port}`);
     let navigations = 0;
-    page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations++; });
-    await page.getByRole('button', { name: '管理文档', exact: true }).click();
-    const chooser = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: '上传文档', exact: true }).click();
-    await (await chooser).setFiles({ name: 'first.md', mimeType: 'text/markdown', buffer: Buffer.from('首次上传内容') });
+    page.on("framenavigated", (frame) => {
+      if (frame === page.mainFrame()) navigations++;
+    });
+    await page.getByRole("button", { name: "管理文档", exact: true }).click();
+    const chooser = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: "上传文档", exact: true }).click();
+    await (
+      await chooser
+    ).setFiles({
+      name: "first.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("首次上传内容"),
+    });
     await expect.poll(() => state.replacement, { timeout: 15000 }).toBe(true);
-    await expect(page.getByRole('button', { name: '上传文档', exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "上传文档", exact: true })).toBeEnabled();
     expect(navigations).toBe(0);
-  } finally { await server.close(); await rm(cache, { recursive: true, force: true }); }
+  } finally {
+    await server.close();
+    await rm(cache, { recursive: true, force: true });
+  }
 });
 
 test("chat source selection and mode are sent independently from the workbench", async ({
@@ -95,9 +153,7 @@ test("chat source selection and mode are sent independently from the workbench",
   await expect.poll(() => submitted?.mode).toBe("overview");
   expect(submitted.documentIds).toEqual([1]);
   expect(submitted.requestId).toMatch(/^[a-f0-9-]{36}$/);
-  await expect(
-    page.getByRole("button", { name: "查看检索过程", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "查看检索过程", exact: true })).toBeVisible();
   await page.route("**/api/retrieval-runs/88", (route) =>
     route.fulfill({
       json: {
@@ -129,9 +185,7 @@ test("chat source selection and mode are sent independently from the workbench",
   });
 });
 
-test("reopening history restores sources and resumes a pending summary task", async ({
-  page,
-}) => {
+test("reopening history restores sources and resumes a pending summary task", async ({ page }) => {
   await fixture(page, false, true);
   let complete = false;
   await page.route("**/api/chats/7", (route) =>
@@ -190,9 +244,10 @@ test("reopening history restores sources and resumes a pending summary task", as
   await expect(page.locator(".message-row.assistant .generation-status")).toContainText("后台");
   await expect(page.locator(".qa-controls")).toContainText("全文概览");
   complete = true;
-  await expect(
-    page.locator(".message-row.assistant .markdown-body"),
-  ).toHaveText("恢复后的后台答案", { timeout: 6000 });
+  await expect(page.locator(".message-row.assistant .markdown-body")).toHaveText(
+    "恢复后的后台答案",
+    { timeout: 6000 },
+  );
   await expect(page.locator(".message-row.assistant .generation-status")).toHaveCount(0);
   await expect(page.locator(".message-scope")).toContainText("所选 1 份文档");
 });
@@ -249,15 +304,13 @@ test("accepted async responses complete from task history without reporting a br
   await page.getByPlaceholder("发送消息...").press("Enter");
   await expect(page.locator(".message-row.assistant .generation-status")).toContainText("后台");
   complete = true;
-  await expect(
-    page.locator(".message-row.assistant .markdown-body"),
-  ).toHaveText("完整后台答案", { timeout: 6000 });
+  await expect(page.locator(".message-row.assistant .markdown-body")).toHaveText("完整后台答案", {
+    timeout: 6000,
+  });
   await expect(page.locator(".interrupted-label")).toHaveCount(0);
 });
 
-test("idle management stops polling and completed history can be cleared", async ({
-  page,
-}) => {
+test("idle management stops polling and completed history can be cleared", async ({ page }) => {
   await fixture(page);
   let history = [
     {
@@ -272,12 +325,7 @@ test("idle management stops polling and completed history can be cleared", async
   ];
   let reads = 0;
   page.on("request", (req) => {
-    if (
-      /\/api\/(tasks\?|knowledge-bases\/1\/(documents|categories))/.test(
-        req.url(),
-      )
-    )
-      reads++;
+    if (/\/api\/(tasks\?|knowledge-bases\/1\/(documents|categories))/.test(req.url())) reads++;
   });
   await page.route("**/api/tasks?*", (route) => {
     if (route.request().method() === "DELETE") history = [];
@@ -327,15 +375,11 @@ test("delayed cleanup shows its reason, does not poll categories, and cannot be 
   const initial = categoryReads;
   await page.waitForTimeout(2500);
   expect(categoryReads).toBe(initial);
-  await expect(
-    page.getByRole("button", { name: "移除记录", exact: true }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "移除记录", exact: true })).toHaveCount(0);
 });
 
-async function fixture(page: Page, interrupted = false, historical = false, url = '/') {
-  page.on("pageerror", (error) =>
-    console.error("Browser page error:", error.message),
-  );
+async function fixture(page: Page, interrupted = false, historical = false, url = "/") {
+  page.on("pageerror", (error) => console.error("Browser page error:", error.message));
   const state = {
     replacement: false,
     complete: false,
@@ -382,8 +426,7 @@ async function fixture(page: Page, interrupted = false, historical = false, url 
             : [{ id: 22, name: "分类B", knowledgeBaseId: 2 }],
         );
       if (/\/knowledge-bases\/\d+\/documents$/.test(path)) {
-        if (path.includes("/2/"))
-          state.categoryB = url.searchParams.get("categoryId");
+        if (path.includes("/2/")) state.categoryB = url.searchParams.get("categoryId");
         const library = path.includes("/1/") ? 1 : 2;
         return body({
           items: [
@@ -411,8 +454,7 @@ async function fixture(page: Page, interrupted = false, historical = false, url 
                   : state.replacement && !state.complete
                     ? "queued"
                     : "completed",
-                stage:
-                  state.replacement && !state.complete ? "queued" : "completed",
+                stage: state.replacement && !state.complete ? "queued" : "completed",
                 completed: state.complete ? 1 : 0,
                 total: 1,
               },
@@ -425,11 +467,7 @@ async function fixture(page: Page, interrupted = false, historical = false, url 
       if (path === "/api/tasks/2")
         return body({
           id: 2,
-          status: state.failed
-            ? "failed"
-            : state.complete
-              ? "completed"
-              : "queued",
+          status: state.failed ? "failed" : state.complete ? "completed" : "queued",
           stage: state.complete ? "completed" : "queued",
           completed: state.complete ? 1 : 0,
           total: 1,
@@ -480,19 +518,14 @@ async function fixture(page: Page, interrupted = false, historical = false, url 
         state.analysisRequests++;
         return body([]);
       }
-      if (path === "/api/upload/check")
-        return body({ uploaded: false, uploadedChunks: [] });
+      if (path === "/api/upload/check") return body({ uploaded: false, uploadedChunks: [] });
       if (path === "/api/upload/chunk") return body({ received: true });
       if (path === "/api/upload/merge") {
         state.replacement = true;
-        return body(
-          { documentId: 1, taskId: 2, knowledgeBaseId: 1, filename: "资料.md" },
-          202,
-        );
+        return body({ documentId: 1, taskId: 2, knowledgeBaseId: 1, filename: "资料.md" }, 202);
       }
       if (path === "/api/stream-chat") {
-        const sources =
-          "event: sources\ndata: " + JSON.stringify([citation]) + "\n\n";
+        const sources = "event: sources\ndata: " + JSON.stringify([citation]) + "\n\n";
         const partial = "data: " + JSON.stringify("结论[1][99]") + "\n\n";
         const final = interrupted
           ? "event: error\ndata: " +
@@ -521,32 +554,22 @@ async function fixture(page: Page, interrupted = false, historical = false, url 
     },
   );
   await page.goto(url);
-  await expect(
-    page.getByText("支持通用回答与知识库问答"),
-  ).toBeVisible();
+  await expect(page.getByText("支持通用回答与知识库问答")).toBeVisible();
   return state;
 }
 
-test("source selection can be cleared without changing the knowledge base", async ({
-  page,
-}) => {
+test("source selection can be cleared without changing the knowledge base", async ({ page }) => {
   await fixture(page);
   await page.getByRole("button", { name: "管理文档", exact: true }).click();
   await page.getByRole("button", { name: "用于工作台", exact: true }).click();
   await page.locator(".el-drawer__close-btn:visible").click();
   await page.getByRole("button", { name: "取消使用", exact: true }).click();
   await expect(page.locator(".source-name")).toHaveText("在文档管理中选择文档");
-  await expect(page.locator(".library-picker > .el-select")).toContainText(
-    "知识库A",
-  );
-  await expect(
-    page.getByRole("button", { name: "生成思维导图", exact: true }),
-  ).toBeDisabled();
+  await expect(page.locator(".library-picker > .el-select")).toContainText("知识库A");
+  await expect(page.getByRole("button", { name: "生成思维导图", exact: true })).toBeDisabled();
 });
 
-test("form focus has one border and drawer close icon is centered", async ({
-  page,
-}) => {
+test("form focus has one border and drawer close icon is centered", async ({ page }) => {
   await fixture(page);
   await page.getByRole("button", { name: "新建知识库", exact: true }).click();
   const field = page.getByRole("dialog").getByLabel("名称", { exact: true });
@@ -572,12 +595,8 @@ test("renders the canonical assistant answer once and opens its actual citation"
   await fixture(page);
   await page.getByPlaceholder("发送消息...").fill("请说明内容");
   await page.getByPlaceholder("发送消息...").press("Enter");
-  await expect(
-    page.locator(".message-row.assistant .markdown-body"),
-  ).toHaveText("结论[1]");
-  await expect(
-    page.locator(".message-row.assistant .user-content"),
-  ).toHaveCount(0);
+  await expect(page.locator(".message-row.assistant .markdown-body")).toHaveText("结论[1]");
+  await expect(page.locator(".message-row.assistant .user-content")).toHaveCount(0);
   await page.locator(".inline-citation").click();
   await expect(page.locator(".source-text")).toHaveText("可核对的原文段落");
 });
@@ -589,9 +608,7 @@ test("uses the same normalized partial answer and citations when the stream fail
   await page.getByPlaceholder("发送消息...").fill("中断测试");
   await page.getByPlaceholder("发送消息...").press("Enter");
   await expect(page.locator(".interrupted-label")).toBeVisible();
-  await expect(
-    page.locator(".message-row.assistant .markdown-body"),
-  ).toHaveText("结论[1]");
+  await expect(page.locator(".message-row.assistant .markdown-body")).toHaveText("结论[1]");
   await expect(page.locator(".message-row.assistant .inline-citation")).toHaveCount(1);
 });
 
@@ -601,21 +618,13 @@ test("clears a previous library category before requesting documents from the ne
   const state = await fixture(page);
   await page.getByRole("button", { name: "管理文档", exact: true }).click();
   await page.locator(".filters .el-select").first().click();
-  await page
-    .locator(".el-select-dropdown__item:visible")
-    .filter({ hasText: "分类A" })
-    .click();
+  await page.locator(".el-select-dropdown__item:visible").filter({ hasText: "分类A" }).click();
   await page.locator(".el-drawer__close-btn:visible").click();
   await page.locator(".library-picker > .el-select").click();
-  await page
-    .locator(".el-select-dropdown__item:visible")
-    .filter({ hasText: "知识库B" })
-    .click();
+  await page.locator(".el-select-dropdown__item:visible").filter({ hasText: "知识库B" }).click();
   await page.getByRole("button", { name: "管理文档", exact: true }).click();
   await expect.poll(() => state.categoryB).toBeNull();
-  await expect(page.locator(".filters .el-select").first()).not.toContainText(
-    "分类A",
-  );
+  await expect(page.locator(".filters .el-select").first()).not.toContainText("分类A");
 });
 
 test("refreshes derived artifacts only after a replacement task has actually completed", async ({
@@ -643,9 +652,7 @@ test("refreshes derived artifacts only after a replacement task has actually com
   await page.waitForTimeout(400);
   expect(state.analysisRequests).toBe(baseline);
   state.complete = true;
-  await expect
-    .poll(() => state.analysisRequests, { timeout: 6000 })
-    .toBeGreaterThan(baseline);
+  await expect.poll(() => state.analysisRequests, { timeout: 6000 }).toBeGreaterThan(baseline);
   await page.screenshot({
     path: "test-results/knowledge-manager.png",
     fullPage: true,
@@ -657,20 +664,13 @@ test("loads deleted-library history as read-only and starts a fresh conversation
 }) => {
   await fixture(page, false, true);
   await page.getByText("历史问答", { exact: true }).click();
-  await expect(
-    page.getByText("来源知识库已删除，此会话仅可查看。"),
-  ).toBeVisible();
+  await expect(page.getByText("来源知识库已删除，此会话仅可查看。")).toBeVisible();
   await expect(page.getByPlaceholder("发送消息...")).toBeDisabled();
   await page.locator(".inline-citation").click();
-  await expect(
-    page.getByText("来源已删除，下面展示回答时保存的原文快照。"),
-  ).toBeVisible();
-  await page.getByRole('button', { name: '关闭阅读器' }).click();
+  await expect(page.getByText("来源已删除，下面展示回答时保存的原文快照。")).toBeVisible();
+  await page.getByRole("button", { name: "关闭阅读器" }).click();
   await page.locator(".library-picker > .el-select").click();
-  await page
-    .locator(".el-select-dropdown__item:visible")
-    .filter({ hasText: "知识库B" })
-    .click();
+  await page.locator(".el-select-dropdown__item:visible").filter({ hasText: "知识库B" }).click();
   await expect(page.getByPlaceholder("发送消息...")).toBeEnabled();
   await expect(page.locator(".message-row")).toHaveCount(0);
 });
@@ -703,14 +703,10 @@ test("tracks a manually retried replacement until it publishes and refreshes the
   await page.getByRole("button", { name: "重试", exact: true }).click();
   await expect.poll(() => state.retried).toBe(true);
   state.complete = true;
-  await expect
-    .poll(() => state.analysisRequests, { timeout: 6000 })
-    .toBeGreaterThan(baseline);
+  await expect.poll(() => state.analysisRequests, { timeout: 6000 }).toBeGreaterThan(baseline);
 });
 
-test("knowledge management uses dark overlays and one edit form", async ({
-  page,
-}) => {
+test("knowledge management uses dark overlays and one edit form", async ({ page }) => {
   await fixture(page);
   await page.getByRole("button", { name: "管理文档", exact: true }).click();
   const drawer = page.locator(".knowledge-drawer");
@@ -718,9 +714,7 @@ test("knowledge management uses dark overlays and one edit form", async ({
   await page.getByRole("button", { name: "知识库操作", exact: true }).click();
   await page.getByRole("menuitem", { name: "编辑知识库" }).click();
   const dialog = page.getByRole("dialog", { name: "编辑知识库", exact: true });
-  await expect(dialog.getByLabel("名称", { exact: true })).toHaveValue(
-    "知识库A",
-  );
+  await expect(dialog.getByLabel("名称", { exact: true })).toHaveValue("知识库A");
   await expect(dialog.getByLabel("描述", { exact: true })).toBeVisible();
   await page.screenshot({
     path: "test-results/knowledge-edit.png",
@@ -732,26 +726,20 @@ test("knowledge management uses dark overlays and one edit form", async ({
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
   await expect(drawer).toBeVisible();
   await page.getByRole("button", { name: "资料.md的更多操作" }).click();
-  await expect(
-    page.getByRole("menuitem", { name: "替换", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "替换", exact: true })).toBeVisible();
   await page.screenshot({
     path: "test-results/knowledge-menu.png",
     animations: "disabled",
   });
 });
 
-test("knowledge drawer fits a narrow viewport without a wide table", async ({
-  page,
-}) => {
+test("knowledge drawer fits a narrow viewport without a wide table", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await fixture(page);
   await page.getByRole("button", { name: "管理文档", exact: true }).click();
   await expect(page.locator(".document-card")).toBeVisible();
   await expect
-    .poll(async () =>
-      Math.round((await page.locator(".knowledge-drawer").boundingBox())!.x),
-    )
+    .poll(async () => Math.round((await page.locator(".knowledge-drawer").boundingBox())!.x))
     .toBe(0);
   const fits = await page
     .locator(".knowledge-drawer")
@@ -764,9 +752,7 @@ test("knowledge drawer fits a narrow viewport without a wide table", async ({
 });
 
 for (const width of [1440, 1280, 768]) {
-  test(`knowledge layout fits ${width}px with readable menus`, async ({
-    page,
-  }) => {
+  test(`knowledge layout fits ${width}px with readable menus`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     await fixture(page);
     await page.screenshot({
@@ -795,9 +781,7 @@ for (const width of [1440, 1280, 768]) {
   });
 }
 
-test("failed form saves preserve input and block duplicate submissions", async ({
-  page,
-}) => {
+test("failed form saves preserve input and block duplicate submissions", async ({ page }) => {
   await fixture(page);
   let submissions = 0;
   let release!: () => void;
@@ -815,22 +799,14 @@ test("failed form saves preserve input and block duplicate submissions", async (
   const dialog = page.getByRole("dialog", { name: "新建知识库", exact: true });
   await dialog.getByLabel("名称", { exact: true }).fill("我的资料库");
   await dialog.locator("form").evaluate((form) => {
-    form.dispatchEvent(
-      new Event("submit", { bubbles: true, cancelable: true }),
-    );
-    form.dispatchEvent(
-      new Event("submit", { bubbles: true, cancelable: true }),
-    );
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
   await expect.poll(() => submissions).toBe(1);
-  await expect(
-    dialog.getByRole("button", { name: "保存", exact: true }),
-  ).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
   release();
   await expect(dialog.getByRole("alert")).toContainText("保存失败");
-  await expect(dialog.getByLabel("名称", { exact: true })).toHaveValue(
-    "我的资料库",
-  );
+  await expect(dialog.getByLabel("名称", { exact: true })).toHaveValue("我的资料库");
   await page.screenshot({
     path: "test-results/knowledge-form-error.png",
     animations: "disabled",
@@ -840,13 +816,9 @@ test("failed form saves preserve input and block duplicate submissions", async (
   await expect(trigger).toBeFocused();
 });
 
-test("creates a library and saves name and description together", async ({
-  page,
-}) => {
+test("creates a library and saves name and description together", async ({ page }) => {
   await fixture(page);
-  const libraries = [
-    { id: 1, name: "知识库A", description: "", rebuildTaskId: null },
-  ];
+  const libraries = [{ id: 1, name: "知识库A", description: "", rebuildTaskId: null }];
   let lastBody: any;
   await page.route("**/api/knowledge-bases", (route) => {
     if (route.request().method() === "POST") {
@@ -872,18 +844,18 @@ test("creates a library and saves name and description together", async ({
   await create.getByLabel("名称", { exact: true }).fill("论文资料");
   await create.getByRole("button", { name: "保存", exact: true }).click();
   await expect(create).not.toBeVisible();
-  await expect(page.locator(".library-picker > .el-select")).toContainText(
-    "论文资料",
-  );
+  await expect(page.locator(".library-picker > .el-select")).toContainText("论文资料");
   await page.getByRole("button", { name: "管理文档", exact: true }).click();
   await page.getByRole("button", { name: "知识库操作", exact: true }).click();
   await page.getByRole("menuitem", { name: "编辑知识库" }).click();
   const edit = page.getByRole("dialog", { name: "编辑知识库", exact: true });
   await edit.getByLabel("名称", { exact: true }).fill("毕业设计");
   await edit.getByLabel("描述", { exact: true }).fill("收集答辩资料");
-  await expect(edit.getByLabel('描述', { exact: true })).toHaveCSS('outline-style', 'none');
-  await edit.evaluate(async el => { await Promise.all(el.getAnimations({ subtree: true }).map(a => a.finished.catch(() => {}))); });
-  await page.screenshot({ path: 'test-results/knowledge-description-focus.png' });
+  await expect(edit.getByLabel("描述", { exact: true })).toHaveCSS("outline-style", "none");
+  await edit.evaluate(async (el) => {
+    await Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => {})));
+  });
+  await page.screenshot({ path: "test-results/knowledge-description-focus.png" });
   await edit.getByRole("button", { name: "保存", exact: true }).click();
   await expect(edit).not.toBeVisible();
   expect(lastBody).toEqual({ name: "毕业设计", description: "收集答辩资料" });
@@ -891,9 +863,7 @@ test("creates a library and saves name and description together", async ({
   await expect(page.locator(".manager-heading p")).toHaveText("收集答辩资料");
 });
 
-test("upload pause, resume and cancel retain their controls", async ({
-  page,
-}) => {
+test("upload pause, resume and cancel retain their controls", async ({ page }) => {
   await fixture(page);
   let release!: () => void;
   const pending = new Promise<void>((resolve) => {
@@ -901,9 +871,7 @@ test("upload pause, resume and cancel retain their controls", async ({
   });
   await page.route("**/api/upload/chunk", async (route) => {
     await pending;
-    await route
-      .fulfill({ json: { data: { received: true } } })
-      .catch(() => undefined);
+    await route.fulfill({ json: { data: { received: true } } }).catch(() => undefined);
   });
   await page.getByRole("button", { name: "管理文档", exact: true }).click();
   const chooser = page.waitForEvent("filechooser");
@@ -916,25 +884,15 @@ test("upload pause, resume and cancel retain their controls", async ({
     buffer: Buffer.alloc(100, "a"),
   });
   await page.getByRole("button", { name: "暂停上传", exact: true }).click();
-  await expect(
-    page.getByText("上传已暂停，可随时继续", { exact: false }),
-  ).toBeVisible();
+  await expect(page.getByText("上传已暂停，可随时继续", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "继续上传", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "暂停上传", exact: true }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "取消（保留已传分片）", exact: true })
-    .click();
+  await expect(page.getByRole("button", { name: "暂停上传", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "取消（保留已传分片）", exact: true }).click();
   release();
-  await expect(
-    page.getByRole("button", { name: "上传文档", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "上传文档", exact: true })).toBeVisible();
 });
 
-test("category forms and document deletion use themed confirmations", async ({
-  page,
-}) => {
+test("category forms and document deletion use themed confirmations", async ({ page }) => {
   await fixture(page);
   let categories = [{ id: 11, name: "分类A", knowledgeBaseId: 1 }];
   await page.route("**/api/knowledge-bases/1/categories", (route) => {
@@ -947,8 +905,7 @@ test("category forms and document deletion use themed confirmations", async ({
     return route.fulfill({ json: { data: categories } });
   });
   await page.route("**/api/knowledge-bases/1/categories/12", (route) => {
-    if (route.request().method() === "DELETE")
-      categories = categories.filter((c) => c.id !== 12);
+    if (route.request().method() === "DELETE") categories = categories.filter((c) => c.id !== 12);
     else categories[1].name = route.request().postDataJSON().name;
     return route.fulfill({ json: { data: {} } });
   });
@@ -963,11 +920,9 @@ test("category forms and document deletion use themed confirmations", async ({
   await add.getByLabel("名称", { exact: true }).fill("研究资料");
   await add.getByRole("button", { name: "保存", exact: true }).click();
   await expect(add).not.toBeVisible();
-  await page.locator('.category-manager-select .el-select__wrapper').click();
-  await page.getByRole('option', { name: '研究资料', exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "编辑分类研究资料" }),
-  ).toBeVisible();
+  await page.locator(".category-manager-select .el-select__wrapper").click();
+  await page.getByRole("option", { name: "研究资料", exact: true }).click();
+  await expect(page.getByRole("button", { name: "编辑分类研究资料" })).toBeVisible();
   await page.getByRole("button", { name: "编辑分类研究资料" }).click();
   const edit = page.getByRole("dialog", { name: "修改分类", exact: true });
   await edit.getByLabel("名称", { exact: true }).fill("答辩资料");
@@ -976,9 +931,7 @@ test("category forms and document deletion use themed confirmations", async ({
   const confirm = page.locator(".knowledge-confirm");
   await expect(confirm).toHaveCSS("background-color", "rgb(28, 28, 31)");
   await confirm.getByRole("button", { name: "确认", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "编辑分类答辩资料" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "编辑分类答辩资料" })).toHaveCount(0);
   await page.getByRole("button", { name: "资料.md的更多操作" }).click();
   await page.getByRole("menuitem", { name: "删除", exact: true }).click();
   await expect(confirm).toContainText("历史聊天引用会保留");
@@ -996,8 +949,7 @@ test("empty states and task failures remain useful without clearing current docu
   await fixture(page);
   let unavailable = false;
   await page.route("**/api/knowledge-bases/1/documents?*", (route) => {
-    if (unavailable)
-      return route.fulfill({ status: 503, json: { message: "暂时不可用" } });
+    if (unavailable) return route.fulfill({ status: 503, json: { message: "暂时不可用" } });
     return route.fulfill({ json: { data: { items: [], total: 0 } } });
   });
   await page.route("**/api/tasks?*", (route) =>
@@ -1021,130 +973,201 @@ test("empty states and task failures remain useful without clearing current docu
   await page.getByRole("button", { name: "管理文档", exact: true }).click();
   await expect(page.getByText("知识库还是空的", { exact: true })).toBeVisible();
   await page.getByPlaceholder("搜索文件名").fill("找不到的文件");
-  await expect(
-    page.getByText("没有找到匹配的文档", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText("没有找到匹配的文档", { exact: true })).toBeVisible();
   await expect(page.locator(".task-list")).toContainText("部分失败");
   await expect(
-    page
-      .locator(".task-list")
-      .getByRole("button", { name: "重试", exact: true }),
+    page.locator(".task-list").getByRole("button", { name: "重试", exact: true }),
   ).toBeVisible();
   unavailable = true;
   await page.getByRole("button", { name: "刷新文档", exact: true }).click();
   await expect(page.locator(".load-error")).toContainText("自动重试");
   await expect(page.locator(".task-list")).toContainText("部分失败");
   unavailable = false;
-  await expect(page.locator('.load-error')).toBeHidden({ timeout: 10000 });
-  await expect(page.locator('.task-list')).toContainText('部分失败');
+  await expect(page.locator(".load-error")).toBeHidden({ timeout: 10000 });
+  await expect(page.locator(".task-list")).toContainText("部分失败");
 });
 
-test('chat scroll navigation preserves reading position when an answer finishes', async ({ page }) => {
+test("chat scroll navigation preserves reading position when an answer finishes", async ({
+  page,
+}) => {
   await fixture(page, false, true);
-  await page.route('**/api/chats/7', route => route.fulfill({ json: { data: {
-    id: 7, knowledgeBaseId: 1, readOnly: false, pendingTasks: [],
-    messages: Array.from({ length: 12 }, (_, index) => [
-      { role: 'user', content: `问题 ${index + 1}` },
-      { role: 'assistant', content: '这是用于阅读历史记录的回答。\n\n'.repeat(6) },
-    ]).flat(),
-  } } }));
-  await page.getByText('历史问答', { exact: true }).click();
-  const container = page.locator('.messages-container');
-  const jump = page.getByRole('button', { name: '回到底部', exact: true });
-  const distance = () => container.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop);
+  await page.route("**/api/chats/7", (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          id: 7,
+          knowledgeBaseId: 1,
+          readOnly: false,
+          pendingTasks: [],
+          messages: Array.from({ length: 12 }, (_, index) => [
+            { role: "user", content: `问题 ${index + 1}` },
+            { role: "assistant", content: "这是用于阅读历史记录的回答。\n\n".repeat(6) },
+          ]).flat(),
+        },
+      },
+    }),
+  );
+  await page.getByText("历史问答", { exact: true }).click();
+  const container = page.locator(".messages-container");
+  const jump = page.getByRole("button", { name: "回到底部", exact: true });
+  const distance = () =>
+    container.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
   await expect.poll(distance).toBeLessThan(5);
   await expect(jump).toBeHidden();
-  await container.evaluate(el => el.scrollTo({ top: 0, behavior: 'instant' }));
+  await container.evaluate((el) => el.scrollTo({ top: 0, behavior: "instant" }));
   await expect(jump).toBeVisible();
   await jump.click();
   await expect.poll(distance).toBeLessThan(5);
   await expect(jump).toBeHidden();
 
   let release!: () => void;
-  const pending = new Promise<void>(resolve => { release = resolve; });
-  await page.route('**/api/stream-chat', async route => {
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/stream-chat", async (route) => {
     await pending;
-    await route.fulfill({ contentType: 'text/event-stream', body:
-      'event: message\ndata: "新增回答"\n\n' +
-      'event: done\ndata: {"answer":"新增回答","citations":[],"chatId":7,"generationStatus":"completed"}\n\n',
+    await route.fulfill({
+      contentType: "text/event-stream",
+      body:
+        'event: message\ndata: "新增回答"\n\n' +
+        'event: done\ndata: {"answer":"新增回答","citations":[],"chatId":7,"generationStatus":"completed"}\n\n',
     });
   });
-  await page.getByPlaceholder('发送消息...').fill('继续分析');
-  await page.getByPlaceholder('发送消息...').press('Enter');
+  await page.getByPlaceholder("发送消息...").fill("继续分析");
+  await page.getByPlaceholder("发送消息...").press("Enter");
   await expect.poll(distance).toBeLessThan(5);
-  await container.evaluate(el => el.scrollTo({ top: 0, behavior: 'instant' }));
+  await container.evaluate((el) => el.scrollTo({ top: 0, behavior: "instant" }));
   await expect(jump).toBeVisible();
   release();
-  await expect(page.locator('.message-row.assistant').last()).toContainText('新增回答');
-  await expect(page.locator('.generation-status')).toBeHidden();
-  await expect.poll(() => container.evaluate(el => el.scrollTop)).toBe(0);
+  await expect(page.locator(".message-row.assistant").last()).toContainText("新增回答");
+  await expect(page.locator(".generation-status")).toBeHidden();
+  await expect.poll(() => container.evaluate((el) => el.scrollTop)).toBe(0);
   await expect(jump).toBeVisible();
-  await page.screenshot({ path: 'test-results/chat-reading-history.png' });
+  await page.screenshot({ path: "test-results/chat-reading-history.png" });
   await jump.click();
   await expect.poll(distance).toBeLessThan(5);
   await expect(jump).toBeHidden();
-  await page.screenshot({ path: 'test-results/chat-bottom.png' });
+  await page.screenshot({ path: "test-results/chat-bottom.png" });
   await page.setViewportSize({ width: 1153, height: 835 });
-  await container.evaluate(el => el.scrollTo({ top: 0, behavior: 'instant' }));
+  await container.evaluate((el) => el.scrollTo({ top: 0, behavior: "instant" }));
   await expect(jump).toBeVisible();
-  await page.screenshot({ path: 'test-results/chat-narrow.png' });
-  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.screenshot({ path: "test-results/chat-narrow.png" });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await jump.focus();
-  await page.keyboard.press('Enter');
+  await page.keyboard.press("Enter");
   await expect.poll(distance).toBeLessThan(5);
   await expect(jump).toBeHidden();
 });
 
-test('shows lightweight generation status', async ({ page }) => {
+test("shows lightweight generation status", async ({ page }) => {
   await fixture(page);
-  await page.route('**/api/stream-chat', async route => {
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    await route.fulfill({ contentType: 'text/event-stream', body: 'event: status\ndata: {"stage":"retrieving"}\n\n' });
+  await page.route("**/api/stream-chat", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.fulfill({
+      contentType: "text/event-stream",
+      body: 'event: status\ndata: {"stage":"retrieving"}\n\n',
+    });
   });
-  await page.getByPlaceholder('发送消息...').fill('解释文档');
-  await page.getByPlaceholder('发送消息...').press('Enter');
-  await expect(page.locator('.generation-status')).toBeVisible();
-  await expect(page.locator('.activity-title')).toHaveText('正在连接…');
-  await expect(page.locator('.qa-scope-hint')).toHaveCount(0);
-  await expect(page.locator('.citation-list')).toHaveCount(0);
-  await page.screenshot({ path: 'test-results/generation-waiting.png' });
-  await expect(page.locator('.generation-status')).toBeHidden();
+  await page.getByPlaceholder("发送消息...").fill("解释文档");
+  await page.getByPlaceholder("发送消息...").press("Enter");
+  await expect(page.locator(".generation-status")).toBeVisible();
+  await expect(page.locator(".activity-title")).toHaveText("正在连接…");
+  await expect(page.locator(".qa-scope-hint")).toHaveCount(0);
+  await expect(page.locator(".citation-list")).toHaveCount(0);
+  await page.screenshot({ path: "test-results/generation-waiting.png" });
+  await expect(page.locator(".generation-status")).toBeHidden();
 });
 
 for (const region of [false, true]) {
-test(`visual citations load private ${region ? 'region' : 'page'} images and allow retry without losing recognized text`, async ({ page }) => {
-  await fixture(page, false, true);
-  const source = { number: 1, documentId: 1, versionId: 2, knowledgeBaseId: 1, indexRevisionId: 3,
-    chunkId: 4, filename: '图示.pdf', text: '[模型生成的图解]\n申请 → 审核 → 发布', score: 1,
-    location: { page: 2, paragraph: null, heading: null, start: 0, end: 26, contentType: 'figure',
-      ...(region ? { regionImage: { versionId: 2, page: 2, profile: 'a'.repeat(64), regionId: 'b'.repeat(24), bbox: [.1,.2,.5,.6], kind: 'region' } }
-        : { pageImage: { versionId: 2, page: 2, profile: 'a'.repeat(64) } }) } };
-  await page.route('**/api/chats/7', route => route.fulfill({ json: { data: {
-    id: 7, knowledgeBaseId: 1, readOnly: false, pendingTasks: [], messages: [
-      { role: 'user', content: '图中的步骤是什么？' },
-      { role: 'assistant', content: '申请后审核，再发布。[1]', citations: [source], generationStatus: 'completed' },
-    ],
-  } } }));
-  let available = false, authorization = '';
-  await page.route(`**/api/documents/1/versions/2/pages/2${region ? '/regions/' + 'b'.repeat(24) : ''}/image?*`, route => {
-    authorization = route.request().headers().authorization;
-    if (!available) return route.fulfill({ status: 503, json: { message: '暂时不可用' } });
-    return route.fulfill({ contentType: 'image/png', body: Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jvJkAAAAASUVORK5CYII=', 'base64') });
+  test(`visual citations load private ${region ? "region" : "page"} images and allow retry without losing recognized text`, async ({
+    page,
+  }) => {
+    await fixture(page, false, true);
+    const source = {
+      number: 1,
+      documentId: 1,
+      versionId: 2,
+      knowledgeBaseId: 1,
+      indexRevisionId: 3,
+      chunkId: 4,
+      filename: "图示.pdf",
+      text: "[模型生成的图解]\n申请 → 审核 → 发布",
+      score: 1,
+      location: {
+        page: 2,
+        paragraph: null,
+        heading: null,
+        start: 0,
+        end: 26,
+        contentType: "figure",
+        ...(region
+          ? {
+              regionImage: {
+                versionId: 2,
+                page: 2,
+                profile: "a".repeat(64),
+                regionId: "b".repeat(24),
+                bbox: [0.1, 0.2, 0.5, 0.6],
+                kind: "region",
+              },
+            }
+          : { pageImage: { versionId: 2, page: 2, profile: "a".repeat(64) } }),
+      },
+    };
+    await page.route("**/api/chats/7", (route) =>
+      route.fulfill({
+        json: {
+          data: {
+            id: 7,
+            knowledgeBaseId: 1,
+            readOnly: false,
+            pendingTasks: [],
+            messages: [
+              { role: "user", content: "图中的步骤是什么？" },
+              {
+                role: "assistant",
+                content: "申请后审核，再发布。[1]",
+                citations: [source],
+                generationStatus: "completed",
+              },
+            ],
+          },
+        },
+      }),
+    );
+    let available = false,
+      authorization = "";
+    await page.route(
+      `**/api/documents/1/versions/2/pages/2${region ? "/regions/" + "b".repeat(24) : ""}/image?*`,
+      (route) => {
+        authorization = route.request().headers().authorization;
+        if (!available) return route.fulfill({ status: 503, json: { message: "暂时不可用" } });
+        return route.fulfill({
+          contentType: "image/png",
+          body: Buffer.from(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jvJkAAAAASUVORK5CYII=",
+            "base64",
+          ),
+        });
+      },
+    );
+    await page.getByText("历史问答", { exact: true }).click();
+    await page.locator('[data-citation="1"]').first().click();
+    const drawer = page.locator(".citation-drawer");
+    await drawer.locator(".reader-evidence summary").click();
+    await expect(drawer).toContainText("模型生成的图解，请结合原图核对");
+    await expect(drawer).toContainText("申请 → 审核 → 发布");
+    await expect(drawer).toContainText("页面原图暂不可用");
+    available = true;
+    await drawer.getByRole("button", { name: "重新加载原图" }).click();
+    const image = drawer.getByRole("img", {
+      name: `图示.pdf 第 2 页${region ? "图片区域" : "原图"}`,
+    });
+    await expect(image).toBeVisible();
+    await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(1);
+    expect(authorization).toBe("Bearer test-token");
+    await expect(
+      drawer.getByRole("link", { name: `查看${region ? "图片区域" : "完整页面原图"}（新窗口）` }),
+    ).toHaveAttribute("href", /^blob:/);
   });
-  await page.getByText('历史问答', { exact: true }).click();
-  await page.locator('[data-citation="1"]').first().click();
-  const drawer = page.locator('.citation-drawer');
-  await drawer.locator('.reader-evidence summary').click();
-  await expect(drawer).toContainText('模型生成的图解，请结合原图核对');
-  await expect(drawer).toContainText('申请 → 审核 → 发布');
-  await expect(drawer).toContainText('页面原图暂不可用');
-  available = true;
-  await drawer.getByRole('button', { name: '重新加载原图' }).click();
-  const image = drawer.getByRole('img', { name: `图示.pdf 第 2 页${region ? '图片区域' : '原图'}` });
-  await expect(image).toBeVisible();
-  await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(1);
-  expect(authorization).toBe('Bearer test-token');
-  await expect(drawer.getByRole('link', { name: `查看${region ? '图片区域' : '完整页面原图'}（新窗口）` })).toHaveAttribute('href', /^blob:/);
-});
 }

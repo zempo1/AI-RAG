@@ -1,12 +1,8 @@
 <template>
   <div class="chat-wrapper">
-    <div v-if="readOnly" class="chat-status">
-      来源知识库已删除，此会话仅可查看。
-    </div>
+    <div v-if="readOnly" class="chat-status">来源知识库已删除，此会话仅可查看。</div>
     <div v-else class="chat-status">
-      {{
-        knowledgeBaseId ? "支持通用回答与知识库问答" : "请先选择知识库"
-      }}
+      {{ knowledgeBaseId ? "支持通用回答与知识库问答" : "请先选择知识库" }}
     </div>
     <QuestionSources
       :knowledge-base-id="knowledgeBaseId"
@@ -15,11 +11,7 @@
       :disabled="loading || readOnly"
     />
     <div class="messages-viewport">
-      <div
-        class="messages-container"
-        ref="messagesContainer"
-        @scroll.passive="updateScrollState"
-      >
+      <div class="messages-container" ref="messagesContainer" @scroll.passive="updateScrollState">
         <div ref="messagesContent" class="messages-content">
           <div v-if="messages.length === 0" class="empty-state">
             <div class="logo-container">
@@ -29,12 +21,7 @@
             <p class="subtitle">直接提问，或选择文档深入交流</p>
           </div>
 
-          <div
-            v-for="(msg, index) in messages"
-            :key="index"
-            class="message-row"
-            :class="msg.role"
-          >
+          <div v-for="(msg, index) in messages" :key="index" class="message-row" :class="msg.role">
             <div class="message-content-wrapper">
               <div class="message-text">
                 <div v-if="msg.role === 'user'" class="user-content">
@@ -60,9 +47,19 @@
                   :background="!!activeTask && index === messages.length - 1"
                   :reconnecting="taskConnectionError && index === messages.length - 1"
                 />
-                <p v-if="msg.taskError || (cancelError && msg.loading && index === messages.length - 1)" class="task-error" role="alert">{{ msg.taskError || cancelError }}</p>
+                <p
+                  v-if="
+                    msg.taskError || (cancelError && msg.loading && index === messages.length - 1)
+                  "
+                  class="task-error"
+                  role="alert"
+                >
+                  {{ msg.taskError || cancelError }}
+                </p>
                 <AgentTimeline v-if="messageSteps(msg).length" :steps="messageSteps(msg)" />
-                <p v-if="msg.cancelNotice && !msg.loading" class="interrupted-label" role="status">{{ msg.cancelNotice }}</p>
+                <p v-if="msg.cancelNotice && !msg.loading" class="interrupted-label" role="status">
+                  {{ msg.cancelNotice }}
+                </p>
                 <details v-if="msg.citations?.length" class="retrieved-sources">
                   <summary>参考段落（{{ msg.citations.length }}）</summary>
                   <button
@@ -71,31 +68,26 @@
                     type="button"
                     @click="openCitation(source)"
                   >
-                    [{{ source.number }}] {{ source.filename }} · {{ source.sectionTitle || source.location?.heading || source.text.slice(0, 45) }}
+                    [{{ source.number }}] {{ source.filename }} ·
+                    {{
+                      source.sectionTitle || source.location?.heading || source.text.slice(0, 45)
+                    }}
                   </button>
                 </details>
-                <div
-                  v-if="msg.role === 'user' && msg.retrievalContext"
-                  class="message-scope"
-                >
+                <div v-if="msg.role === 'user' && msg.retrievalContext" class="message-scope">
                   {{ scopeLabel(msg.retrievalContext) }}
                 </div>
                 <button
-                  v-if="
-                    msg.role === 'assistant' &&
-                    (msg.retrievalRunId || msg.diagnostics?.runId)
-                  "
+                  v-if="msg.role === 'assistant' && (msg.retrievalRunId || msg.diagnostics?.runId)"
                   class="debug-trigger"
-                  @click="
-                    debugRunId = Number(
-                      msg.retrievalRunId || msg.diagnostics?.runId,
-                    )
-                  "
+                  @click="debugRunId = Number(msg.retrievalRunId || msg.diagnostics?.runId)"
                 >
                   查看检索过程
                 </button>
                 <span
-                  v-if="msg.generationStatus === 'interrupted' && !msg.cancelNotice && !msg.taskError"
+                  v-if="
+                    msg.generationStatus === 'interrupted' && !msg.cancelNotice && !msg.taskError
+                  "
                   class="interrupted-label"
                   >生成已中断，内容可能不完整</span
                 >
@@ -132,7 +124,11 @@
             type="button"
             :aria-label="composerActionLabel"
             :title="composerActionLabel"
-            :disabled="loading ? !canStopGeneration || canceling || stopRequested : !input.trim() || readOnly || !knowledgeBaseId"
+            :disabled="
+              loading
+                ? !canStopGeneration || canceling || stopRequested
+                : !input.trim() || readOnly || !knowledgeBaseId
+            "
             @click="loading ? stopGeneration() : sendMessage()"
           >
             <el-icon aria-hidden="true">
@@ -195,14 +191,26 @@ const selectedDocumentIds = ref<number[]>([]),
   debugRunId = ref<number | null>(null);
 const activeTask = ref<ProcessingTask | null>(null),
   taskConnectionError = ref(false);
-const canceling = ref(false), stopRequested = ref(false), cancelError = ref("");
-const messageSteps = (message: Message) => getAgentProgress(message.diagnostics)?.steps ?? message.agentSteps ?? [];
-const canCancelTask = computed(() => !!activeTask.value?.agentProgress || !!messages.value.at(-1)?.retrievalRunId || !!messageSteps(messages.value.at(-1) || { role: 'assistant', content: '' }).length);
+const canceling = ref(false),
+  stopRequested = ref(false),
+  cancelError = ref("");
+const messageSteps = (message: Message) =>
+  getAgentProgress(message.diagnostics)?.steps ?? message.agentSteps ?? [];
+const canCancelTask = computed(
+  () =>
+    !!activeTask.value?.agentProgress ||
+    !!messages.value.at(-1)?.retrievalRunId ||
+    !!messageSteps(messages.value.at(-1) || { role: "assistant", content: "" }).length,
+);
 const canStopGeneration = computed(() => !activeTask.value || canCancelTask.value);
 const composerActionLabel = computed(() =>
-  !loading.value ? "发送消息" :
-    canceling.value || stopRequested.value ? "正在停止" :
-      activeTask.value ? "停止后台任务" : "停止生成",
+  !loading.value
+    ? "发送消息"
+    : canceling.value || stopRequested.value
+      ? "正在停止"
+      : activeTask.value
+        ? "停止后台任务"
+        : "停止生成",
 );
 let taskTimer: ReturnType<typeof setTimeout> | undefined;
 const modeLabels: Record<QaMode, string> = {
@@ -213,22 +221,22 @@ const modeLabels: Record<QaMode, string> = {
   compare: "文档比较",
 };
 const scopeLabel = (context: RetrievalContext) =>
-  context.mode === "general" ? "通用回答" :
-  modeLabels[context.mode || "auto"] +
-  " · " +
-  (context.documentIds?.length
-    ? "所选 " + context.documentIds.length + " 份文档"
-    : "全部可用文档");
+  context.mode === "general"
+    ? "通用回答"
+    : modeLabels[context.mode || "auto"] +
+      " · " +
+      (context.documentIds?.length
+        ? "所选 " + context.documentIds.length + " 份文档"
+        : "全部可用文档");
 const taskLabel = (task: ProcessingTask) =>
-  (({ queued: "等待处理", retrying: "正在重试", running: "正在处理" })[
-    task.status
-  ] || task.stage) +
+  (({ queued: "等待处理", retrying: "正在重试", running: "正在处理" })[task.status] || task.stage) +
   (task.total != null ? " · " + task.completed + "/" + task.total : "");
 const progressLabel = (message: Message) => {
   if (activeTask.value && message === messages.value.at(-1)) {
     if (taskConnectionError.value) return "暂时无法更新进度，正在重试…";
     if (canceling.value || stopRequested.value) return "正在停止后台任务…";
-    if (["queued", "retrying"].includes(activeTask.value.status)) return taskLabel(activeTask.value);
+    if (["queued", "retrying"].includes(activeTask.value.status))
+      return taskLabel(activeTask.value);
     return messageSteps(message).at(-1)?.summary || taskLabel(activeTask.value);
   }
   return message.content ? undefined : messageSteps(message).at(-1)?.summary;
@@ -248,23 +256,26 @@ function restoreContext(rows: Message[]) {
     mode.value = context.mode || "auto";
   }
 }
-function pollTask(
-  task: ProcessingTask,
-  taskChatId: number,
-  currentEpoch: number,
-) {
+function pollTask(task: ProcessingTask, taskChatId: number, currentEpoch: number) {
   canceling.value = false;
   stopRequested.value = false;
   cancelError.value = "";
   activeTask.value = task;
   loading.value = true;
-  if (!messages.value.at(-1)?.loading) messages.value.push({ role: "assistant", content: "", loading: true });
+  if (!messages.value.at(-1)?.loading)
+    messages.value.push({ role: "assistant", content: "", loading: true });
   const applyProgress = (result: ProcessingTask) => {
     const message = messages.value.at(-1);
-    if (message?.role !== 'assistant') return;
+    if (message?.role !== "assistant") return;
     if (result.agentProgress) {
-      message.agentSteps = mergeAgentSteps(message.agentSteps || [], result.agentProgress.steps || []);
-      message.diagnostics = { ...message.diagnostics, agent: { ...result.agentProgress, steps: message.agentSteps } };
+      message.agentSteps = mergeAgentSteps(
+        message.agentSteps || [],
+        result.agentProgress.steps || [],
+      );
+      message.diagnostics = {
+        ...message.diagnostics,
+        agent: { ...result.agentProgress, steps: message.agentSteps },
+      };
     }
     if (result.qaResult?.retrievalRunId) message.retrievalRunId = result.qaResult.retrievalRunId;
   };
@@ -293,7 +304,7 @@ function pollTask(
       if (["failed", "canceled"].includes(result.status)) {
         const message = messages.value.at(-1);
         if (message?.role === "assistant" && message.loading) {
-          if (result.status === 'canceled') {
+          if (result.status === "canceled") {
             message.cancelNotice = "后台任务已停止，已获取的来源仍可查看。";
           } else message.taskError = result.error || "后台问答任务未完成，可稍后重试。";
           message.loading = false;
@@ -307,7 +318,7 @@ function pollTask(
       if (currentEpoch !== epoch) return;
       if ([401, 403, 404].includes(error?.response?.status)) {
         const message = messages.value.at(-1);
-        if (message?.role === 'assistant') {
+        if (message?.role === "assistant") {
           message.loading = false;
           message.taskError = "无法继续读取此后台任务，请重新打开会话确认状态。";
         }
@@ -328,36 +339,41 @@ async function stopGeneration() {
   if (!task) {
     streamAbort?.abort();
     const message = messages.value.at(-1);
-    if (message?.role === 'assistant') {
+    if (message?.role === "assistant") {
       message.loading = false;
-      message.generationStatus = 'interrupted';
-      message.cancelNotice = '已停止生成，已获取的来源仍可查看。';
+      message.generationStatus = "interrupted";
+      message.cancelNotice = "已停止生成，已获取的来源仍可查看。";
     }
     loading.value = false;
     return;
   }
   canceling.value = true;
-  cancelError.value = '';
+  cancelError.value = "";
   try {
     await cancelTask(task.id, true);
     if (currentEpoch !== epoch || activeTask.value?.id !== task.id) return;
     stopRequested.value = true;
   } catch {
-    if (currentEpoch === epoch) cancelError.value = '停止失败，后台任务仍在运行，可重试。';
+    if (currentEpoch === epoch) cancelError.value = "停止失败，后台任务仍在运行，可重试。";
   } finally {
     if (currentEpoch === epoch) canceling.value = false;
   }
 }
-const openCitation = (source: Citation) => emit('open-source', {
-  documentId: source.documentId, versionId: source.versionId, citation: source,
-});
+const openCitation = (source: Citation) =>
+  emit("open-source", {
+    documentId: source.documentId,
+    versionId: source.versionId,
+    citation: source,
+  });
 let streamAbort: AbortController | undefined;
 let historyAbort: AbortController | undefined;
 let epoch = 0;
 const handleCitationClick = (event: MouseEvent, message: Message) => {
   const button = (event.target as HTMLElement).closest("[data-citation]");
   if (button) {
-    const source = message.citations?.find(c => c.number === Number(button.getAttribute('data-citation')));
+    const source = message.citations?.find(
+      (c) => c.number === Number(button.getAttribute("data-citation")),
+    );
     if (source) openCitation(source);
   }
 };
@@ -400,8 +416,10 @@ const scrollToBottom = async (instant = false, force = true) => {
   if (el) {
     el.scrollTo({
       top: el.scrollHeight,
-      behavior: instant || window.matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? ("instant" as ScrollBehavior) : "smooth",
+      behavior:
+        instant || window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? ("instant" as ScrollBehavior)
+          : "smooth",
     });
     if (instant) updateScrollState();
   }
@@ -410,8 +428,7 @@ const scrollToBottom = async (instant = false, force = true) => {
 const adjustTextareaHeight = () => {
   if (textareaRef.value) {
     textareaRef.value.style.height = "auto";
-    textareaRef.value.style.height =
-      Math.min(textareaRef.value.scrollHeight, 200) + "px";
+    textareaRef.value.style.height = Math.min(textareaRef.value.scrollHeight, 200) + "px";
   }
 };
 
@@ -423,7 +440,9 @@ const loadHistory = async (id: number) => {
   streamAbort?.abort();
   stopTaskPolling();
   const currentEpoch = ++epoch;
-  canceling.value = false; stopRequested.value = false; cancelError.value = "";
+  canceling.value = false;
+  stopRequested.value = false;
+  cancelError.value = "";
   chatId.value = id;
   loading.value = true;
   messages.value = [];
@@ -451,7 +470,9 @@ const reset = () => {
   historyAbort?.abort();
   streamAbort?.abort();
   epoch++;
-  canceling.value = false; stopRequested.value = false; cancelError.value = "";
+  canceling.value = false;
+  stopRequested.value = false;
+  cancelError.value = "";
   stopTaskPolling();
   selectedDocumentIds.value = [];
   mode.value = "auto";
@@ -479,13 +500,7 @@ const handleEnter = (e: KeyboardEvent) => {
 };
 
 const sendMessage = async () => {
-  if (
-    !input.value.trim() ||
-    loading.value ||
-    readOnly.value ||
-    !props.knowledgeBaseId
-  )
-    return;
+  if (!input.value.trim() || loading.value || readOnly.value || !props.knowledgeBaseId) return;
   const currentEpoch = ++epoch;
   streamAbort = new AbortController();
   canceling.value = false;
@@ -502,8 +517,7 @@ const sendMessage = async () => {
   if (textareaRef.value) textareaRef.value.style.height = "auto";
 
   loading.value = true;
-  const aiMsgIndex =
-    messages.value.push({ role: "assistant", content: "", loading: true }) - 1;
+  const aiMsgIndex = messages.value.push({ role: "assistant", content: "", loading: true }) - 1;
 
   await scrollToBottom(true);
 
@@ -512,9 +526,7 @@ const sendMessage = async () => {
       question,
       chatId: chatId.value,
       knowledgeBaseId: props.knowledgeBaseId,
-      ...(selectedDocumentIds.value.length
-        ? { documentIds: [...selectedDocumentIds.value] }
-        : {}),
+      ...(selectedDocumentIds.value.length ? { documentIds: [...selectedDocumentIds.value] } : {}),
       mode: mode.value,
       requestId: crypto.randomUUID(),
     },
@@ -543,7 +555,8 @@ const sendMessage = async () => {
         if (currentEpoch !== epoch) return;
         chatId.value = accepted.chatId;
         emit("chat-created", accepted.chatId);
-        messages.value[aiMsgIndex].retrievalRunId = accepted.retrievalRunId || messages.value[aiMsgIndex].retrievalRunId;
+        messages.value[aiMsgIndex].retrievalRunId =
+          accepted.retrievalRunId || messages.value[aiMsgIndex].retrievalRunId;
         pollTask(
           {
             id: accepted.taskId,
@@ -557,8 +570,7 @@ const sendMessage = async () => {
         );
       },
       onSources: (sources) => {
-        if (currentEpoch === epoch)
-          messages.value[aiMsgIndex].sources = sources;
+        if (currentEpoch === epoch) messages.value[aiMsgIndex].sources = sources;
       },
       onCitations: (citations) => {
         if (currentEpoch === epoch) messages.value[aiMsgIndex].citations = citations;
@@ -581,18 +593,18 @@ const sendMessage = async () => {
         message.generationStatus = "interrupted";
         // 已确认引用可能已合并多个检索块，中断时优先保留它的完整快照。
         const candidates = new Map(
-          [...(message.sources || []), ...(message.citations || [])].map((source) => [source.number, source]),
+          [...(message.sources || []), ...(message.citations || [])].map((source) => [
+            source.number,
+            source,
+          ]),
         );
         const used = new Map<number, Citation>();
-        message.content = message.content.replace(
-          /\[(\d+)\]/g,
-          (marker, number) => {
-            const source = candidates.get(Number(number));
-            if (!source) return "";
-            used.set(source.number, source);
-            return marker;
-          },
-        );
+        message.content = message.content.replace(/\[(\d+)\]/g, (marker, number) => {
+          const source = candidates.get(Number(number));
+          if (!source) return "";
+          used.set(source.number, source);
+          return marker;
+        });
         message.citations = [...used.values()];
       },
       onFinish: async () => {

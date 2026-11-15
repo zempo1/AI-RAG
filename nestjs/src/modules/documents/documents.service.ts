@@ -1,18 +1,18 @@
 /** 实现业务处理；所属能力：文档上传、版本管理、解析、分块、建立索引及删除清理。 */
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, writeFile, unlink } from 'node:fs/promises';
-import { join } from 'node:path';
-import { Store, Row, now } from '../../persistence/store';
-import { DocumentParser } from './parsers/document.parser';
-import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service';
-import { TasksService, terminalTask } from '../tasks/tasks.service';
-import { currentModelProfile } from '../embeddings/model-profile';
-import { embeddingFingerprint } from '../vector-store/qdrant-vector-store.service';
-import { ApiError } from '../../common/api-error';
-import { sealRuntimeModels } from '../model-settings/model-runtime';
-import { expandCitationContext } from './citation-context';
+import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, writeFile, unlink } from "node:fs/promises";
+import { join } from "node:path";
+import { Store, Row, now } from "../../persistence/store";
+import { DocumentParser } from "./parsers/document.parser";
+import { KnowledgeBasesService } from "../knowledge-bases/knowledge-bases.service";
+import { TasksService, terminalTask } from "../tasks/tasks.service";
+import { currentModelProfile } from "../embeddings/model-profile";
+import { embeddingFingerprint } from "../vector-store/qdrant-vector-store.service";
+import { ApiError } from "../../common/api-error";
+import { sealRuntimeModels } from "../model-settings/model-runtime";
+import { expandCitationContext } from "./citation-context";
 
 export interface IngestOptions {
   knowledgeBaseId?: number;
@@ -38,22 +38,33 @@ export class DocumentsService {
   ) {}
 
   async owned(id: number, userId: number, tx = this.store): Promise<Row> {
-    const doc = await tx.get('documents', id);
+    const doc = await tx.get("documents", id);
     if (!doc || doc.userId !== userId || doc.deletedAt)
-      throw new ApiError(404, 'Document not found: ' + id);
+      throw new ApiError(404, "Document not found: " + id);
     if (doc.knowledgeBaseId) await this.libraries.owned(doc.knowledgeBaseId, userId, tx);
     return doc;
   }
 
-  async citationContext(id: number, userId: number, versionId: number, revisionId: number,
-    start: number, end: number) {
+  async citationContext(
+    id: number,
+    userId: number,
+    versionId: number,
+    revisionId: number,
+    start: number,
+    end: number,
+  ) {
     const doc = await this.owned(id, userId);
     if (doc.activeVersionId !== versionId || doc.activeIndexRevisionId !== revisionId)
-      throw new ApiError(404, '当前索引与引用版本不一致');
+      throw new ApiError(404, "当前索引与引用版本不一致");
     const text = doc.content;
-    if (typeof text !== 'string' || start < 0 || end <= start || end > text.length ||
-        end - start > 12000)
-      throw new ApiError(400, '引用位置无效');
+    if (
+      typeof text !== "string" ||
+      start < 0 ||
+      end <= start ||
+      end > text.length ||
+      end - start > 12000
+    )
+      throw new ApiError(400, "引用位置无效");
     return { text: expandCitationContext(text, start, end) };
   }
 
@@ -64,67 +75,67 @@ export class DocumentsService {
     options: IngestOptions = {},
   ): Promise<AcceptedDocument> {
     this.parser.validateFilename(filename);
-    if (!bytes.length) throw new ApiError(400, '文件不能为空');
-    if (bytes.length > this.config.getOrThrow<number>('MAX_DOCUMENT_BYTES'))
-      throw new ApiError(413, '文件超过文档解析大小限制');
+    if (!bytes.length) throw new ApiError(400, "文件不能为空");
+    if (bytes.length > this.config.getOrThrow<number>("MAX_DOCUMENT_BYTES"))
+      throw new ApiError(413, "文件超过文档解析大小限制");
     const target = options.documentId ? await this.owned(options.documentId, userId) : null;
     const kb = await this.libraries.resolve(
       userId,
       options.knowledgeBaseId ?? target?.knowledgeBaseId,
     );
     if (target && target.knowledgeBaseId !== kb.id)
-      throw new ApiError(400, '替换文档不属于该知识库');
-    const root = this.config.getOrThrow<string>('ORIGINALS_DIR');
+      throw new ApiError(400, "替换文档不属于该知识库");
+    const root = this.config.getOrThrow<string>("ORIGINALS_DIR");
     await mkdir(root, { recursive: true });
     // 原件用服务端随机文件名保存，用户文件名只作为元数据，避免路径冲突。
-    const originalPath = randomUUID() + (filename.toLowerCase().endsWith('.pdf') ? '.pdf' : '.md');
-    await writeFile(join(root, originalPath), bytes, { flag: 'wx' });
-    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const originalPath = randomUUID() + (filename.toLowerCase().endsWith(".pdf") ? ".pdf" : ".md");
+    await writeFile(join(root, originalPath), bytes, { flag: "wx" });
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
     let used = false;
     try {
       return await this.store.transaction(async (tx) => {
         await this.libraries.writable(tx, kb.id, userId);
         const key = options.idempotencyKey
-          ? createHash('sha256')
-              .update([userId, kb.id, options.documentId || 0, options.idempotencyKey].join('/'))
-              .digest('hex')
+          ? createHash("sha256")
+              .update([userId, kb.id, options.documentId || 0, options.idempotencyKey].join("/"))
+              .digest("hex")
           : null;
         // 同一次上传的重复提交返回原任务；同标识对应不同内容时拒绝，防止误复用。
         if (key) {
-          const previous = (await tx.list('tasks', { idempotencyKey: key }))[0];
-          if (previous && !(await tx.get('documents', previous.documentId))?.deletedAt) {
-            const revision = await tx.get('indexRevisions', previous.indexRevisionId);
-            const version = revision && (await tx.get('versions', revision.versionId));
+          const previous = (await tx.list("tasks", { idempotencyKey: key }))[0];
+          if (previous && !(await tx.get("documents", previous.documentId))?.deletedAt) {
+            const revision = await tx.get("indexRevisions", previous.indexRevisionId);
+            const version = revision && (await tx.get("versions", revision.versionId));
             if (version?.sha256 !== sha256 || version?.filename !== filename)
-              throw new ApiError(409, '重复上传标识对应的文件内容不一致');
+              throw new ApiError(409, "重复上传标识对应的文件内容不一致");
             const doc = await this.owned(previous.documentId, userId, tx);
             return this.accepted(doc, previous.id);
           }
-          if (previous) await tx.save('tasks', { id: previous.id, idempotencyKey: null });
+          if (previous) await tx.save("tasks", { id: previous.id, idempotencyKey: null });
         }
         if (options.categoryId != null)
           await this.libraries.category(kb.id, options.categoryId, userId, tx);
-        let doc = target ? await tx.lock('documents', target.id) : undefined;
+        let doc = target ? await tx.lock("documents", target.id) : undefined;
         if (target) {
           await this.owned(target.id, userId, tx);
-          if (doc!.knowledgeBaseId !== kb.id) throw new ApiError(400, '文档知识库不匹配');
+          if (doc!.knowledgeBaseId !== kb.id) throw new ApiError(400, "文档知识库不匹配");
         }
         if (!doc)
-          doc = await tx.save('documents', {
+          doc = await tx.save("documents", {
             userId,
             knowledgeBaseId: kb.id,
             categoryId: options.categoryId ?? null,
             filename,
-            content: '',
+            content: "",
             activeIndexRevisionId: null,
             desiredIndexRevisionId: null,
             activeVersionId: null,
             latestTaskId: null,
-            status: 'queued',
+            status: "queued",
             deletedAt: null,
           });
         // 接收上传时只保存版本并创建任务；解析和向量化由后台执行，避免请求长时间阻塞。
-        const version = await tx.save('versions', {
+        const version = await tx.save("versions", {
           documentId: doc.id,
           filename,
           originalPath,
@@ -145,8 +156,8 @@ export class DocumentsService {
   async uploadScope(userId: number, knowledgeBaseId?: number, documentId?: number) {
     const target = documentId ? await this.owned(documentId, userId) : undefined;
     const kb = await this.libraries.resolve(userId, knowledgeBaseId ?? target?.knowledgeBaseId);
-    if (target && target.knowledgeBaseId !== kb.id) throw new ApiError(400, '文档不属于该知识库');
-    if (kb.rebuildTaskId) throw new ApiError(409, '知识库正在重建');
+    if (target && target.knowledgeBaseId !== kb.id) throw new ApiError(400, "文档不属于该知识库");
+    if (kb.rebuildTaskId) throw new ApiError(409, "知识库正在重建");
     return kb.id as number;
   }
 
@@ -156,12 +167,12 @@ export class DocumentsService {
     documentId: number | undefined,
     key: string,
   ) {
-    const hash = createHash('sha256')
-      .update([userId, knowledgeBaseId, documentId || 0, key].join('/'))
-      .digest('hex');
-    const task = (await this.store.list('tasks', { idempotencyKey: hash }))[0];
+    const hash = createHash("sha256")
+      .update([userId, knowledgeBaseId, documentId || 0, key].join("/"))
+      .digest("hex");
+    const task = (await this.store.list("tasks", { idempotencyKey: hash }))[0];
     if (!task) return null;
-    const doc = await this.store.get('documents', task.documentId);
+    const doc = await this.store.get("documents", task.documentId);
     if (!doc || doc.deletedAt || doc.userId !== userId || doc.knowledgeBaseId !== knowledgeBaseId)
       return null;
     return this.accepted(doc, task.id);
@@ -183,12 +194,12 @@ export class DocumentsService {
     parentTaskId: number | null = null,
     idempotencyKey: string | null = null,
   ) {
-    const revision = await tx.save('indexRevisions', {
+    const revision = await tx.save("indexRevisions", {
       documentId: doc.id,
       versionId,
       embeddingFingerprint: embeddingFingerprint(this.config),
       modelProfile: currentModelProfile(this.config),
-      status: 'pending',
+      status: "pending",
       retiredAt: null,
     });
     const task = await this.tasks.create(tx, {
@@ -197,31 +208,31 @@ export class DocumentsService {
       documentId: doc.id,
       indexRevisionId: revision.id,
       parentTaskId,
-      kind: 'index',
+      kind: "index",
       idempotencyKey,
       payload: { modelSnapshot: sealRuntimeModels(this.config) },
     });
     // 同一文档以最新目标索引为准；取消未完成的旧构建，防止旧结果晚到后覆盖新版本。
-    for (const previous of await tx.list('tasks', { documentId: doc.id })) {
-      if (previous.id !== task.id && previous.kind === 'index' && !terminalTask(previous.status))
-        await tx.save('tasks', {
+    for (const previous of await tx.list("tasks", { documentId: doc.id })) {
+      if (previous.id !== task.id && previous.kind === "index" && !terminalTask(previous.status))
+        await tx.save("tasks", {
           id: previous.id,
-          status: 'canceled',
-          stage: 'superseded',
+          status: "canceled",
+          stage: "superseded",
           updatedAt: now(),
         });
     }
-    await tx.save('documents', {
+    await tx.save("documents", {
       id: doc.id,
       desiredIndexRevisionId: revision.id,
       latestTaskId: task.id,
-      status: 'queued',
+      status: "queued",
     });
     return task;
   }
 
   async latest(userId: number): Promise<Row> {
-    const docs = (await this.store.list('documents', { userId })).filter(
+    const docs = (await this.store.list("documents", { userId })).filter(
       (d) => !d.deletedAt && d.content,
     );
     docs.sort((a, b) => b.id - a.id);
@@ -232,18 +243,18 @@ export class DocumentsService {
         /* deleted library */
       }
     }
-    throw new ApiError(409, '尚无可用文档，请先上传并等待处理完成');
+    throw new ApiError(409, "尚无可用文档，请先上传并等待处理完成");
   }
 
   async ready(id: number, userId: number) {
     const doc = await this.owned(id, userId);
-    if (!doc.content || !doc.activeVersionId) throw new ApiError(409, '文档尚未处理完成');
+    if (!doc.content || !doc.activeVersionId) throw new ApiError(409, "文档尚未处理完成");
     return doc;
   }
 
   async list(userId: number, knowledgeBaseId?: number) {
     const kb = await this.libraries.resolve(userId, knowledgeBaseId);
-    return (await this.store.list('documents', { userId, knowledgeBaseId: kb.id }))
+    return (await this.store.list("documents", { userId, knowledgeBaseId: kb.id }))
       .filter((d) => !d.deletedAt)
       .sort((a, b) => b.id - a.id)
       .map(({ content, userId: owner, ...doc }) => doc);
@@ -285,13 +296,13 @@ export class DocumentsService {
     const initial = await this.owned(id, userId);
     return this.store.transaction(async (tx) => {
       await this.libraries.writable(tx, initial.knowledgeBaseId, userId);
-      await tx.lock('documents', id);
+      await tx.lock("documents", id);
       await this.owned(id, userId, tx);
       if (values.categoryId != null)
         await this.libraries.category(initial.knowledgeBaseId, values.categoryId, userId, tx);
       if (values.filename !== undefined) this.parser.validateFilename(values.filename);
-      await tx.save('documents', { id, ...values });
-      const { content, ...row } = (await tx.get('documents', id))!;
+      await tx.save("documents", { id, ...values });
+      const { content, ...row } = (await tx.get("documents", id))!;
       return row;
     });
   }
@@ -299,22 +310,22 @@ export class DocumentsService {
   async activate(id: number, userId: number) {
     const doc = await this.owned(id, userId);
     if (doc.activeIndexRevisionId)
-      return { documentId: id, status: 'ready', taskId: doc.latestTaskId };
+      return { documentId: id, status: "ready", taskId: doc.latestTaskId };
     if (doc.latestTaskId) {
       const task = await this.tasks.get(doc.latestTaskId, userId);
       if (!terminalTask(task.status))
         return { documentId: id, status: task.status, taskId: task.id };
-      if (task.status === 'failed') return { documentId: id, status: 'failed', taskId: task.id };
+      if (task.status === "failed") return { documentId: id, status: "failed", taskId: task.id };
     }
     return this.reindex(id, userId);
   }
 
   private async legacyVersion(tx: Store, doc: Row) {
     if (doc.activeVersionId) return doc.activeVersionId;
-    const existing = (await tx.list('versions', { documentId: doc.id }))[0];
+    const existing = (await tx.list("versions", { documentId: doc.id }))[0];
     const version =
       existing ||
-      (await tx.save('versions', {
+      (await tx.save("versions", {
         documentId: doc.id,
         filename: doc.filename,
         originalPath: null,
@@ -322,7 +333,7 @@ export class DocumentsService {
         content: doc.content,
         isLegacy: 1,
       }));
-    await tx.save('documents', { id: doc.id, activeVersionId: version.id });
+    await tx.save("documents", { id: doc.id, activeVersionId: version.id });
     return version.id;
   }
 
@@ -331,11 +342,11 @@ export class DocumentsService {
     const kb = await this.libraries.resolve(userId, initial.knowledgeBaseId);
     return this.store.transaction(async (tx) => {
       await this.libraries.writable(tx, kb.id, userId);
-      let doc = (await tx.lock('documents', id))!;
+      let doc = (await tx.lock("documents", id))!;
       await this.owned(id, userId, tx);
-      if (!doc.knowledgeBaseId) doc = await tx.save('documents', { id, knowledgeBaseId: kb.id });
-      const existing = (await tx.list('tasks', { documentId: id })).find(
-        (t) => t.kind === 'index' && !terminalTask(t.status),
+      if (!doc.knowledgeBaseId) doc = await tx.save("documents", { id, knowledgeBaseId: kb.id });
+      const existing = (await tx.list("tasks", { documentId: id })).find(
+        (t) => t.kind === "index" && !terminalTask(t.status),
       );
       if (existing) return this.accepted(doc, existing.id);
       const versionId = await this.legacyVersion(tx, doc);
@@ -347,24 +358,24 @@ export class DocumentsService {
     const result = await this.store.transaction(async (tx) => {
       await this.libraries.writable(tx, kbId, userId);
       if (
-        (await tx.list('tasks', { knowledgeBaseId: kbId })).some(
-          (t) => t.kind === 'index' && !terminalTask(t.status),
+        (await tx.list("tasks", { knowledgeBaseId: kbId })).some(
+          (t) => t.kind === "index" && !terminalTask(t.status),
         )
       )
-        throw new ApiError(409, '知识库有进行中的文档任务');
+        throw new ApiError(409, "知识库有进行中的文档任务");
       const parent = await this.tasks.create(tx, {
         userId,
         knowledgeBaseId: kbId,
-        kind: 'rebuild',
-        status: 'running',
-        stage: 'rebuilding',
+        kind: "rebuild",
+        status: "running",
+        stage: "rebuilding",
       });
-      await tx.save('knowledgeBases', { id: kbId, rebuildTaskId: parent.id });
-      const docs = (await tx.list('documents', { knowledgeBaseId: kbId, userId })).filter(
+      await tx.save("knowledgeBases", { id: kbId, rebuildTaskId: parent.id });
+      const docs = (await tx.list("documents", { knowledgeBaseId: kbId, userId })).filter(
         (d) => !d.deletedAt,
       );
       for (const doc of docs) {
-        await tx.lock('documents', doc.id);
+        await tx.lock("documents", doc.id);
         const version = await this.legacyVersion(tx, doc);
         await this.newIndex(tx, doc, version, parent.id);
       }
@@ -377,48 +388,48 @@ export class DocumentsService {
   async delete(id: number, userId: number) {
     const initial = await this.owned(id, userId);
     const result = await this.store.transaction(async (tx) => {
-      await tx.lock('knowledgeBases', initial.knowledgeBaseId);
-      const doc = await tx.lock('documents', id);
+      await tx.lock("knowledgeBases", initial.knowledgeBaseId);
+      const doc = await tx.lock("documents", id);
       await this.owned(id, userId, tx);
       return this.tombstone(tx, doc!);
     });
-    for (const task of await this.store.list('tasks', { documentId: id }))
+    for (const task of await this.store.list("tasks", { documentId: id }))
       await this.tasks.refreshParent(task.parentTaskId);
     return result;
   }
 
   private async tombstone(tx: Store, doc: Row) {
-    for (const task of await tx.list('tasks', { documentId: doc.id })) {
-      if (task.kind === 'index' && !terminalTask(task.status))
-        await tx.save('tasks', {
+    for (const task of await tx.list("tasks", { documentId: doc.id })) {
+      if (task.kind === "index" && !terminalTask(task.status))
+        await tx.save("tasks", {
           id: task.id,
-          status: 'canceled',
-          stage: 'canceled',
+          status: "canceled",
+          stage: "canceled",
           updatedAt: now(),
         });
     }
-    for (const table of ['analyses', 'mindmaps'] as const)
+    for (const table of ["analyses", "mindmaps"] as const)
       for (const row of await tx.list(table, { documentId: doc.id }))
         await tx.delete(table, row.id);
     const task = await this.tasks.create(tx, {
       userId: doc.userId,
       knowledgeBaseId: doc.knowledgeBaseId,
       documentId: doc.id,
-      kind: 'cleanup',
+      kind: "cleanup",
       payload: {
         notBefore: new Date(
-          Date.parse(now() + 'Z') + this.config.getOrThrow<number>('INDEX_RETENTION_MS'),
+          Date.parse(now() + "Z") + this.config.getOrThrow<number>("INDEX_RETENTION_MS"),
         )
           .toISOString()
           .slice(0, 23),
       },
     });
-    await tx.save('documents', {
+    await tx.save("documents", {
       id: doc.id,
       deletedAt: now(),
       activeIndexRevisionId: null,
       desiredIndexRevisionId: null,
-      status: 'deleting',
+      status: "deleting",
       latestTaskId: task.id,
     });
     return { documentId: doc.id, taskId: task.id };
@@ -426,20 +437,20 @@ export class DocumentsService {
 
   async deleteLibrary(kbId: number, userId: number) {
     return this.store.transaction(async (tx) => {
-      await tx.lock('knowledgeBases', kbId);
+      await tx.lock("knowledgeBases", kbId);
       const kb = await this.libraries.owned(kbId, userId, tx);
       if (kb.rebuildTaskId)
-        await tx.save('tasks', {
+        await tx.save("tasks", {
           id: kb.rebuildTaskId,
-          status: 'canceled',
-          stage: 'canceled',
+          status: "canceled",
+          stage: "canceled",
           updatedAt: now(),
         });
-      for (const doc of await tx.list('documents', { knowledgeBaseId: kbId, userId })) {
-        await tx.lock('documents', doc.id);
+      for (const doc of await tx.list("documents", { knowledgeBaseId: kbId, userId })) {
+        await tx.lock("documents", doc.id);
         if (!doc.deletedAt) await this.tombstone(tx, doc);
       }
-      await tx.save('knowledgeBases', {
+      await tx.save("knowledgeBases", {
         id: kbId,
         deletedAt: now(),
         isDefault: null,
@@ -448,7 +459,7 @@ export class DocumentsService {
       const task = await this.tasks.create(tx, {
         userId,
         knowledgeBaseId: kbId,
-        kind: 'cleanup-library',
+        kind: "cleanup-library",
       });
       return { taskId: task.id };
     });

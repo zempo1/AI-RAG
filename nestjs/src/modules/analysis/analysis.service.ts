@@ -1,10 +1,10 @@
 /** 实现业务处理；所属能力：生成并管理文档摘要、大纲和学习卡片等分析结果。 */
-import { Injectable } from '@nestjs/common';
-import { DocumentsService } from '../documents/documents.service';
-import { LlmService } from '../llm/llm.service';
-import { Store, Row, publicRow } from '../../persistence/store';
-import { analysisPrompt } from './prompts';
-import { ApiError } from '../../common/api-error';
+import { Injectable } from "@nestjs/common";
+import { DocumentsService } from "../documents/documents.service";
+import { LlmService } from "../llm/llm.service";
+import { Store, Row, publicRow } from "../../persistence/store";
+import { analysisPrompt } from "./prompts";
+import { ApiError } from "../../common/api-error";
 
 @Injectable()
 export class AnalysisService {
@@ -16,34 +16,32 @@ export class AnalysisService {
 
   async generate(documentId: number, type: string, userId: number, apiKey?: string) {
     const doc = await this.documents.ready(documentId, userId);
-    const result = (
-      // 当前工作台分析只使用正文前 20000 字符；完整长文问答走 RAG 的后台摘要流程。
-      await this.llm.complete(analysisPrompt(type, doc.content.slice(0, 20000)), apiKey)
-    ).trim();
-    if (!result) throw new ApiError(500, '模型返回空内容');
-    if (type === 'FLASHCARD') {
+    const result = // 当前工作台分析只使用正文前 20000 字符；完整长文问答走 RAG 的后台摘要流程。
+      (await this.llm.complete(analysisPrompt(type, doc.content.slice(0, 20000)), apiKey)).trim();
+    if (!result) throw new ApiError(500, "模型返回空内容");
+    if (type === "FLASHCARD") {
       // 闪卡前端依赖结构化问答数组，保存前同时校验 JSON 语法和 q/a 字段。
       let cards: any;
       try {
         cards = JSON.parse(result);
       } catch {
-        throw new ApiError(500, '模型返回无效的闪卡 JSON');
+        throw new ApiError(500, "模型返回无效的闪卡 JSON");
       }
       if (
         !Array.isArray(cards) ||
         !cards.length ||
-        cards.some((c) => !c || typeof c.q !== 'string' || typeof c.a !== 'string')
+        cards.some((c) => !c || typeof c.q !== "string" || typeof c.a !== "string")
       )
-        throw new ApiError(500, '模型返回无效的闪卡结构');
+        throw new ApiError(500, "模型返回无效的闪卡结构");
     }
     return publicRow(
       await this.store.transaction(async (tx) => {
-        const kb = await tx.lock('knowledgeBases', doc.knowledgeBaseId);
+        const kb = await tx.lock("knowledgeBases", doc.knowledgeBaseId);
         // 模型生成期间文档可能被删除，落库前需重新确认来源仍存在且属于当前用户。
-        const source = await tx.lock('documents', documentId);
+        const source = await tx.lock("documents", documentId);
         if (!kb || kb.deletedAt || !source || source.userId !== userId || source.deletedAt)
-          throw new ApiError(500, 'Document not found: ' + documentId);
-        return tx.save('analyses', {
+          throw new ApiError(500, "Document not found: " + documentId);
+        return tx.save("analyses", {
           userId,
           documentId,
           versionId: doc.activeVersionId,
@@ -58,11 +56,11 @@ export class AnalysisService {
   async list(type: string, userId: number) {
     const sources = new Map<number, Promise<Row | undefined>>();
     return Promise.all(
-      (await this.store.list('analyses', { type, userId }))
+      (await this.store.list("analyses", { type, userId }))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)
         .map(async (row) => {
           if (row.documentId && !sources.has(row.documentId))
-            sources.set(row.documentId, this.store.get('documents', row.documentId));
+            sources.set(row.documentId, this.store.get("documents", row.documentId));
           const source = row.documentId ? await sources.get(row.documentId) : null;
           return {
             ...publicRow(row),
@@ -73,8 +71,8 @@ export class AnalysisService {
   }
 
   async delete(id: number, userId: number): Promise<void> {
-    const row = await this.store.get('analyses', id);
-    if (!row || row.userId !== userId) throw new ApiError(500, 'Analysis not found: ' + id);
-    await this.store.delete('analyses', id);
+    const row = await this.store.get("analyses", id);
+    if (!row || row.userId !== userId) throw new ApiError(500, "Analysis not found: " + id);
+    await this.store.delete("analyses", id);
   }
 }

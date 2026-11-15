@@ -32,18 +32,13 @@
           popper-class="knowledge-theme knowledge-popper"
           @command="libraryCommand"
         >
-          <el-button
-            class="icon-button"
-            aria-label="知识库操作"
-            title="知识库操作"
+          <el-button class="icon-button" aria-label="知识库操作" title="知识库操作"
             ><el-icon><MoreFilled /></el-icon
           ></el-button>
           <template #dropdown
             ><el-dropdown-menu
               ><el-dropdown-item command="edit">编辑知识库</el-dropdown-item
-              ><el-dropdown-item
-                command="rebuild"
-                :disabled="!!currentLibrary.rebuildTaskId"
+              ><el-dropdown-item command="rebuild" :disabled="!!currentLibrary.rebuildTaskId"
                 >重建全库索引</el-dropdown-item
               ><el-dropdown-item command="delete" divided class="danger-item"
                 >删除知识库</el-dropdown-item
@@ -74,23 +69,14 @@
             dropFile($event);
           "
         >
-          <input
-            ref="fileInput"
-            type="file"
-            accept=".pdf,.md"
-            hidden
-            @change="pickFile"
-          />
+          <input ref="fileInput" type="file" accept=".pdf,.md" hidden @change="pickFile" />
           <template v-if="!uploading">
             <div class="upload-symbol">
               <el-icon><UploadFilled /></el-icon>
             </div>
             <div class="upload-copy">
-              <strong>把资料放进知识库</strong
-              ><span>拖入 PDF / Markdown，或选择文件上传</span
-              ><small
-                >单文件最多 128 MiB · 支持断点续传 · 上传后自动建立索引</small
-              >
+              <strong>把资料放进知识库</strong><span>拖入 PDF / Markdown，或选择文件上传</span
+              ><small>单文件最多 128 MiB · 支持断点续传 · 上传后自动建立索引</small>
             </div>
             <el-button
               class="gradient-button"
@@ -107,11 +93,7 @@
                 {{ uploadPercent }}%</span
               >
             </div>
-            <el-progress
-              :percentage="uploadPercent"
-              :show-text="false"
-              :stroke-width="5"
-            />
+            <el-progress :percentage="uploadPercent" :show-text="false" :stroke-width="5" />
             <div class="upload-controls">
               <span class="muted">解析和向量化进度将在下方显示</span
               ><el-button @click="paused = !paused">{{
@@ -125,9 +107,7 @@
           <div class="section-heading">
             <div>
               <h3>文档</h3>
-              <span class="muted"
-                >共 {{ total }} 份资料 · 就绪后可用于问答和工作台</span
-              >
+              <span class="muted">共 {{ total }} 份资料 · 就绪后可用于问答和工作台</span>
             </div>
             <el-button
               class="icon-button"
@@ -149,12 +129,29 @@
               :disabled="!categories.length"
               popper-class="knowledge-theme knowledge-popper"
             >
-              <el-option v-for="category in categories" :key="category.id" :label="category.name" :value="category.id" />
+              <el-option
+                v-for="category in categories"
+                :key="category.id"
+                :label="category.name"
+                :value="category.id"
+              />
             </el-select>
-            <el-button class="icon-button" :disabled="!managedCategory" :aria-label="'编辑分类' + (managedCategory?.name || '')" title="编辑分类" @click="managedCategory && renameCategory(managedCategory)">
+            <el-button
+              class="icon-button"
+              :disabled="!managedCategory"
+              :aria-label="'编辑分类' + (managedCategory?.name || '')"
+              title="编辑分类"
+              @click="managedCategory && renameCategory(managedCategory)"
+            >
               <el-icon><EditPen /></el-icon>
             </el-button>
-            <el-button class="icon-button" :disabled="!managedCategory" :aria-label="'删除分类' + (managedCategory?.name || '')" title="删除分类" @click="managedCategory && removeCategory(managedCategory)">
+            <el-button
+              class="icon-button"
+              :disabled="!managedCategory"
+              :aria-label="'删除分类' + (managedCategory?.name || '')"
+              title="删除分类"
+              @click="managedCategory && removeCategory(managedCategory)"
+            >
               <el-icon><Close /></el-icon>
             </el-button>
             <el-button link @click="addCategory"
@@ -162,11 +159,7 @@
             >
           </div>
           <div class="filters">
-            <el-input
-              v-model="keyword"
-              placeholder="搜索文件名"
-              clearable
-              aria-label="搜索文件名"
+            <el-input v-model="keyword" placeholder="搜索文件名" clearable aria-label="搜索文件名"
               ><template #prefix
                 ><el-icon><Search /></el-icon></template
             ></el-input>
@@ -190,9 +183,9 @@
               popper-class="knowledge-theme knowledge-popper"
               ><el-option label="待处理" value="pending" /><el-option
                 label="处理中"
-                value="queued" /><el-option
-                label="已就绪"
-                value="ready" /><el-option label="处理失败" value="failed"
+                value="queued" /><el-option label="已就绪" value="ready" /><el-option
+                label="处理失败"
+                value="failed"
             /></el-select>
           </div>
           <div v-if="loadError" class="load-error" role="alert">
@@ -242,9 +235,7 @@
             <span
               >后台任务 <small>{{ tasks.length }}</small></span
             ><span class="muted"
-              >{{
-                attentionTasks ? attentionTasks + " 项需要关注" : "查看处理记录"
-              }}
+              >{{ attentionTasks ? attentionTasks + " 项需要关注" : "查看处理记录" }}
               <el-icon :class="{ rotated: showTasks }"><ArrowDown /></el-icon
             ></span>
           </button>
@@ -253,11 +244,7 @@
               <span class="muted">移除记录不影响文档和索引</span
               ><el-button
                 :loading="historyBusy"
-                :disabled="
-                  !tasks.some((t) =>
-                    ['completed', 'canceled'].includes(t.status),
-                  )
-                "
+                :disabled="!tasks.some((t) => ['completed', 'canceled'].includes(t.status))"
                 @click="clearHistory"
                 >清除已完成</el-button
               >
@@ -265,28 +252,26 @@
             <div v-if="!tasks.length" class="muted task-empty">
               暂无任务，上传文档后会在这里显示处理进度
             </div>
-            <div
-              v-for="task in tasks.slice(0, 12)"
-              :key="task.id"
-              class="task-row"
-            >
+            <div v-for="task in tasks.slice(0, 12)" :key="task.id" class="task-row">
               <div>
                 <strong
                   >{{ kindLabels[task.kind] || task.kind }}
                   <span class="muted">#{{ task.id }}</span></strong
                 ><span class="task-stage"
-                  >{{
-                    task.waitingReason || stageLabels[task.stage] || task.stage
-                  }}
+                  >{{ task.waitingReason || stageLabels[task.stage] || task.stage }}
                   {{
-                    task.indexProgress && task.status === 'running' ? "" : task.total != null ? task.completed + "/" + task.total : ['vision', 'ocr'].includes(task.stage) ? `已识别 ${task.completed} 个区域（总量统计中）` : ""
+                    task.indexProgress && task.status === "running"
+                      ? ""
+                      : task.total != null
+                        ? task.completed + "/" + task.total
+                        : ["vision", "ocr"].includes(task.stage)
+                          ? `已识别 ${task.completed} 个区域（总量统计中）`
+                          : ""
                   }}</span
                 >
                 <span v-if="task.waitingUntil" class="muted"
                   >预计
-                  {{
-                    new Date(task.waitingUntil).toLocaleTimeString()
-                  }}
+                  {{ new Date(task.waitingUntil).toLocaleTimeString() }}
                   后开始清理</span
                 >
                 <IndexProgressDetails
@@ -297,16 +282,10 @@
               </div>
               <div class="task-history-actions">
                 <el-button
-                  v-if="
-                    ['failed', 'partial_failed'].includes(task.status) &&
-                    task.retryable
-                  "
+                  v-if="['failed', 'partial_failed'].includes(task.status) && task.retryable"
                   @click="retryProcessingTask(task)"
                   >重试</el-button
-                ><el-button
-                  v-if="task.canDismiss"
-                  :disabled="historyBusy"
-                  @click="removeTask(task)"
+                ><el-button v-if="task.canDismiss" :disabled="historyBusy" @click="removeTask(task)"
                   >移除记录</el-button
                 >
               </div>
@@ -349,21 +328,16 @@ import type {
   ProcessingTask,
   AcceptedDocument,
 } from "../../api/knowledge-bases";
-import {
-  checkUpload,
-  uploadChunk,
-  mergeChunks,
-  type UploadScope,
-} from "../../api/upload";
+import { checkUpload, uploadChunk, mergeChunks, type UploadScope } from "../../api/upload";
 import { useToast } from "../../composables/useToast";
-import type { DocumentTarget } from '../reader/types';
+import type { DocumentTarget } from "../reader/types";
 
 const props = defineProps<{
   knowledgeBaseId: number | null;
   documentId: number | null;
 }>();
 const emit = defineEmits<{
-  (event: 'knowledge-base-deleted', id: number): void;
+  (event: "knowledge-base-deleted", id: number): void;
   (event: "preview-document", target: DocumentTarget): void;
   (event: "knowledge-base-change", id: number): void;
   (event: "activated", filename: string, id: number | null): void;
@@ -386,9 +360,7 @@ const tasksExpanded = ref<boolean | null>(null);
 async function removeTask(task: ProcessingTask) {
   if (
     historyBusy.value ||
-    !(await confirmed(
-      "从列表移除此任务记录？文档和索引不会删除，移除后不能从此列表重试。",
-    ))
+    !(await confirmed("从列表移除此任务记录？文档和索引不会删除，移除后不能从此列表重试。"))
   )
     return;
   historyBusy.value = true;
@@ -414,13 +386,9 @@ async function clearHistory() {
   }
 }
 const attentionTasks = computed(
-  () =>
-    tasks.value.filter((t) => !["completed", "canceled"].includes(t.status))
-      .length,
+  () => tasks.value.filter((t) => !["completed", "canceled"].includes(t.status)).length,
 );
-const showTasks = computed(
-  () => tasksExpanded.value ?? attentionTasks.value > 0,
-);
+const showTasks = computed(() => tasksExpanded.value ?? attentionTasks.value > 0);
 const visible = ref(false),
   keyword = ref(""),
   categoryFilter = ref<number>(),
@@ -428,7 +396,9 @@ const visible = ref(false),
   page = ref(1),
   total = ref(0);
 const managedCategoryId = ref<number>();
-const managedCategory = computed(() => categories.value.find(c => c.id === managedCategoryId.value) || categories.value[0]);
+const managedCategory = computed(
+  () => categories.value.find((c) => c.id === managedCategoryId.value) || categories.value[0],
+);
 const currentLibrary = computed(() =>
   libraries.value.find((kb) => kb.id === props.knowledgeBaseId),
 );
@@ -488,7 +458,9 @@ function stateLabel(doc: ManagedDocument) {
       (stageLabels[doc.task.stage] || doc.task.stage) +
       (doc.task.total != null
         ? " " + doc.task.completed + "/" + doc.task.total
-        : ['vision', 'ocr'].includes(doc.task.stage) ? ` · 已识别 ${doc.task.completed} 个区域（总量统计中）` : "")
+        : ["vision", "ocr"].includes(doc.task.stage)
+          ? ` · 已识别 ${doc.task.completed} 个区域（总量统计中）`
+          : "")
     );
   return (
     (
@@ -505,31 +477,37 @@ async function loadLibraries() {
   const result = await api.listKnowledgeBases();
   if (disposed) return;
   libraries.value = result;
-  if (!props.knowledgeBaseId && result[0])
-    emit("knowledge-base-change", result[0].id);
+  if (!props.knowledgeBaseId && result[0]) emit("knowledge-base-change", result[0].id);
 }
 async function fetchDocuments(pollOnly = false) {
   const id = props.knowledgeBaseId;
   if (!id || !currentLibrary.value || disposed) return;
   const sequence = ++requestSequence;
   const [documentResult, taskResult, categoryResult] = await Promise.allSettled([
-    api.listLibraryDocuments(id, {
-      page: page.value,
-      pageSize: 20,
-      name: keyword.value || undefined,
-      status: statusFilter.value || undefined,
-      categoryId: categoryFilter.value,
-    }, true),
+    api.listLibraryDocuments(
+      id,
+      {
+        page: page.value,
+        pageSize: 20,
+        name: keyword.value || undefined,
+        status: statusFilter.value || undefined,
+        categoryId: categoryFilter.value,
+      },
+      true,
+    ),
     api.listTasks(id, true),
-    pollOnly || categoriesForLibrary === id ? Promise.resolve(categories.value) : api.listCategories(id),
+    pollOnly || categoriesForLibrary === id
+      ? Promise.resolve(categories.value)
+      : api.listCategories(id),
   ]);
   // 一轮请求全部收敛后再重试，避免其中一个快速失败时其他请求持续堆积。
-  if (documentResult.status === 'rejected') throw documentResult.reason;
-  if (taskResult.status === 'rejected') throw taskResult.reason;
-  if (categoryResult.status === 'rejected') throw categoryResult.reason;
-  const result = documentResult.value, taskList = taskResult.value, categoryList = categoryResult.value;
-  if (disposed || sequence !== requestSequence || id !== props.knowledgeBaseId)
-    return;
+  if (documentResult.status === "rejected") throw documentResult.reason;
+  if (taskResult.status === "rejected") throw taskResult.reason;
+  if (categoryResult.status === "rejected") throw categoryResult.reason;
+  const result = documentResult.value,
+    taskList = taskResult.value,
+    categoryList = categoryResult.value;
+  if (disposed || sequence !== requestSequence || id !== props.knowledgeBaseId) return;
   documents.value = result.items;
   total.value = result.total;
   tasks.value = taskList;
@@ -537,17 +515,11 @@ async function fetchDocuments(pollOnly = false) {
   if (!pollOnly) categoriesForLibrary = id;
   if (props.documentId)
     selectedDocument.value =
-      result.items.find((d) => d.id === props.documentId) ||
-      selectedDocument.value;
+      result.items.find((d) => d.id === props.documentId) || selectedDocument.value;
   if (pendingActivation) {
     const pending = pendingActivation;
     const task = await api.getTask(pending.taskId);
-    if (
-      disposed ||
-      pendingActivation !== pending ||
-      id !== props.knowledgeBaseId
-    )
-      return;
+    if (disposed || pendingActivation !== pending || id !== props.knowledgeBaseId) return;
     if (task.status === "completed") {
       const doc = await api.getDocument(pending.documentId);
       if (
@@ -569,15 +541,29 @@ async function refresh() {
 }
 let pollFailures = 0;
 async function refreshData(pollOnly = false) {
-  if (!props.knowledgeBaseId || !currentLibrary.value || disposed ||
-    (!visible.value && !pendingActivation && !uploading.value)) return false;
-  const key = JSON.stringify([props.knowledgeBaseId, page.value, keyword.value,
-    categoryFilter.value, statusFilter.value, pollOnly]);
+  if (
+    !props.knowledgeBaseId ||
+    !currentLibrary.value ||
+    disposed ||
+    (!visible.value && !pendingActivation && !uploading.value)
+  )
+    return false;
+  const key = JSON.stringify([
+    props.knowledgeBaseId,
+    page.value,
+    keyword.value,
+    categoryFilter.value,
+    statusFilter.value,
+    pollOnly,
+  ]);
   if (managementFlight?.key === key) return managementFlight.request;
   const request = loadManagementData(pollOnly);
   managementFlight = { key, request };
-  try { return await request; }
-  finally { if (managementFlight?.request === request) managementFlight = undefined; }
+  try {
+    return await request;
+  } finally {
+    if (managementFlight?.request === request) managementFlight = undefined;
+  }
 }
 async function loadManagementData(pollOnly = false) {
   const id = props.knowledgeBaseId;
@@ -608,21 +594,19 @@ function libraryCommand(command: string) {
   else if (command === "delete") void deleteLibrary();
 }
 function documentAction(command: string, doc: ManagedDocument) {
-  if (command === 'preview') {
+  if (command === "preview") {
     visible.value = false;
-    emit('preview-document', { documentId: doc.id, ...(doc.activeVersionId ? { versionId: doc.activeVersionId } : {}) });
-  }
-  else if (command === "activate") activate(doc);
+    emit("preview-document", {
+      documentId: doc.id,
+      ...(doc.activeVersionId ? { versionId: doc.activeVersionId } : {}),
+    });
+  } else if (command === "activate") activate(doc);
   else if (command === "replace") chooseFile(doc);
   else if (command === "rename") renameDocument(doc);
   else if (command === "reindex") void run(() => api.reindexDocument(doc.id));
   else if (command === "delete") void deleteDocument(doc);
 }
-function editName(
-  title: string,
-  initial: string,
-  save: (name: string) => Promise<unknown>,
-) {
+function editName(title: string, initial: string, save: (name: string) => Promise<unknown>) {
   editor.value?.open({
     title,
     name: initial,
@@ -653,11 +637,7 @@ async function retryProcessingTask(task: ProcessingTask) {
   const libraryId = props.knowledgeBaseId;
   await run(async () => {
     await api.retryTask(task.id);
-    if (
-      task.kind === "index" &&
-      task.documentId &&
-      props.knowledgeBaseId === libraryId
-    )
+    if (task.kind === "index" && task.documentId && props.knowledgeBaseId === libraryId)
       pendingActivation = { documentId: task.documentId, taskId: task.id };
   });
 }
@@ -701,15 +681,10 @@ function editLibrary() {
   });
 }
 async function deleteLibrary() {
-  if (
-    !(await confirmed(
-      "删除知识库及其文档？关联工作台产物会删除，聊天记录保留为只读。",
-    ))
-  )
-    return;
+  if (!(await confirmed("删除知识库及其文档？关联工作台产物会删除，聊天记录保留为只读。"))) return;
   await run(async () => {
     await api.deleteKnowledgeBase(props.knowledgeBaseId!);
-    emit('knowledge-base-deleted', props.knowledgeBaseId!);
+    emit("knowledge-base-deleted", props.knowledgeBaseId!);
     emit("activated", "", null);
     visible.value = false;
     const result = await api.listKnowledgeBases();
@@ -719,11 +694,7 @@ async function deleteLibrary() {
   });
 }
 async function rebuildLibrary() {
-  if (
-    await confirmed(
-      "重新构建当前知识库的全部索引？处理期间仍可使用旧索引问答。",
-    )
-  )
+  if (await confirmed("重新构建当前知识库的全部索引？处理期间仍可使用旧索引问答。"))
     await run(() => api.reindexKnowledgeBase(props.knowledgeBaseId!));
 }
 function addCategory() {
@@ -732,18 +703,14 @@ function addCategory() {
 }
 function renameCategory(category: Category) {
   const id = props.knowledgeBaseId!;
-  editName("修改分类", category.name, (name) =>
-    api.updateCategory(id, category.id, name),
-  );
+  editName("修改分类", category.name, (name) => api.updateCategory(id, category.id, name));
 }
 async function removeCategory(category: Category) {
   if (await confirmed("删除分类后，其中的文档归入未分类。"))
     await run(() => api.deleteCategory(props.knowledgeBaseId!, category.id));
 }
 async function classify(doc: ManagedDocument, categoryId?: number) {
-  await run(() =>
-    api.updateDocument(doc.id, { categoryId: categoryId || null }),
-  );
+  await run(() => api.updateDocument(doc.id, { categoryId: categoryId || null }));
 }
 function renameDocument(doc: ManagedDocument) {
   editName("重命名文档（保留扩展名）", doc.filename, (name) =>
@@ -761,12 +728,7 @@ function clearSource() {
   emit("activated", "", null);
 }
 async function deleteDocument(doc: ManagedDocument) {
-  if (
-    !(await confirmed(
-      "删除此文档及关联摘要、闪卡和思维导图？历史聊天引用会保留。",
-    ))
-  )
-    return;
+  if (!(await confirmed("删除此文档及关联摘要、闪卡和思维导图？历史聊天引用会保留。"))) return;
   await run(async () => {
     await api.removeDocument(doc.id);
     emit("deleted", doc.id);
@@ -799,10 +761,9 @@ function cancelUpload() {
 }
 function fileMd5(file: File, signal: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(
-      new URL("../../workers/md5.worker.ts", import.meta.url),
-      { type: "module" },
-    );
+    const worker = new Worker(new URL("../../workers/md5.worker.ts", import.meta.url), {
+      type: "module",
+    });
     const abort = () => {
       worker.terminate();
       reject(new DOMException("已取消", "AbortError"));
@@ -813,8 +774,7 @@ function fileMd5(file: File, signal: AbortSignal): Promise<string> {
       worker.terminate();
     };
     worker.onmessage = ({ data }) => {
-      if (data.type === "progress")
-        uploadLabel.value = "计算文件指纹 " + data.percent + "%";
+      if (data.type === "progress") uploadLabel.value = "计算文件指纹 " + data.percent + "%";
       if (data.type === "done") {
         finish();
         resolve(data.md5);
@@ -839,11 +799,7 @@ async function sendFile(file: File) {
     currentLibrary.value.rebuildTaskId
   )
     return;
-  if (
-    !/\.(pdf|md)$/i.test(file.name) ||
-    !file.size ||
-    file.size > 128 * 1024 * 1024
-  ) {
+  if (!/\.(pdf|md)$/i.test(file.name) || !file.size || file.size > 128 * 1024 * 1024) {
     toast.warning("请选择不超过 128 MiB 的非空 PDF 或 Markdown");
     return;
   }
@@ -910,17 +866,10 @@ async function sendFile(file: File) {
           done++;
           uploadPercent.value = Math.round((done / count) * 100);
           uploadLabel.value =
-            (target ? "替换上传：" : "上传：") +
-            file.name +
-            " " +
-            done +
-            "/" +
-            count;
+            (target ? "替换上传：" : "上传：") + file.name + " " + done + "/" + count;
         }
       };
-      await Promise.all(
-        Array.from({ length: Math.min(3, pending.length) }, next),
-      );
+      await Promise.all(Array.from({ length: Math.min(3, pending.length) }, next));
       if (signal.aborted) throw new DOMException("已取消", "AbortError");
       uploadLabel.value = "正在合并文件并创建后台任务";
       accepted = await mergeChunks(md5, file.name, count, scope);
@@ -972,14 +921,19 @@ watch(
     if (!id) selectedDocument.value = null;
   },
 );
-watch([keyword, categoryFilter, statusFilter], ([name, category, status], [oldName, oldCategory, oldStatus]) => {
-  clearTimeout(searchTimer);
-  page.value = 1;
-  const update = () => { void refresh().catch(() => undefined); };
-  if (name && name !== oldName && category === oldCategory && status === oldStatus)
-    searchTimer = setTimeout(update, 250);
-  else update();
-});
+watch(
+  [keyword, categoryFilter, statusFilter],
+  ([name, category, status], [oldName, oldCategory, oldStatus]) => {
+    clearTimeout(searchTimer);
+    page.value = 1;
+    const update = () => {
+      void refresh().catch(() => undefined);
+    };
+    if (name && name !== oldName && category === oldCategory && status === oldStatus)
+      searchTimer = setTimeout(update, 250);
+    else update();
+  },
+);
 watch(visible, (open) => {
   if (open) {
     categoriesForLibrary = null;
@@ -1028,14 +982,9 @@ onMounted(async () => {
         !pendingActivation &&
         !uploading.value &&
         active.length &&
-        active.every(
-          (t) => t.waitingUntil && Date.parse(t.waitingUntil) > Date.now(),
-        );
+        active.every((t) => t.waitingUntil && Date.parse(t.waitingUntil) > Date.now());
       nextPollAt = onlyDelayed
-        ? Math.min(
-            Date.now() + 30000,
-            ...active.map((t) => Date.parse(t.waitingUntil!)),
-          )
+        ? Math.min(Date.now() + 30000, ...active.map((t) => Date.parse(t.waitingUntil!)))
         : 0;
       if (
         currentLibrary.value?.rebuildTaskId ||

@@ -1,8 +1,8 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import type { ParseContext } from './pdf-visual.service';
-import type { RegionBox } from './parsed-document';
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { ParseContext } from "./pdf-visual.service";
+import type { RegionBox } from "./parsed-document";
 import {
   groupNearbyCrops,
   hasPdfGraphics,
@@ -10,7 +10,7 @@ import {
   PdfRegion,
   textPositions,
   TextPosition,
-} from './pdf-layout';
+} from "./pdf-layout";
 import {
   analysisHealth,
   PdfAnalysisClient,
@@ -18,20 +18,20 @@ import {
   LayoutResult,
   validateLayout,
   verifyAnalysisManifest,
-} from './pdf-analysis.client';
-import { localRendering } from './vision-scheduler';
-import { discardPdfPageRaster, pdfRegionScale } from './pdf-render-cache';
-import { nativeTableMarkdown } from './pdf-native-table';
+} from "./pdf-analysis.client";
+import { localRendering } from "./vision-scheduler";
+import { discardPdfPageRaster, pdfRegionScale } from "./pdf-render-cache";
+import { nativeTableMarkdown } from "./pdf-native-table";
 
 export interface AdaptivePdfRegion extends PdfRegion {
-  recognition: 'ocr' | 'vision' | 'classify';
+  recognition: "ocr" | "vision" | "classify";
   analysisProfile: string;
   /** Expected text geometry in normalized page coordinates, before crop padding. */
   ocrExpectedBoxes?: RegionBox[];
 }
-const VERSION = 'adaptive-layout-v1';
-const NATIVE_REGION_VERSION = 'native-regions-v3-content-routing';
-const hash = (v: string | Buffer) => createHash('sha256').update(v).digest('hex');
+const VERSION = "adaptive-layout-v1";
+const NATIVE_REGION_VERSION = "native-regions-v3-content-routing";
+const hash = (v: string | Buffer) => createHash("sha256").update(v).digest("hex");
 const area = (b: RegionBox) => Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
 const intersection = (a: RegionBox, b: RegionBox) =>
   Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) *
@@ -50,17 +50,23 @@ const pad = (b: RegionBox, p: number): RegionBox => [
   Math.min(1, b[3] + p),
 ];
 const readable = (s: string) => s.trim().length > 0 && !/[\uFFFD\x00-\x08]/.test(s);
-const textKind = (r: LayoutRegion) => ['text', 'title', 'caption'].includes(r.kind);
-const visualKind = (r: LayoutRegion) => ['figure', 'table', 'unknown'].includes(r.kind);
+const textKind = (r: LayoutRegion) => ["text", "title", "caption"].includes(r.kind);
+const visualKind = (r: LayoutRegion) => ["figure", "table", "unknown"].includes(r.kind);
 
 function outsideTable(box: RegionBox, table: RegionBox): RegionBox[] {
   if (!intersection(box, table)) return [box];
-  const left = Math.max(box[0], table[0]), right = Math.min(box[2], table[2]);
-  const top = Math.max(box[1], table[1]), bottom = Math.min(box[3], table[3]);
-  return ([
-    [box[0], box[1], box[2], top], [box[0], bottom, box[2], box[3]],
-    [box[0], top, left, bottom], [right, top, box[2], bottom],
-  ] as RegionBox[]).filter(b => area(b) > 1e-8);
+  const left = Math.max(box[0], table[0]),
+    right = Math.min(box[2], table[2]);
+  const top = Math.max(box[1], table[1]),
+    bottom = Math.min(box[3], table[3]);
+  return (
+    [
+      [box[0], box[1], box[2], top],
+      [box[0], bottom, box[2], box[3]],
+      [box[0], top, left, bottom],
+      [right, top, box[2], bottom],
+    ] as RegionBox[]
+  ).filter((b) => area(b) > 1e-8);
 }
 
 async function check(scope: ParseContext) {
@@ -80,22 +86,31 @@ function tableSuspicion(texts: TextPosition[]) {
   const aligned = rows
     .map((row) => {
       const columns: [number, number][] = [];
-      for (const { bbox: [left, , right] } of row.sort((a, b) => a.bbox[0] - b.bbox[0])) {
+      for (const {
+        bbox: [left, , right],
+      } of row.sort((a, b) => a.bbox[0] - b.bbox[0])) {
         const previous = columns.at(-1);
-        if (previous && left - previous[1] <= 0.025)
-          previous[1] = Math.max(previous[1], right);
+        if (previous && left - previous[1] <= 0.025) previous[1] = Math.max(previous[1], right);
         else columns.push([left, right]);
       }
       return { top: row[0].bbox[1], columns };
     })
     // Two wide runs on the same baseline are ordinary parallel prose columns.
-    .filter(({ columns }) => columns.length >= 2 &&
-      !(columns.length === 2 && columns.every(([left, right]) => right - left > 0.22)));
-  return aligned.some((a, i) => aligned.slice(i + 1).some((b) =>
-    Math.abs(a.top - b.top) < 0.12 &&
-    a.columns.filter(([left]) => b.columns.some(([other]) => Math.abs(other - left) < 0.012))
-      .length >= 2,
-  ));
+    .filter(
+      ({ columns }) =>
+        columns.length >= 2 &&
+        !(columns.length === 2 && columns.every(([left, right]) => right - left > 0.22)),
+    );
+  return aligned.some((a, i) =>
+    aligned
+      .slice(i + 1)
+      .some(
+        (b) =>
+          Math.abs(a.top - b.top) < 0.12 &&
+          a.columns.filter(([left]) => b.columns.some(([other]) => Math.abs(other - left) < 0.012))
+            .length >= 2,
+      ),
+  );
 }
 
 function nativeCovers(box: RegionBox, texts: TextPosition[], native: string) {
@@ -104,8 +119,8 @@ function nativeCovers(box: RegionBox, texts: TextPosition[], native: string) {
   if (
     inside
       .map((t) => t.text)
-      .join('')
-      .replace(/\s/g, '').length === 0
+      .join("")
+      .replace(/\s/g, "").length === 0
   )
     return false;
   const bounds = inside.map((t) => t.bbox).reduce(union);
@@ -137,9 +152,9 @@ function explained(
   if (model.some((r) => visualKind(r) && intersection(ink, r.bbox) > 0)) return false;
   return model.some(
     (r) =>
-      r.score >= (r.kind === 'title' ? 0.5 : 0.85) &&
+      r.score >= (r.kind === "title" ? 0.5 : 0.85) &&
       covered(ink, pad(r.bbox, 0.008)) >= 0.85 &&
-      (r.kind === 'decoration' || (textKind(r) && nativeCovers(r.bbox, texts, native))),
+      (r.kind === "decoration" || (textKind(r) && nativeCovers(r.bbox, texts, native))),
   );
 }
 
@@ -156,20 +171,20 @@ function nativeRegionsReady(
   if (!readable(native) || !geometry.length) return false;
   const raster = new Set([
     ...[
-      'paintImageXObject',
-      'paintInlineImageXObject',
-      'paintImageXObjectRepeat',
-      'paintImageMaskXObject',
-      'paintImageMaskXObjectRepeat',
-      'paintImageMaskXObjectGroup',
-      'paintInlineImageXObjectGroup',
+      "paintImageXObject",
+      "paintInlineImageXObject",
+      "paintImageXObjectRepeat",
+      "paintImageMaskXObject",
+      "paintImageMaskXObjectRepeat",
+      "paintImageMaskXObjectGroup",
+      "paintInlineImageXObjectGroup",
     ].map((name) => ops[name]),
   ]);
   if (list.fnArray.some((op: number) => op === ops.shadingFill)) return false;
   if (
     geometry.some(
       (r) =>
-        r.kind !== 'region' ||
+        r.kind !== "region" ||
         !r.inkBox ||
         area(r.inkBox) <= 0 ||
         area(r.inkBox) > 0.45 ||
@@ -179,7 +194,9 @@ function nativeRegionsReady(
     return false;
   if (geometry.reduce((sum, r) => sum + area(r.inkBox!), 0) > 0.65) return false;
   const hasRaster = list.fnArray.some((op: number) => raster.has(op));
-  const outsideGraphics = texts.filter((t) => !geometry.some((r) => covered(t.bbox, r.bbox) > 0.75));
+  const outsideGraphics = texts.filter(
+    (t) => !geometry.some((r) => covered(t.bbox, r.bbox) > 0.75),
+  );
   if (!hasRaster) {
     const possibleOutlinedText = geometry.some((r) =>
       texts.some((t) => readable(t.text) && covered(r.inkBox!, pad(t.bbox, 0.008)) > 0.5),
@@ -196,8 +213,8 @@ function nativeRegionsReady(
   );
   const letters = valid
     .map((t) => t.text)
-    .join('')
-    .replace(/\s/g, '');
+    .join("")
+    .replace(/\s/g, "");
   if (
     letters.length < 16 ||
     valid.length < nonempty.length * 0.95 ||
@@ -213,8 +230,8 @@ function nativeRegionsReady(
   );
   const outsideLetters = outside
     .map((t) => t.text)
-    .join('')
-    .replace(/\s/g, '');
+    .join("")
+    .replace(/\s/g, "");
   // Text recovered mainly inside an image can be a sparse OCR scan layer.
   const outsideCenters = outside.map((t) => (t.bbox[1] + t.bbox[3]) / 2);
   if (
@@ -241,7 +258,7 @@ async function render(document: any, page: any, size: number, scope: ParseContex
     try {
       await page.render({ canvas: canvas.canvas, canvasContext: canvas.context, viewport }).promise;
       await check(scope);
-      return canvas.canvas.toBuffer('image/png') as Buffer;
+      return canvas.canvas.toBuffer("image/png") as Buffer;
     } finally {
       document.canvasFactory.destroy(canvas);
     }
@@ -262,20 +279,22 @@ async function layout(
   // A streaming caller supplies the immutable source identity. Standalone callers
   // without it can still safely cache after checking the actual raster.
   let bytes = scope.sourceHash ? undefined : await render(document, page, 1280, scope);
-  const key = hash(JSON.stringify({
-    source: scope.sourceHash || hash(bytes!),
-    manifest: health.manifest,
-    version: VERSION,
-  }));
+  const key = hash(
+    JSON.stringify({
+      source: scope.sourceHash || hash(bytes!),
+      manifest: health.manifest,
+      version: VERSION,
+    }),
+  );
   const target = directory && join(directory, `${page.pageNumber}-${key}.json`);
   let hit: LayoutResult | undefined;
   if (target) {
     try {
-      const raw = JSON.parse(await readFile(target, 'utf8'));
+      const raw = JSON.parse(await readFile(target, "utf8"));
       const valid = validateLayout(raw);
       if (raw.key === key && valid.manifest === health.manifest) hit = valid;
     } catch (error: any) {
-      if (error.code && error.code !== 'ENOENT') throw error;
+      if (error.code && error.code !== "ENOENT") throw error;
       scope.signal?.throwIfAborted();
     }
     await check(scope);
@@ -290,7 +309,7 @@ async function layout(
   if (directory && target) {
     await check(scope);
     await mkdir(directory, { recursive: true });
-    const temp = target + '.' + randomUUID() + '.tmp';
+    const temp = target + "." + randomUUID() + ".tmp";
     await writeFile(temp, JSON.stringify({ ...result, key }));
     await check(scope);
     await rename(temp, target);
@@ -311,12 +330,12 @@ export async function locateAdaptiveRegions(
   await check(scope);
   const viewport = page.getViewport({ scale: 1 });
   const texts = textPositions(content, viewport);
-  const { OPS } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const { OPS } = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const ops: any = OPS;
   const list: any = await localRendering.run(() => page.getOperatorList(), scope.signal);
   const hasGraphics = hasPdfGraphics(list, ops);
   const textPaint = new Set(
-    ['showText', 'showSpacedText', 'nextLineShowText', 'nextLineSetSpacingShowText'].map(
+    ["showText", "showSpacedText", "nextLineShowText", "nextLineSetSpacingShowText"].map(
       (k) => ops[k],
     ),
   );
@@ -342,58 +361,63 @@ export async function locateAdaptiveRegions(
       pdfRegionScale(viewport.width * (x1 - x0), viewport.height * (y1 - y0), limit),
     ).map((region) => ({
       ...region,
-      recognition: region.rasterOnly ? 'classify' : 'vision',
+      recognition: region.rasterOnly ? "classify" : "vision",
       analysisProfile: NATIVE_REGION_VERSION,
     }));
   }
   const result = await layout(document, page, scope, client);
   await check(scope);
   const model = result.regions;
-  const profile = hash(JSON.stringify({ version: 'adaptive-regions-v2-native-tables', manifest: result.manifest }));
+  const profile = hash(
+    JSON.stringify({ version: "adaptive-regions-v2-native-tables", manifest: result.manifest }),
+  );
   const seeds: AdaptivePdfRegion[] = [];
-  const add = (bbox: RegionBox, recognition: AdaptivePdfRegion['recognition'], reason?: string) => {
+  const add = (bbox: RegionBox, recognition: AdaptivePdfRegion["recognition"], reason?: string) => {
     seeds.push({
       bbox,
-      kind: 'region',
+      kind: "region",
       recognition,
       analysisProfile: profile,
       reason,
-      context: '',
+      context: "",
       textIndexes: [],
-      ...(recognition === 'ocr' ? { ocrExpectedBoxes: [bbox] } : {}),
+      ...(recognition === "ocr" ? { ocrExpectedBoxes: [bbox] } : {}),
     });
   };
   for (const r of model) {
     if (visualKind(r)) {
       // Native text is authoritative. A sparse scan layer or overlapping real graphic
       // cannot establish complete coverage, even when the model calls it a table.
-      const nativeOnly = (r.kind === 'table' || r.kind === 'unknown') &&
+      const nativeOnly =
+        (r.kind === "table" || r.kind === "unknown") &&
         nativeCovers(r.bbox, texts, native) &&
-        !geometry.some(g => intersection(g.inkBox || g.bbox, r.bbox) > 0);
-      if (nativeOnly && r.kind === 'unknown') continue;
-      const raster = r.kind === 'figure' &&
+        !geometry.some((g) => intersection(g.inkBox || g.bbox, r.bbox) > 0);
+      if (nativeOnly && r.kind === "unknown") continue;
+      const raster =
+        r.kind === "figure" &&
         geometry.some((candidate) => candidate.rasterOnly && covered(r.bbox, candidate.bbox) > 0.8);
-      add(r.bbox, raster ? 'classify' : 'vision',
-        r.kind === 'unknown' ? '版面检测无法确定区域类型' : undefined);
-      if (r.kind === 'table') {
+      add(
+        r.bbox,
+        raster ? "classify" : "vision",
+        r.kind === "unknown" ? "版面检测无法确定区域类型" : undefined,
+      );
+      if (r.kind === "table") {
         const seed = seeds.at(-1)!;
         seed.table = true;
         if (nativeOnly) seed.nativeTable = nativeTableMarkdown(texts, pad(r.bbox, 0.008));
       }
-    }
-    else if (r.kind === 'decoration' && r.score < 0.75) {
+    } else if (r.kind === "decoration" && r.score < 0.75) {
       const margin = r.bbox[3] <= 0.17 || r.bbox[1] >= 0.88;
       if (!(margin && readable(native) && !geometry.some((g) => intersection(g.bbox, r.bbox) > 0)))
-        add(r.bbox, 'vision', '版面检测无法可靠排除非文字内容');
-    }
-    else if (
+        add(r.bbox, "vision", "版面检测无法可靠排除非文字内容");
+    } else if (
       textKind(r) &&
       !nativeCovers(r.bbox, texts, native) &&
       !model.some((v) => visualKind(v) && covered(r.bbox, v.bbox) > 0.65)
     )
-      add(r.bbox, r.score >= 0.75 ? 'ocr' : 'classify');
+      add(r.bbox, r.score >= 0.75 ? "ocr" : "classify");
   }
-  for (const r of geometry.filter((r) => r.kind === 'region')) {
+  for (const r of geometry.filter((r) => r.kind === "region")) {
     if (explained(r, model, texts, native)) continue;
     const ink = pad(r.bbox, -0.02);
     // A page frame may enclose a real figure. Its presence is not evidence
@@ -401,7 +425,7 @@ export async function locateAdaptiveRegions(
     if (
       model.some(
         (m) =>
-          m.kind === 'decoration' &&
+          m.kind === "decoration" &&
           m.score >= 0.85 &&
           covered(ink, pad(m.bbox, 0.008)) >= 0.85 &&
           area(m.bbox) <= area(ink) * 1.5,
@@ -409,21 +433,22 @@ export async function locateAdaptiveRegions(
     )
       continue;
     const supplemental = r.inkBox || r.bbox;
-    const tables = seeds.filter(s => s.table).map(s => pad(s.bbox, 0.008));
-    if (tables.some(box => intersection(supplemental, box) > 0)) {
+    const tables = seeds.filter((s) => s.table).map((s) => pad(s.bbox, 0.008));
+    if (tables.some((box) => intersection(supplemental, box) > 0)) {
       // A shared page image/frame cannot enlarge one semantic table to cover its
       // neighbours. Retain any uncovered graphic fragments as bounded crops.
       let fragments = [supplemental];
-      for (const box of tables) fragments = fragments.flatMap(fragment => outsideTable(fragment, box));
+      for (const box of tables)
+        fragments = fragments.flatMap((fragment) => outsideTable(fragment, box));
       for (const box of fragments) {
-        add(box, r.rasterOnly ? 'classify' : 'vision', '绘图候选按表格边界切分');
+        add(box, r.rasterOnly ? "classify" : "vision", "绘图候选按表格边界切分");
         Object.assign(seeds.at(-1)!, { bounded: true, scaleLimit: r.scaleLimit });
       }
       continue;
     }
     const graphic = seeds.find(
       (s) =>
-        s.recognition !== 'ocr' &&
+        s.recognition !== "ocr" &&
         (covered(supplemental, pad(s.bbox, 0.02)) > 0.6 ||
           covered(s.bbox, pad(supplemental, 0.02)) > 0.6),
     );
@@ -431,31 +456,33 @@ export async function locateAdaptiveRegions(
       graphic.bbox = union(graphic.bbox, supplemental);
       graphic.scaleLimit = r.scaleLimit;
     } else if (!explained(r, model, texts, native))
-      add(r.bbox, r.rasterOnly ? 'classify' : 'vision', 'PDF 绘图候选未被版面模型解释');
+      add(r.bbox, r.rasterOnly ? "classify" : "vision", "PDF 绘图候选未被版面模型解释");
   }
-  const scan = geometry.find((r) => r.kind === 'scan');
+  const scan = geometry.find((r) => r.kind === "scan");
   if (!seeds.length && scan && !nativeCovers(scan.bbox, texts, native))
-    return [{
-      ...scan,
-      recognition: 'classify',
-      reason: '版面未覆盖扫描正文，检查整张扫描图',
-      analysisProfile: profile,
-    }];
+    return [
+      {
+        ...scan,
+        recognition: "classify",
+        reason: "版面未覆盖扫描正文，检查整张扫描图",
+        analysisProfile: profile,
+      },
+    ];
   // When nothing can be located, only an explicit fallback may consume a full page in vision.
   if (
     !seeds.length &&
-    (!readable(native) || geometry.some((r) => r.kind !== 'region')) &&
+    (!readable(native) || geometry.some((r) => r.kind !== "region")) &&
     !model.some((r) => textKind(r) || visualKind(r)) &&
-    !model.some((r) => r.kind === 'decoration' && r.score >= 0.85)
+    !model.some((r) => r.kind === "decoration" && r.score >= 0.85)
   ) {
     return [
       {
         bbox: [0, 0, 1, 1],
-        kind: 'fallback',
-        reason: '版面检测无法可靠定位内容',
+        kind: "fallback",
+        reason: "版面检测无法可靠定位内容",
         context: native.slice(0, 6000),
         textIndexes: texts.map((t) => t.index),
-        recognition: 'vision',
+        recognition: "vision",
         analysisProfile: profile,
       },
     ];
@@ -463,10 +490,10 @@ export async function locateAdaptiveRegions(
   for (const seed of seeds) {
     const anchor = seed.bbox;
     let bounds = anchor;
-    if (seed.recognition !== 'ocr' && !seed.table && !seed.bounded) {
+    if (seed.recognition !== "ocr" && !seed.table && !seed.bounded) {
       const nearby = [
         ...texts.filter((t) => t.text.trim()).map((t) => t.bbox),
-        ...model.filter((r) => r.kind === 'caption').map((r) => r.bbox),
+        ...model.filter((r) => r.kind === "caption").map((r) => r.bbox),
       ];
       for (const t of nearby) {
         const overlap = Math.min(anchor[2], t[2]) - Math.max(anchor[0], t[0]);
@@ -488,7 +515,10 @@ export async function locateAdaptiveRegions(
           b = seeds[j];
         const horizontal = Math.min(a.bbox[2], b.bbox[2]) - Math.max(a.bbox[0], b.bbox[0]);
         if (
-          a.table || b.table || a.bounded || b.bounded ||
+          a.table ||
+          b.table ||
+          a.bounded ||
+          b.bounded ||
           a.recognition !== b.recognition ||
           intersection(a.bbox, b.bbox) <= 0 ||
           horizontal < 0.15 * Math.min(a.bbox[2] - a.bbox[0], b.bbox[2] - b.bbox[0])
@@ -503,11 +533,10 @@ export async function locateAdaptiveRegions(
   }
   for (const seed of seeds) {
     if (area(seed.bbox) > 0.85) {
-      if (seed.recognition === 'ocr' && geometry.some((r) => r.kind === 'scan'))
-        seed.kind = 'scan';
-      if (seed.recognition === 'vision') {
-        seed.kind = 'fallback';
-        seed.reason ||= '版面识别区域接近整页，无法可靠分离';
+      if (seed.recognition === "ocr" && geometry.some((r) => r.kind === "scan")) seed.kind = "scan";
+      if (seed.recognition === "vision") {
+        seed.kind = "fallback";
+        seed.reason ||= "版面识别区域接近整页，无法可靠分离";
       }
     }
     const nearby = texts.filter((t) => {
@@ -522,7 +551,7 @@ export async function locateAdaptiveRegions(
     });
     seed.context = nearby
       .map((t) => t.text)
-      .join('\n')
+      .join("\n")
       .slice(0, 4000);
     seed.textIndexes = nearby.map((t) => t.index);
   }

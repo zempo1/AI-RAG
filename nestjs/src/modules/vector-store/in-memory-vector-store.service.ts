@@ -1,7 +1,7 @@
 /** 实现内存向量存储与相似度检索。 */
-import { Injectable } from '@nestjs/common';
-import { VectorStore, Segment, Match, SearchScope } from './vector-store.interface';
-import { pointId } from './point-id';
+import { Injectable } from "@nestjs/common";
+import { VectorStore, Segment, Match, SearchScope } from "./vector-store.interface";
+import { pointId } from "./point-id";
 
 @Injectable()
 export class InMemoryVectorStore extends VectorStore {
@@ -29,11 +29,11 @@ export class InMemoryVectorStore extends VectorStore {
       !vector.every(Number.isFinite) ||
       !vector.some((v) => v !== 0)
     )
-      throw new Error('Invalid embedding vector or dimension mismatch');
+      throw new Error("Invalid embedding vector or dimension mismatch");
   }
 
   addAll(vectors: number[][], segments: Segment[]): void {
-    if (vectors.length !== segments.length) throw new Error('Embedding count mismatch');
+    if (vectors.length !== segments.length) throw new Error("Embedding count mismatch");
     if (!vectors.length) return;
     const dimension = this.dimension ?? vectors[0].length;
     vectors.forEach((v) => this.validate(v, dimension));

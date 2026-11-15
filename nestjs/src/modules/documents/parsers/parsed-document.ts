@@ -8,16 +8,16 @@ export type RegionBox = [number, number, number, number];
 export interface RegionImageRef extends PageImageRef {
   regionId: string;
   bbox: RegionBox;
-  kind: 'region' | 'scan' | 'fallback';
+  kind: "region" | "scan" | "fallback";
 }
-export type ContentType = 'native' | 'ocr' | 'table' | 'figure';
+export type ContentType = "native" | "ocr" | "table" | "figure";
 /** UTF-16 half-open range in final parsed text; normalized intrinsic page viewport. */
 export interface PdfSourceAnchor {
   page: number;
   start: number;
   end: number;
   rects: RegionBox[];
-  kind: 'native' | 'ocr' | 'region';
+  kind: "native" | "ocr" | "region";
 }
 /** A local vector grid. Coordinates follow the same rotated viewport as source anchors. */
 export interface PdfTableLocation {

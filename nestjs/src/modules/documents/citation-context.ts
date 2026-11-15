@@ -1,7 +1,7 @@
 /** Expand presentation only. Retrieval offsets and saved evidence stay unchanged. */
 export function expandCitationContext(text: string, start: number, end: number) {
-  const previousSeparator = start >= 2 ? text.lastIndexOf('\n\n', start - 2) : -1;
-  const separator = text.indexOf('\n\n', end);
+  const previousSeparator = start >= 2 ? text.lastIndexOf("\n\n", start - 2) : -1;
+  const separator = text.indexOf("\n\n", end);
   const paragraphEnd = separator === -1 ? text.length : separator;
   const left = previousSeparator === -1 ? 0 : previousSeparator + 2;
   if (paragraphEnd - left <= 1200) {
@@ -23,6 +23,10 @@ export function expandCitationContext(text: string, start: number, end: number) 
       break;
     }
   }
-  return text.slice(first ?? (windowStart === 0 ? 0 : start),
-    last ?? (windowEnd === text.length ? text.length : end)).trim();
+  return text
+    .slice(
+      first ?? (windowStart === 0 ? 0 : start),
+      last ?? (windowEnd === text.length ? text.length : end),
+    )
+    .trim();
 }

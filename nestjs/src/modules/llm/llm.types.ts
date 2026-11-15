@@ -5,24 +5,36 @@ export interface ModelUsage {
   outputTokens: number;
   totalTokens: number;
 }
-export interface ToolCall { id: string; name: string; args: Record<string, unknown> }
+export interface ToolCall {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+}
 export type ToolMessage =
-  | { role: 'system' | 'user'; content: string }
-  | { role: 'assistant'; content: string; tool_calls?: { id: string; type: 'function'; function: { name: string; arguments: string } }[] }
-  | { role: 'tool'; content: string; tool_call_id: string };
+  | { role: "system" | "user"; content: string }
+  | {
+      role: "assistant";
+      content: string;
+      tool_calls?: {
+        id: string;
+        type: "function";
+        function: { name: string; arguments: string };
+      }[];
+    }
+  | { role: "tool"; content: string; tool_call_id: string };
 export interface ToolDefinition {
-  type: 'function';
+  type: "function";
   function: { name: string; description?: string; parameters: Record<string, unknown> };
 }
 export interface ModelCallRequest {
-  kind: 'complete' | 'stream' | 'tools';
+  kind: "complete" | "stream" | "tools";
   model: string;
   /** Local budget estimation only; callers must not persist prompts or credentials in traces. */
   input: unknown;
   maxOutputTokens: number;
 }
 export interface ModelCallOutcome {
-  status: 'success' | 'error' | 'cancelled';
+  status: "success" | "error" | "cancelled";
   /** Missing usage means unknown; it must not be counted as a zero-token call. */
   usage?: ModelUsage;
   error?: unknown;
@@ -34,7 +46,7 @@ export interface ModelCallObserver {
   settle(reservationId: string, outcome: ModelCallOutcome): Promise<void>;
 }
 export interface ModelExecutionOptions {
-  role?: 'chat' | 'agent';
+  role?: "chat" | "agent";
   signal?: AbortSignal;
   observer?: ModelCallObserver;
   model?: string;
@@ -45,7 +57,9 @@ export interface ModelExecutionOptions {
   /** Applied only to provider/model combinations with a documented thinking switch. */
   thinking?: boolean;
 }
-export interface ToolInvocationOptions extends ModelExecutionOptions { apiKey?: string }
+export interface ToolInvocationOptions extends ModelExecutionOptions {
+  apiKey?: string;
+}
 export interface ToolInvocationResult {
   content: string;
   toolCalls: ToolCall[];

@@ -20,29 +20,15 @@
 
     <main class="hero-section">
       <div class="hero-content">
-        <h1 class="hero-title">
-          您的个人 <span class="gradient-text">知识大脑</span>
-        </h1>
+        <h1 class="hero-title">您的个人 <span class="gradient-text">知识大脑</span></h1>
         <p class="hero-subtitle">
-          上传您的文档，即刻开启基于私有数据的 AI
-          对话。支持流式响应、思维导图生成及多用户隔离。
+          上传您的文档，即刻开启基于私有数据的 AI 对话。支持流式响应、思维导图生成及多用户隔离。
         </p>
         <div class="hero-btns">
-          <el-button
-            type="primary"
-            size="large"
-            round
-            class="main-btn"
-            @click="showAuth = true"
-          >
+          <el-button type="primary" size="large" round class="main-btn" @click="showAuth = true">
             开始体验 <el-icon class="el-icon--right"><ArrowRight /></el-icon>
           </el-button>
-          <el-button
-            size="large"
-            round
-            class="secondary-btn"
-            @click="scrollTo('preview')"
-          >
+          <el-button size="large" round class="secondary-btn" @click="scrollTo('preview')">
             查看演示
           </el-button>
         </div>
@@ -57,9 +43,7 @@
         <div class="window-body">
           <div class="chat-msg user">
             <div class="avatar">U</div>
-            <div class="bubble">
-              你能帮我总结一下这个 PDF 文档的核心内容吗？
-            </div>
+            <div class="bubble">你能帮我总结一下这个 PDF 文档的核心内容吗？</div>
           </div>
           <div class="chat-msg assistant">
             <div class="avatar ai">AI</div>
@@ -103,9 +87,7 @@
           <div class="auth-header">
             <h2>{{ isLogin ? "登录" : "注册" }}</h2>
             <p>
-              {{
-                isLogin ? "继续您的 AI 探索之路" : "创建账号，开启您的智能空间"
-              }}
+              {{ isLogin ? "继续您的 AI 探索之路" : "创建账号，开启您的智能空间" }}
             </p>
           </div>
 
@@ -157,14 +139,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onBeforeUnmount } from "vue";
-import {
-  ArrowRight,
-  Document,
-  Connection,
-  Lock,
-  User,
-  Close,
-} from "@element-plus/icons-vue";
+import { ArrowRight, Document, Connection, Lock, User, Close } from "@element-plus/icons-vue";
 import request from "../../utils/request";
 import { useToast } from "../../composables/useToast";
 
@@ -235,9 +210,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   clearInterval(streamInterval);
 });
-
-
-
 </script>
 
 <style lang="scss" src="./LoginLanding.scss" scoped></style>

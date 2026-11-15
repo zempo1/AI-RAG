@@ -305,7 +305,7 @@
 
             &:hover,
             &:focus-visible,
-            &[aria-expanded='true'] {
+            &[aria-expanded="true"] {
               color: var(--text-primary);
               background: rgba(255, 255, 255, 0.08);
             }

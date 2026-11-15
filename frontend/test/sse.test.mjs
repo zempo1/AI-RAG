@@ -19,11 +19,7 @@ test("decodes UTF-8 and SSE frames split at every byte, with multiple named even
 test("joins multiline data, ignores comments and retains unfinished lines", () => {
   const decoder = new SseDecoder();
   assert.deepEqual(
-    decoder.feed(
-      new TextEncoder().encode(
-        ": heartbeat\n\nevent: sources\ndata: first\ndata: sec",
-      ),
-    ),
+    decoder.feed(new TextEncoder().encode(": heartbeat\n\nevent: sources\ndata: first\ndata: sec")),
     [],
   );
   assert.deepEqual(decoder.feed(new TextEncoder().encode("ond\n\n")), [

@@ -11,10 +11,7 @@ export interface DocumentAnalysis {
   createdAt: string;
 }
 
-export const generateAnalysis = (
-  documentId: number,
-  type: "SUMMARY" | "OUTLINE" | "FLASHCARD",
-) => {
+export const generateAnalysis = (documentId: number, type: "SUMMARY" | "OUTLINE" | "FLASHCARD") => {
   return request.post<any, DocumentAnalysis>(
     "/api/analysis/generate",
     { documentId, type },

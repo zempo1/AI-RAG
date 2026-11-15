@@ -56,7 +56,11 @@ export function getCitationContext(source: Citation, signal: AbortSignal) {
   return request.get<unknown, { text: string }>(
     `/api/documents/${source.documentId}/versions/${source.versionId}/citation-context`,
     {
-      params: { revisionId: source.indexRevisionId, start: source.location?.start, end: source.location?.end },
+      params: {
+        revisionId: source.indexRevisionId,
+        start: source.location?.start,
+        end: source.location?.end,
+      },
       signal,
       silentError: true,
     },
@@ -75,7 +79,7 @@ export interface Citation {
   sectionTitle?: string;
   sourceSegments?: {
     text: string;
-    location: NonNullable<Citation['location']>;
+    location: NonNullable<Citation["location"]>;
     chunkIds: number[];
   }[];
   score: number;
@@ -94,36 +98,38 @@ export interface Citation {
       start: number;
       end: number;
       rects: [number, number, number, number][];
-      kind: 'native' | 'ocr' | 'region';
+      kind: "native" | "ocr" | "region";
     }[];
-    contentType?: 'native' | 'ocr' | 'table' | 'figure';
+    contentType?: "native" | "ocr" | "table" | "figure";
     pageImage?: { versionId: number; page: number; profile: string };
-    regionImage?: { versionId: number; page: number; profile: string; regionId: string;
-      bbox: [number, number, number, number]; kind: 'region' | 'scan' | 'fallback' };
+    regionImage?: {
+      versionId: number;
+      page: number;
+      profile: string;
+      regionId: string;
+      bbox: [number, number, number, number];
+      kind: "region" | "scan" | "fallback";
+    };
     relatedParagraphs?: number[];
   } | null;
 }
 export const getCitationPageImage = (source: Citation, signal?: AbortSignal) => {
   const region = source.location?.regionImage;
   const image = region || source.location?.pageImage;
-  if (!image) return Promise.reject(new Error('此来源没有页面图片'));
+  if (!image) return Promise.reject(new Error("此来源没有页面图片"));
   return request.get<any, Blob>(
-    `/api/documents/${source.documentId}/versions/${image.versionId}/pages/${image.page}${region ? '/regions/' + region.regionId : ''}/image`,
-    { params: { profile: image.profile }, responseType: 'blob', signal },
+    `/api/documents/${source.documentId}/versions/${image.versionId}/pages/${image.page}${region ? "/regions/" + region.regionId : ""}/image`,
+    { params: { profile: image.profile }, responseType: "blob", signal },
   );
 };
-export const listKnowledgeBases = () =>
-  request.get<any, KnowledgeBase[]>("/api/knowledge-bases");
+export const listKnowledgeBases = () => request.get<any, KnowledgeBase[]>("/api/knowledge-bases");
 export const createKnowledgeBase = (name: string, description = "") =>
   request.post<any, KnowledgeBase>("/api/knowledge-bases", {
     name,
     description,
   });
-export const updateKnowledgeBase = (
-  id: number,
-  name: string,
-  description = "",
-) => request.put("/api/knowledge-bases/" + id, { name, description });
+export const updateKnowledgeBase = (id: number, name: string, description = "") =>
+  request.put("/api/knowledge-bases/" + id, { name, description });
 export const deleteKnowledgeBase = (id: number) =>
   request.delete<any, { taskId: number }>("/api/knowledge-bases/" + id);
 export const listCategories = (id: number) =>
@@ -155,17 +161,15 @@ export const removeDocument = (id: number) =>
 export const reindexDocument = (id: number) =>
   request.post<any, AcceptedDocument>("/api/documents/" + id + "/reindex");
 export const reindexKnowledgeBase = (id: number) =>
-  request.post<any, { taskId: number }>(
-    "/api/knowledge-bases/" + id + "/reindex",
-  );
+  request.post<any, { taskId: number }>("/api/knowledge-bases/" + id + "/reindex");
 export const getTask = (id: number, silentError = false) =>
   request.get<any, ProcessingTask>("/api/tasks/" + id, { silentError });
 export const listTasks = (knowledgeBaseId: number, silentError = false) =>
   request.get<any, ProcessingTask[]>("/api/tasks", {
-    params: { knowledgeBaseId }, silentError,
+    params: { knowledgeBaseId },
+    silentError,
   });
-export const retryTask = (id: number) =>
-  request.post("/api/tasks/" + id + "/retry");
+export const retryTask = (id: number) => request.post("/api/tasks/" + id + "/retry");
 export const dismissTask = (id: number) => request.delete("/api/tasks/" + id);
 export const clearCompletedTasks = (knowledgeBaseId: number) =>
   request.delete("/api/tasks", { params: { knowledgeBaseId } });

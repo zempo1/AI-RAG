@@ -1,24 +1,24 @@
-import { ConfigService } from '@nestjs/config';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { createCanvas, loadImage } from '@napi-rs/canvas';
-import { PdfVisualService } from '../src/modules/documents/parsers/pdf-visual.service';
-import { PageAssetsService } from '../src/modules/documents/page-assets.service';
-import { MemoryStore } from '../src/persistence/memory.store';
-import PDFDocument from 'pdfkit';
-import { DocumentParser } from '../src/modules/documents/parsers/document.parser';
+import { ConfigService } from "@nestjs/config";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { PdfVisualService } from "../src/modules/documents/parsers/pdf-visual.service";
+import { PageAssetsService } from "../src/modules/documents/page-assets.service";
+import { MemoryStore } from "../src/persistence/memory.store";
+import PDFDocument from "pdfkit";
+import { DocumentParser } from "../src/modules/documents/parsers/document.parser";
 
 const scope = { userId: 1, documentId: 1, versionId: 1 };
-const profile = 'a'.repeat(64);
+const profile = "a".repeat(64);
 const region = {
   bbox: [0, 0, 0.5, 0.5],
-  kind: 'region',
-  context: 'exact context',
+  kind: "region",
+  context: "exact context",
   textIndexes: [],
-  recognition: 'ocr',
-  analysisProfile: 'ocr-v1',
+  recognition: "ocr",
+  analysisProfile: "ocr-v1",
 };
 function fixture() {
   const document = {
@@ -26,7 +26,7 @@ function fixture() {
     canvasFactory: {
       create(w: number, h: number) {
         const canvas = createCanvas(w, h);
-        return { canvas, context: canvas.getContext('2d') };
+        return { canvas, context: canvas.getContext("2d") };
       },
       destroy() {},
     },
@@ -38,10 +38,10 @@ function fixture() {
   };
   return { document, page };
 }
-describe('hybrid PDF recognition', () => {
+describe("hybrid PDF recognition", () => {
   let dir: string;
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'pdf-hybrid-'));
+    dir = await mkdtemp(join(tmpdir(), "pdf-hybrid-"));
   });
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
@@ -49,7 +49,7 @@ describe('hybrid PDF recognition', () => {
   function setup(
     ocr: () => Promise<any>,
     complete = async () =>
-      JSON.stringify({ blocks: [{ type: 'figure', text: 'fallback diagram' }] }),
+      JSON.stringify({ blocks: [{ type: "figure", text: "fallback diagram" }] }),
   ) {
     const config = new ConfigService({ PAGE_ASSETS_DIR: dir });
     const visual: any = new PdfVisualService(
@@ -57,88 +57,154 @@ describe('hybrid PDF recognition', () => {
       { complete } as any,
       new PageAssetsService(config, new MemoryStore()),
     );
-    visual.analysis = { ocr, health: async () => ({ ready: true, manifest: 'ocr-v1' }) };
+    visual.analysis = { ocr, health: async () => ({ ready: true, manifest: "ocr-v1" }) };
     const f = fixture();
     return {
       ...f,
       visual,
       run: (r = region, p = f.page, s = scope) =>
-        visual.region(f.document, p, '', s, profile, r, 1),
+        visual.region(f.document, p, "", s, profile, r, 1),
     };
   }
-  it('uses verified native table rows without calling vision or rasterizing a crop', async () => {
-    const f = setup(async () => { throw new Error('OCR must not run'); }, async () => {
-      throw new Error('native text must not be regenerated');
-    });
-    f.page.render = () => { throw new Error('native table must not render'); };
+  it("uses verified native table rows without calling vision or rasterizing a crop", async () => {
+    const f = setup(
+      async () => {
+        throw new Error("OCR must not run");
+      },
+      async () => {
+        throw new Error("native text must not be regenerated");
+      },
+    );
+    f.page.render = () => {
+      throw new Error("native table must not render");
+    };
     const completed: number[] = [];
-    const blocks = await f.run({ ...region, recognition: 'vision', table: true,
-      nativeTable: '| | |\n| --- | --- |\n| Item | 42 |' } as any, f.page,
-      { ...scope, completed: async () => { completed.push(1); } } as any);
-    expect(blocks[0]).toMatchObject({ type: 'table', text: '| | |\n| --- | --- |\n| Item | 42 |',
-      sourceBox: [0, 0, 0.5, 0.5], anchorKind: 'region' });
+    const blocks = await f.run(
+      {
+        ...region,
+        recognition: "vision",
+        table: true,
+        nativeTable: "| | |\n| --- | --- |\n| Item | 42 |",
+      } as any,
+      f.page,
+      {
+        ...scope,
+        completed: async () => {
+          completed.push(1);
+        },
+      } as any,
+    );
+    expect(blocks[0]).toMatchObject({
+      type: "table",
+      text: "| | |\n| --- | --- |\n| Item | 42 |",
+      sourceBox: [0, 0, 0.5, 0.5],
+      anchorKind: "region",
+    });
     expect(completed).toEqual([1]);
   });
-  it('repairs double-escaped Unicode text before it can become a successful cached result', async () => {
+  it("repairs double-escaped Unicode text before it can become a successful cached result", async () => {
     let calls = 0;
-    const f = setup(async () => { throw new Error('OCR must not run'); }, async () => {
-      calls++;
-      return JSON.stringify({ blocks: [{ type: 'table', text: calls === 1 ? String.raw`| \u6761 \u4ef6 |` : '| 条件 | 内容 |' }] });
-    });
-    const target = { ...region, recognition: 'vision' };
-    expect((await f.run(target))[0].text).toBe('| 条件 | 内容 |');
+    const f = setup(
+      async () => {
+        throw new Error("OCR must not run");
+      },
+      async () => {
+        calls++;
+        return JSON.stringify({
+          blocks: [
+            {
+              type: "table",
+              text: calls === 1 ? String.raw`| \u6761 \u4ef6 |` : "| 条件 | 内容 |",
+            },
+          ],
+        });
+      },
+    );
+    const target = { ...region, recognition: "vision" };
+    expect((await f.run(target))[0].text).toBe("| 条件 | 内容 |");
     expect(calls).toBe(2);
-    expect((await f.run(target))[0].text).toBe('| 条件 | 内容 |');
+    expect((await f.run(target))[0].text).toBe("| 条件 | 内容 |");
     expect(calls).toBe(2);
   });
-  it('rejects repeated invalid text without persisting a recognition or region result', async () => {
-    const f = setup(async () => { throw new Error('OCR must not run'); }, async () =>
-      JSON.stringify({ blocks: [{ type: 'table', text: String.raw`\u6761 \u4ef6` }] }));
-    await expect(f.run({ ...region, recognition: 'vision' })).rejects.toThrow(/转义/);
-    expect((await readdir(dir, { recursive: true })).filter(name => name.endsWith('.json'))).toEqual([]);
+  it("rejects repeated invalid text without persisting a recognition or region result", async () => {
+    const f = setup(
+      async () => {
+        throw new Error("OCR must not run");
+      },
+      async () => JSON.stringify({ blocks: [{ type: "table", text: String.raw`\u6761 \u4ef6` }] }),
+    );
+    await expect(f.run({ ...region, recognition: "vision" })).rejects.toThrow(/转义/);
+    expect(
+      (await readdir(dir, { recursive: true })).filter((name) => name.endsWith(".json")),
+    ).toEqual([]);
   });
-  it('bounds the initial request and format repair by one shared vision deadline', async () => {
+  it("bounds the initial request and format repair by one shared vision deadline", async () => {
     let calls = 0;
-    const f = setup(async () => { throw new Error('OCR must not run'); }, async (...args: any[]) => {
-      calls++;
-      if (calls === 1) {
-        await new Promise(resolve => setTimeout(resolve, 65));
-        return 'invalid JSON';
-      }
-      const signal = args[3] as AbortSignal;
-      return new Promise<string>((resolve, reject) => {
-        const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve('{"blocks":[]}'); }, 130);
-        const abort = () => { clearTimeout(timer); reject(signal.reason); };
-        if (signal?.aborted) abort();
-        else signal?.addEventListener('abort', abort, { once: true });
-      });
-    });
+    const f = setup(
+      async () => {
+        throw new Error("OCR must not run");
+      },
+      async (...args: any[]) => {
+        calls++;
+        if (calls === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 65));
+          return "invalid JSON";
+        }
+        const signal = args[3] as AbortSignal;
+        return new Promise<string>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            signal?.removeEventListener("abort", abort);
+            resolve('{"blocks":[]}');
+          }, 130);
+          const abort = () => {
+            clearTimeout(timer);
+            reject(signal.reason);
+          };
+          if (signal?.aborted) abort();
+          else signal?.addEventListener("abort", abort, { once: true });
+        });
+      },
+    );
     const get = f.visual.config.get.bind(f.visual.config);
-    f.visual.config.get = (key: string) => key === 'VISION_TIMEOUT_MS' ? 110 : get(key);
-    await expect(f.run({ ...region, recognition: 'vision' })).rejects.toThrow(/time|超时/i);
+    f.visual.config.get = (key: string) => (key === "VISION_TIMEOUT_MS" ? 110 : get(key));
+    await expect(f.run({ ...region, recognition: "vision" })).rejects.toThrow(/time|超时/i);
     expect(calls).toBe(2);
   });
-  it('logs request start, response status and validation failure without logging document contents', async () => {
+  it("logs request start, response status and validation failure without logging document contents", async () => {
     let calls = 0;
     const logs: any[] = [];
-    const f = setup(async () => { throw new Error('OCR must not run'); }, async () => {
-      return ++calls === 1 ? 'private source invalid JSON' : '{"blocks":[]}';
-    });
-    f.visual.logger = { log: (s: string) => logs.push(JSON.parse(s)), warn: (s: string) => logs.push(JSON.parse(s)) };
-    await f.run({ ...region, recognition: 'vision' });
-    expect(logs).toContainEqual(expect.objectContaining({ event: 'pdf-vision-request-start', page: 1, repair: false }));
-    expect(logs).toContainEqual(expect.objectContaining({ event: 'pdf-vision-request', status: 'success' }));
-    expect(logs).toContainEqual(expect.objectContaining({ event: 'pdf-vision-output-invalid', outputLength: 27 }));
-    expect(JSON.stringify(logs)).not.toContain('private source');
+    const f = setup(
+      async () => {
+        throw new Error("OCR must not run");
+      },
+      async () => {
+        return ++calls === 1 ? "private source invalid JSON" : '{"blocks":[]}';
+      },
+    );
+    f.visual.logger = {
+      log: (s: string) => logs.push(JSON.parse(s)),
+      warn: (s: string) => logs.push(JSON.parse(s)),
+    };
+    await f.run({ ...region, recognition: "vision" });
+    expect(logs).toContainEqual(
+      expect.objectContaining({ event: "pdf-vision-request-start", page: 1, repair: false }),
+    );
+    expect(logs).toContainEqual(
+      expect.objectContaining({ event: "pdf-vision-request", status: "success" }),
+    );
+    expect(logs).toContainEqual(
+      expect.objectContaining({ event: "pdf-vision-output-invalid", outputLength: 27 }),
+    );
+    expect(JSON.stringify(logs)).not.toContain("private source");
   });
-  it('reports OCR and vision with completed region counts and never regresses the recognition stage', async () => {
+  it("reports OCR and vision with completed region counts and never regresses the recognition stage", async () => {
     const pdf = new PDFDocument();
     const pieces: Buffer[] = [];
     const bytes = new Promise<Buffer>((resolve) => {
-      pdf.on('data', (b) => pieces.push(b));
-      pdf.on('end', () => resolve(Buffer.concat(pieces)));
+      pdf.on("data", (b) => pieces.push(b));
+      pdf.on("end", () => resolve(Buffer.concat(pieces)));
     });
-    pdf.text('native');
+    pdf.text("native");
     pdf.end();
     const stages: any[] = [];
     const visual: any = {
@@ -147,99 +213,107 @@ describe('hybrid PDF recognition', () => {
       concurrency: 1,
       page: async (_d: any, _p: any, _n: any, s: any) => {
         await s.discovered(2);
-        await s.stage('ocr', 1, 1);
+        await s.stage("ocr", 1, 1);
         await s.completed();
-        await s.stage('vision', 1, 1);
-        await s.stage('ocr', 1, 1);
+        await s.stage("vision", 1, 1);
+        await s.stage("ocr", 1, 1);
         await s.completed();
         return { blocks: [] };
       },
     };
-    await new DocumentParser(visual).parseStructured(await bytes, 'a.pdf', undefined, {
+    await new DocumentParser(visual).parseStructured(await bytes, "a.pdf", undefined, {
       ...scope,
       stage: async (...args) => {
         stages.push(args);
       },
     });
-    expect(stages[0]).toEqual(['ocr', 0, 2]);
-    expect(stages.at(-1)).toEqual(['vision', 2, 2]);
-    const firstVision = stages.findIndex((row) => row[0] === 'vision');
-    expect(stages.slice(firstVision).every((row) => row[0] === 'vision')).toBe(true);
+    expect(stages[0]).toEqual(["ocr", 0, 2]);
+    expect(stages.at(-1)).toEqual(["vision", 2, 2]);
+    const firstVision = stages.findIndex((row) => row[0] === "vision");
+    expect(stages.slice(firstVision).every((row) => row[0] === "vision")).toBe(true);
   });
-  it('keeps native fast-path cache independent of another page loading a local model', async () => {
-    const f = setup(async () => { throw new Error('OCR must not run'); });
-    const target = { ...region, recognition: 'vision' };
+  it("keeps native fast-path cache independent of another page loading a local model", async () => {
+    const f = setup(async () => {
+      throw new Error("OCR must not run");
+    });
+    const target = { ...region, recognition: "vision" };
     await f.run(target);
-    f.visual.analysis.modelManifest = 'local-model-loaded-by-another-page';
-    f.page.render = () => { throw new Error('cached PNG must not be rendered again'); };
-    expect((await f.run(target))[0].text).toBe('fallback diagram');
+    f.visual.analysis.modelManifest = "local-model-loaded-by-another-page";
+    f.page.render = () => {
+      throw new Error("cached PNG must not be rendered again");
+    };
+    expect((await f.run(target))[0].text).toBe("fallback diagram");
   });
-  it('recognizes text regions locally and reuses identical OCR images across pages with fresh references', async () => {
+  it("recognizes text regions locally and reuses identical OCR images across pages with fresh references", async () => {
     let calls = 0,
       vision = 0;
     const f = setup(
       async () => {
         calls++;
         return {
-          manifest: 'ocr-v1',
-          blocks: [{ text: 'local text', bbox: [0, 0, 1, 1], score: 0.99 }],
+          manifest: "ocr-v1",
+          blocks: [{ text: "local text", bbox: [0, 0, 1, 1], score: 0.99 }],
         };
       },
       async () => {
         vision++;
-        return '{}';
+        return "{}";
       },
     );
     const a = await f.run();
     const b = await f.run(region, { ...f.page, pageNumber: 2 });
-    expect(a[0].text).toBe('local text');
+    expect(a[0].text).toBe("local text");
     expect(b[0].regionImage.page).toBe(2);
     expect(calls).toBe(1);
     expect(vision).toBe(0);
   });
-  it.each([true, false])('routes a bitmap by local text-only classification (%s)', async (textOnly) => {
-    let classify: boolean | undefined, vision = 0;
-    const f = setup(
-      async (_bytes?: Buffer, _signal?: AbortSignal, flag?: boolean) => {
-        classify = flag;
-        return {
-          manifest: 'ocr-v1',
-          textOnly,
-          blocks: textOnly ? [{ text: 'text screenshot', bbox: [0, 0, 1, 1], score: 0.99 }] : [],
-        };
-      },
-      async () => {
-        vision++;
-        return JSON.stringify({ blocks: [{ type: 'figure', text: 'node A leads to B' }] });
-      },
-    );
-    const result = await f.run({ ...region, recognition: 'classify' });
-    expect(classify).toBe(true);
-    expect(result[0].type).toBe(textOnly ? 'ocr' : 'figure');
-    expect(vision).toBe(textOnly ? 0 : 1);
-  });
-  it('uses vision for low-confidence OCR, but propagates service transport failures', async () => {
+  it.each([true, false])(
+    "routes a bitmap by local text-only classification (%s)",
+    async (textOnly) => {
+      let classify: boolean | undefined,
+        vision = 0;
+      const f = setup(
+        async (_bytes?: Buffer, _signal?: AbortSignal, flag?: boolean) => {
+          classify = flag;
+          return {
+            manifest: "ocr-v1",
+            textOnly,
+            blocks: textOnly ? [{ text: "text screenshot", bbox: [0, 0, 1, 1], score: 0.99 }] : [],
+          };
+        },
+        async () => {
+          vision++;
+          return JSON.stringify({ blocks: [{ type: "figure", text: "node A leads to B" }] });
+        },
+      );
+      const result = await f.run({ ...region, recognition: "classify" });
+      expect(classify).toBe(true);
+      expect(result[0].type).toBe(textOnly ? "ocr" : "figure");
+      expect(vision).toBe(textOnly ? 0 : 1);
+    },
+  );
+  it("uses vision for low-confidence OCR, but propagates service transport failures", async () => {
     let vision = 0;
     const f = setup(
       async () => ({
-        manifest: 'ocr-v1',
-        blocks: [{ text: 'uncertain', bbox: [0, 0, 1, 1], score: 0.1 }],
+        manifest: "ocr-v1",
+        blocks: [{ text: "uncertain", bbox: [0, 0, 1, 1], score: 0.1 }],
       }),
       async () => {
         vision++;
-        return JSON.stringify({ blocks: [{ type: 'figure', text: 'fallback diagram' }] });
+        return JSON.stringify({ blocks: [{ type: "figure", text: "fallback diagram" }] });
       },
     );
-    expect((await f.run())[0].text).toBe('fallback diagram');
+    expect((await f.run())[0].text).toBe("fallback diagram");
     expect(vision).toBe(1);
-    const error = new Error('local OCR unavailable');
+    const error = new Error("local OCR unavailable");
     const failing = setup(
       async () => {
         throw error;
       },
       async () => {
         vision++;
-        return '{}';
+        return "{}";
       },
     );
     await expect(
@@ -247,16 +321,16 @@ describe('hybrid PDF recognition', () => {
     ).rejects.toBe(error);
     expect(vision).toBe(1);
   });
-  it('preserves high-confidence OCR and sends only uncovered layout text to local vision fallback', async () => {
+  it("preserves high-confidence OCR and sends only uncovered layout text to local vision fallback", async () => {
     let vision = 0;
     const f = setup(
       async () => ({
-        manifest: 'ocr-v1',
-        blocks: [{ text: 'recognized left', bbox: [0, 0, 0.4, 1], score: 0.99 }],
+        manifest: "ocr-v1",
+        blocks: [{ text: "recognized left", bbox: [0, 0, 0.4, 1], score: 0.99 }],
       }),
       async () => {
         vision++;
-        return JSON.stringify({ blocks: [{ type: 'ocr', text: 'missing right' }] });
+        return JSON.stringify({ blocks: [{ type: "ocr", text: "missing right" }] });
       },
     );
     const blocks = await f.run({
@@ -267,18 +341,18 @@ describe('hybrid PDF recognition', () => {
         [0.6, 0, 1, 1],
       ],
     } as any);
-    expect(blocks.map((b: any) => b.text)).toEqual(['recognized left', 'missing right']);
+    expect(blocks.map((b: any) => b.text)).toEqual(["recognized left", "missing right"]);
     expect(vision).toBe(1);
   });
-  it('accepts complete high-confidence lines with normal line spacing and a short final line', async () => {
+  it("accepts complete high-confidence lines with normal line spacing and a short final line", async () => {
     let vision = 0;
     const lines = Array.from({ length: 10 }, (_, i) => ({
-      text: 'line ' + i,
+      text: "line " + i,
       bbox: [0.05, i / 10, i === 9 ? 0.3 : 0.95, i / 10 + 0.055],
       score: 0.99,
     }));
     const f = setup(
-      async () => ({ manifest: 'ocr-v1', blocks: lines }),
+      async () => ({ manifest: "ocr-v1", blocks: lines }),
       async () => {
         vision++;
         return JSON.stringify({ blocks: [] });
@@ -292,19 +366,19 @@ describe('hybrid PDF recognition', () => {
     expect(blocks).toHaveLength(10);
     expect(vision).toBe(0);
   });
-  it('detects an omitted text row between high-confidence rows and limits fallback to the gap', async () => {
+  it("detects an omitted text row between high-confidence rows and limits fallback to the gap", async () => {
     let fallbackHeight = 0;
     const lines = Array.from({ length: 10 }, (_, i) => ({
-      text: 'line ' + i,
+      text: "line " + i,
       bbox: [0.05, i / 10, 0.95, i / 10 + 0.055],
       score: 0.99,
     })).filter((_, i) => i !== 5);
     const f = setup(
-      async () => ({ manifest: 'ocr-v1', blocks: lines }),
+      async () => ({ manifest: "ocr-v1", blocks: lines }),
       async (_prompt: any, _key: any, images: any[]) => {
-        fallbackHeight = (await loadImage(Buffer.from(images[0].dataUrl.split(',')[1], 'base64')))
+        fallbackHeight = (await loadImage(Buffer.from(images[0].dataUrl.split(",")[1], "base64")))
           .height;
-        return JSON.stringify({ blocks: [{ type: 'ocr', text: 'missing line 5' }] });
+        return JSON.stringify({ blocks: [{ type: "ocr", text: "missing line 5" }] });
       },
     );
     const blocks = await f.run({
@@ -312,29 +386,29 @@ describe('hybrid PDF recognition', () => {
       bbox: [0, 0, 1, 1],
       ocrExpectedBoxes: [[0.05, 0, 0.95, 0.955]],
     } as any);
-    expect(blocks.map((b: any) => b.text)).toContain('missing line 5');
+    expect(blocks.map((b: any) => b.text)).toContain("missing line 5");
     expect(fallbackHeight).toBeGreaterThan(0);
     expect(fallbackHeight).toBeLessThan(120); // Main input is 400px high.
   });
-  it('never reuses visual descriptions across distinct exact context', async () => {
+  it("never reuses visual descriptions across distinct exact context", async () => {
     let calls = 0;
     const f = setup(
       async () => {
-        throw new Error('unused');
+        throw new Error("unused");
       },
       async () => {
         calls++;
-        return JSON.stringify({ blocks: [{ type: 'figure', text: String(calls) }] });
+        return JSON.stringify({ blocks: [{ type: "figure", text: String(calls) }] });
       },
     );
-    const visualRegion = { ...region, recognition: 'vision' };
+    const visualRegion = { ...region, recognition: "vision" };
     const a = await f.run(visualRegion);
     const b = await f.run(
-      { ...visualRegion, context: 'different context' },
+      { ...visualRegion, context: "different context" },
       { ...f.page, pageNumber: 2 },
     );
-    expect(a[0].text).toBe('1');
-    expect(b[0].text).toBe('2');
+    expect(a[0].text).toBe("1");
+    expect(b[0].text).toBe("2");
     expect(calls).toBe(2);
   });
   function pageSetup(
@@ -358,12 +432,12 @@ describe('hybrid PDF recognition', () => {
       (i + 0.8) / count,
     ]);
     visual.analysis = {
-      modelManifest: 'bundle-v1',
-      health: async () => ({ ready: true, manifest: 'bundle-v1' }),
+      modelManifest: "bundle-v1",
+      health: async () => ({ ready: true, manifest: "bundle-v1" }),
       cacheDirectory: () => undefined,
       layout: async () => ({
-        manifest: 'bundle-v1',
-        regions: boxes.map((bbox) => ({ kind: 'figure', bbox, score: 0.99 })),
+        manifest: "bundle-v1",
+        regions: boxes.map((bbox) => ({ kind: "figure", bbox, score: 0.99 })),
       }),
     };
     const f = fixture();
@@ -371,7 +445,7 @@ describe('hybrid PDF recognition', () => {
     const page = {
       ...f.page,
       getOperatorList: async () => ({
-        fnArray: [(await import('pdfjs-dist/legacy/build/pdf.mjs')).OPS.showText],
+        fnArray: [(await import("pdfjs-dist/legacy/build/pdf.mjs")).OPS.showText],
         argsArray: [[]],
       }),
       render: ({ canvasContext: ctx, viewport, transform }: any) => {
@@ -398,10 +472,10 @@ describe('hybrid PDF recognition', () => {
       get renders() {
         return renders;
       },
-      run: (s = scope) => visual.page(f.document, page, '', s, { items: [] }),
+      run: (s = scope) => visual.page(f.document, page, "", s, { items: [] }),
     };
   }
-  it('runs regions within a page concurrently, preserves region order and reuses one page render', async () => {
+  it("runs regions within a page concurrently, preserves region order and reuses one page render", async () => {
     let active = 0,
       peak = 0,
       calls = 0;
@@ -409,34 +483,34 @@ describe('hybrid PDF recognition', () => {
       calls++;
       active++;
       peak = Math.max(peak, active);
-      const image = await loadImage(Buffer.from(images[0].dataUrl.split(',')[1], 'base64'));
+      const image = await loadImage(Buffer.from(images[0].dataUrl.split(",")[1], "base64"));
       const canvas = createCanvas(1, 1),
-        ctx = canvas.getContext('2d');
+        ctx = canvas.getContext("2d");
       ctx.drawImage(image, image.width / 2, image.height / 2, 1, 1, 0, 0, 1, 1);
       const id = Math.round((ctx.getImageData(0, 0, 1, 1).data[0] - 20) / 30) + 1;
       await new Promise((r) => setTimeout(r, (4 - id) * 15));
       active--;
-      return JSON.stringify({ blocks: [{ type: 'figure', text: 'figure ' + id }] });
+      return JSON.stringify({ blocks: [{ type: "figure", text: "figure " + id }] });
     });
     const result = await f.run();
     expect(peak).toBe(3);
-    expect(result.blocks.map((b: any) => b.text)).toEqual(['figure 1', 'figure 2', 'figure 3']);
+    expect(result.blocks.map((b: any) => b.text)).toEqual(["figure 1", "figure 2", "figure 3"]);
     expect(f.renders).toBe(2); // low-resolution layout + one shared region raster
     await f.run();
     expect(calls).toBe(3);
   });
-  it('stops scheduling after the first failure and lets in-flight successes settle into cache', async () => {
+  it("stops scheduling after the first failure and lets in-flight successes settle into cache", async () => {
     let active = 0,
       calls = 0,
       fail = true;
-    const error = new Error('first request failed');
+    const error = new Error("first request failed");
     const f = pageSetup(6, async () => {
       const id = ++calls;
       active++;
       try {
         await new Promise((r) => setTimeout(r, id === 1 ? 5 : 30));
         if (id === 1 && fail) throw error;
-        return JSON.stringify({ blocks: [{ type: 'figure', text: 'figure ' + id }] });
+        return JSON.stringify({ blocks: [{ type: "figure", text: "figure " + id }] });
       } finally {
         active--;
       }
@@ -449,7 +523,7 @@ describe('hybrid PDF recognition', () => {
     expect(result.blocks).toHaveLength(6);
     expect(calls).toBe(7); // two successful in-flight regions were preserved
   });
-  it('shares configured concurrency across sessions', async () => {
+  it("shares configured concurrency across sessions", async () => {
     let active = 0,
       peak = 0;
     const f = pageSetup(
@@ -459,28 +533,28 @@ describe('hybrid PDF recognition', () => {
         peak = Math.max(peak, active);
         await new Promise((r) => setTimeout(r, 10));
         active--;
-        return JSON.stringify({ blocks: [{ type: 'figure', text: 'one slot' }] });
+        return JSON.stringify({ blocks: [{ type: "figure", text: "one slot" }] });
       },
       1,
     );
     await Promise.all([f.run({ ...scope, versionId: 2 }), f.run({ ...scope, versionId: 3 })]);
     expect(peak).toBe(1);
   });
-  it('does not share a canceled session singleflight with another session', async () => {
+  it("does not share a canceled session singleflight with another session", async () => {
     let calls = 0;
     let started!: () => void;
     const firstStarted = new Promise<void>((resolve) => {
       started = resolve;
     });
-    const error = new Error('first session canceled');
+    const error = new Error("first session canceled");
     const f = setup(async () => {
       const id = ++calls;
       if (id === 1) started();
       await new Promise((r) => setTimeout(r, 40));
       if (id === 1) throw error;
       return {
-        manifest: 'ocr-v1',
-        blocks: [{ text: 'second session result', bbox: [0, 0, 1, 1], score: 0.99 }],
+        manifest: "ocr-v1",
+        blocks: [{ text: "second session result", bbox: [0, 0, 1, 1], score: 0.99 }],
       };
     });
     const first = f.run(region, f.page, { ...scope, signal: new AbortController().signal } as any);
@@ -490,68 +564,68 @@ describe('hybrid PDF recognition', () => {
       signal: new AbortController().signal,
     } as any);
     const results = await Promise.allSettled([first, second]);
-    expect(results[0].status).toBe('rejected');
-    expect(results[1].status).toBe('fulfilled');
+    expect(results[0].status).toBe("rejected");
+    expect(results[1].status).toBe("fulfilled");
     expect(calls).toBe(2);
   });
-  it('treats structurally corrupt OCR and vision result caches as misses', async () => {
+  it("treats structurally corrupt OCR and vision result caches as misses", async () => {
     let ocrCalls = 0,
       visionCalls = 0;
     const f = setup(
       async () => {
         ocrCalls++;
         return {
-          manifest: 'ocr-v1',
-          blocks: [{ text: 'valid OCR', bbox: [0, 0, 1, 1], score: 0.99 }],
+          manifest: "ocr-v1",
+          blocks: [{ text: "valid OCR", bbox: [0, 0, 1, 1], score: 0.99 }],
         };
       },
       async () => {
         visionCalls++;
-        return JSON.stringify({ blocks: [{ type: 'figure', text: 'valid vision' }] });
+        return JSON.stringify({ blocks: [{ type: "figure", text: "valid vision" }] });
       },
     );
     await f.run();
     const cache = join(
       dir,
-      '1',
-      '1',
-      '1',
-      createHash('sha256').update('pdf-adaptive-recognition-v1').digest('hex'),
-      'recognition',
+      "1",
+      "1",
+      "1",
+      createHash("sha256").update("pdf-adaptive-recognition-v1").digest("hex"),
+      "recognition",
     );
     const ocrFile = (await readdir(cache)).find((name) => /^ocr-[a-f0-9]{64}\.json$/.test(name))!;
     await writeFile(
       join(cache, ocrFile),
       JSON.stringify({
-        manifest: 'ocr-v1',
-        blocks: [{ text: 'corrupt OCR', bbox: [0, 0, 1, 1], score: 'invalid' }],
+        manifest: "ocr-v1",
+        blocks: [{ text: "corrupt OCR", bbox: [0, 0, 1, 1], score: "invalid" }],
       }),
     );
-    expect((await f.run(region, { ...f.page, pageNumber: 2 }))[0].text).toBe('valid OCR');
+    expect((await f.run(region, { ...f.page, pageNumber: 2 }))[0].text).toBe("valid OCR");
     expect(ocrCalls).toBe(2);
-    await f.run({ ...region, recognition: 'vision' }, { ...f.page, pageNumber: 3 });
-    const visionFile = (await readdir(cache)).find((name) => name.startsWith('vision-'))!;
+    await f.run({ ...region, recognition: "vision" }, { ...f.page, pageNumber: 3 });
+    const visionFile = (await readdir(cache)).find((name) => name.startsWith("vision-"))!;
     await writeFile(
       join(cache, visionFile),
-      JSON.stringify([{ type: 'invalid', text: 'corrupt vision' }]),
+      JSON.stringify([{ type: "invalid", text: "corrupt vision" }]),
     );
     expect(
-      (await f.run({ ...region, recognition: 'vision' }, { ...f.page, pageNumber: 4 }))[0].text,
-    ).toBe('valid vision');
+      (await f.run({ ...region, recognition: "vision" }, { ...f.page, pageNumber: 4 }))[0].text,
+    ).toBe("valid vision");
     expect(visionCalls).toBe(2);
   });
-  it('preserves progress guard errors on region cache hits without retrying recognition', async () => {
+  it("preserves progress guard errors on region cache hits without retrying recognition", async () => {
     let calls = 0;
     const f = setup(async () => {
       calls++;
       return {
-        manifest: 'ocr-v1',
-        blocks: [{ text: 'cached OCR', bbox: [0, 0, 1, 1], score: 0.99 }],
+        manifest: "ocr-v1",
+        blocks: [{ text: "cached OCR", bbox: [0, 0, 1, 1], score: 0.99 }],
       };
     });
     await f.run();
     class Superseded extends Error {}
-    const error = new Superseded('replaced');
+    const error = new Superseded("replaced");
     await expect(
       f.run(region, f.page, {
         ...scope,
@@ -562,14 +636,14 @@ describe('hybrid PDF recognition', () => {
     ).rejects.toBe(error);
     expect(calls).toBe(1);
   });
-  it('checks a warm cached PNG without rendering and regenerates a tampered PNG', async () => {
+  it("checks a warm cached PNG without rendering and regenerates a tampered PNG", async () => {
     let calls = 0,
       renders = 0;
     const f = setup(async () => {
       calls++;
       return {
-        manifest: 'ocr-v1',
-        blocks: [{ text: 'cached OCR', bbox: [0, 0, 1, 1], score: 0.99 }],
+        manifest: "ocr-v1",
+        blocks: [{ text: "cached OCR", bbox: [0, 0, 1, 1], score: 0.99 }],
       };
     });
     const render = f.page.render;
@@ -579,7 +653,7 @@ describe('hybrid PDF recognition', () => {
     };
     const first = await f.run();
     const ref = first[0].regionImage;
-    const png = join(dir, '1', '1', '1', ref.profile, `${ref.page}-${ref.regionId}.png`);
+    const png = join(dir, "1", "1", "1", ref.profile, `${ref.page}-${ref.regionId}.png`);
     const initial = await readFile(png);
     await f.run();
     expect(renders).toBe(1);

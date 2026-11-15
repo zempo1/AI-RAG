@@ -17,23 +17,26 @@
     <template v-else-if="data">
       <section v-if="agent" class="debug-section">
         <h3>Agent 任务规划</h3>
-        <p>问题类型：{{ agent.plan?.intent || '未知' }} · 复杂度：{{ agent.plan?.complexity || '未知' }}</p>
-        <ol aria-label="子任务"><li v-for="(question, index) in agent.plan?.subQuestions || []" :key="index">{{ question }}</li></ol>
+        <p>
+          问题类型：{{ agent.plan?.intent || "未知" }} · 复杂度：{{
+            agent.plan?.complexity || "未知"
+          }}
+        </p>
+        <ol aria-label="子任务">
+          <li v-for="(question, index) in agent.plan?.subQuestions || []" :key="index">
+            {{ question }}
+          </li>
+        </ol>
         <AgentTimeline :steps="agent.steps" />
         <p v-if="agent.status">执行状态：{{ agent.status }}</p>
         <p v-if="agent.stopReason">停止原因：{{ agent.stopReason }}</p>
         <h3>Agent 耗时 / Token 与预算</h3>
         <pre>{{ display(agent.budget) }}</pre>
       </section>
-      <section
-        v-for="section in sections"
-        :key="section.key"
-        class="debug-section"
-      >
+      <section v-for="section in sections" :key="section.key" class="debug-section">
         <h3>{{ section.label }}</h3>
         <pre>{{ display(section.value) }}</pre>
       </section>
-
     </template>
   </el-drawer>
 </template>
@@ -60,8 +63,7 @@ const sections = computed(() => {
     {
       key: "rewrite",
       label: "查询计划与改写",
-      value: d.plan ??
-        d.queryPlan ?? { mode: d.mode, rewrittenQuestion: d.rewrittenQuestion },
+      value: d.plan ?? d.queryPlan ?? { mode: d.mode, rewrittenQuestion: d.rewrittenQuestion },
     },
     {
       key: "scope",
@@ -73,8 +75,7 @@ const sections = computed(() => {
       label: "关键词与向量候选",
       value: {
         lexical: d.candidates?.lexical ?? d.lexical ?? d.bm25,
-        vector:
-          d.candidates?.vector ?? d.candidates?.dense ?? d.vector ?? d.dense,
+        vector: d.candidates?.vector ?? d.candidates?.dense ?? d.vector ?? d.dense,
       },
     },
     {
@@ -85,11 +86,7 @@ const sections = computed(() => {
     {
       key: "rerank",
       label: "重排结果",
-      value:
-        d.candidates?.reranked ??
-        d.reranked ??
-        d.rerank ??
-        d.rerankedCandidates,
+      value: d.candidates?.reranked ?? d.reranked ?? d.rerank ?? d.rerankedCandidates,
     },
     {
       key: "evidence",
@@ -124,8 +121,7 @@ async function load() {
     const result = await getRetrievalRun(props.runId);
     if (current === sequence) data.value = result.payload ?? result;
   } catch {
-    if (current === sequence)
-      error.value = "无法读取此记录，可能已过期或无访问权限。";
+    if (current === sequence) error.value = "无法读取此记录，可能已过期或无访问权限。";
   } finally {
     if (current === sequence) loading.value = false;
   }

@@ -1,4 +1,4 @@
-export type AgentStepKind = 'plan' | 'tool_start' | 'tool_end' | 'assessment' | 'handoff' | 'stop';
+export type AgentStepKind = "plan" | "tool_start" | "tool_end" | "assessment" | "handoff" | "stop";
 export interface AgentStep {
   runId: number;
   sequence: number;
@@ -17,7 +17,7 @@ export interface AgentProgress {
   status?: string;
 }
 export function mergeAgentSteps(previous: AgentStep[], incoming: AgentStep[]): AgentStep[] {
-  const steps = new Map(previous.map(step => [`${step.runId}:${step.sequence}`, step]));
+  const steps = new Map(previous.map((step) => [`${step.runId}:${step.sequence}`, step]));
   for (const step of incoming) {
     const key = `${step.runId}:${step.sequence}`;
     if (!steps.has(key)) steps.set(key, step);

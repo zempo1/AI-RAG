@@ -1,20 +1,20 @@
-import { join } from 'node:path';
-import { IndexingService } from '../src/modules/documents/indexing.service';
-import { RecursiveChunker } from '../src/modules/documents/chunkers/recursive.chunker';
-import { PageAssetsService } from '../src/modules/documents/page-assets.service';
-import { paragraphBlocks, ParsedDocument } from '../src/modules/documents/parsers/parsed-document';
-import type { ParseContext } from '../src/modules/documents/parsers/pdf-visual.service';
-import { TokenizerService } from '../src/modules/embeddings/tokenizer.service';
-import { currentModelProfile } from '../src/modules/embeddings/model-profile';
-import { pipeline } from './helpers/pipeline';
+import { join } from "node:path";
+import { IndexingService } from "../src/modules/documents/indexing.service";
+import { RecursiveChunker } from "../src/modules/documents/chunkers/recursive.chunker";
+import { PageAssetsService } from "../src/modules/documents/page-assets.service";
+import { paragraphBlocks, ParsedDocument } from "../src/modules/documents/parsers/parsed-document";
+import type { ParseContext } from "../src/modules/documents/parsers/pdf-visual.service";
+import { TokenizerService } from "../src/modules/embeddings/tokenizer.service";
+import { currentModelProfile } from "../src/modules/embeddings/model-profile";
+import { pipeline } from "./helpers/pipeline";
 
 const page = (number: number, visual = false): ParsedDocument => {
   const native = `第 ${number} 页的可检索正文。`;
-  const table = '[表格识别]\n列：值';
+  const table = "[表格识别]\n列：值";
   const blocks = paragraphBlocks(native, number);
-  blocks[0].location.contentType = 'native';
+  blocks[0].location.contentType = "native";
   if (!visual) return { text: native, blocks };
-  const text = native + '\n\n' + table;
+  const text = native + "\n\n" + table;
   blocks.push({
     text: table,
     contextText: native,
@@ -24,7 +24,7 @@ const page = (number: number, visual = false): ParsedDocument => {
       paragraph: null,
       start: native.length + 2,
       end: text.length,
-      contentType: 'table',
+      contentType: "table",
       relatedParagraphs: [1],
     },
   });
@@ -39,16 +39,16 @@ async function setup(
   embed: (texts: string[], profile: unknown, signal?: AbortSignal) => Promise<number[][]>,
 ) {
   const p = await pipeline();
-  p.config.set('EMBEDDING_PROVIDER', 'dashscope');
-  p.config.set('EMBEDDING_DIMENSIONS', 256);
-  p.config.set('PAGE_ASSETS_DIR', join(p.config.getOrThrow<string>('ORIGINALS_DIR'), 'pages'));
+  p.config.set("EMBEDDING_PROVIDER", "dashscope");
+  p.config.set("EMBEDDING_DIMENSIONS", 256);
+  p.config.set("PAGE_ASSETS_DIR", join(p.config.getOrThrow<string>("ORIGINALS_DIR"), "pages"));
   const chunker = new RecursiveChunker();
   const indexing = new IndexingService(
     p.store,
     {
       ...parser,
       parseStructured: async () => {
-        throw new Error('PDF indexing must consume the page stream');
+        throw new Error("PDF indexing must consume the page stream");
       },
     } as any,
     chunker,
@@ -58,11 +58,11 @@ async function setup(
     p.config,
     new PageAssetsService(p.config, p.store),
   );
-  const accepted = await p.documents.ingest(Buffer.from('%PDF-test'), 'stream.pdf', 1);
+  const accepted = await p.documents.ingest(Buffer.from("%PDF-test"), "stream.pdf", 1);
   return { ...p, indexing, accepted, chunker };
 }
 
-it('embeds while pages are still being parsed and publishes ordered global offsets', async () => {
+it("embeds while pages are still being parsed and publishes ordered global offsets", async () => {
   let ready = 0;
   let active = 0;
   let peak = 0;
@@ -107,7 +107,7 @@ it('embeds while pages are still being parsed and publishes ordered global offse
     });
     const doc = await p.documents.owned(p.accepted.documentId, 1);
     const chunks = (
-      await p.store.list('chunks', { indexRevisionId: doc.activeIndexRevisionId })
+      await p.store.list("chunks", { indexRevisionId: doc.activeIndexRevisionId })
     ).sort((a, b) => a.chunkIndex - b.chunkIndex);
     const pages = Array.from({ length: 22 }, (_, i) => page(i + 1, i === 11));
     let offset = 0;
@@ -123,7 +123,7 @@ it('embeds while pages are still being parsed and publishes ordered global offse
       offset += part.text.length + 1;
       return value;
     });
-    const text = pages.map((part) => part.text).join('\n');
+    const text = pages.map((part) => part.text).join("\n");
     expect(doc.content).toBe(text);
     expect(
       chunks.map(({ text, location, retrievalMetadata }) => ({
@@ -143,7 +143,7 @@ it('embeds while pages are still being parsed and publishes ordered global offse
   }
 });
 
-it('aborts a running embedding when its document is deleted and never publishes it', async () => {
+it("aborts a running embedding when its document is deleted and never publishes it", async () => {
   let started!: () => void;
   const running = new Promise<void>((resolve) => {
     started = resolve;
@@ -159,7 +159,7 @@ it('aborts a running embedding when its document is deleted and never publishes 
       expect(signal).toBeDefined();
       await new Promise<void>((_resolve, reject) => {
         signal!.addEventListener(
-          'abort',
+          "abort",
           () => {
             canceled = true;
             reject(signal!.reason);
@@ -177,14 +177,14 @@ it('aborts a running embedding when its document is deleted and never publishes 
     await p.documents.delete(p.accepted.documentId, 1);
     await processing;
     expect(canceled).toBe(true);
-    expect((await p.tasks.get(p.accepted.taskId, 1)).status).toBe('canceled');
+    expect((await p.tasks.get(p.accepted.taskId, 1)).status).toBe("canceled");
     expect(p.vectors.search(vector, 30, 0)).toHaveLength(0);
   } finally {
     await p.cleanup();
   }
 });
 
-it('keeps a failed revision hidden and reuses successful vectors while writing the retry', async () => {
+it("keeps a failed revision hidden and reuses successful vectors while writing the retry", async () => {
   let fail = true;
   let modelCalls = 0;
   const p = await setup(
@@ -195,30 +195,42 @@ it('keeps a failed revision hidden and reuses successful vectors while writing t
     },
     async (texts) => {
       modelCalls++;
-      if (fail && texts[0].includes('第 11 页')) throw new Error('simulated embedding failure');
+      if (fail && texts[0].includes("第 11 页")) throw new Error("simulated embedding failure");
       return texts.map(() => vector);
     },
   );
   try {
     await expect(p.indexing.process(p.accepted.taskId)).rejects.toThrow(
-      'simulated embedding failure',
+      "simulated embedding failure",
     );
     expect((await p.documents.owned(p.accepted.documentId, 1)).activeIndexRevisionId).toBeNull();
     expect(modelCalls).toBe(2);
-    await p.store.save('tasks', { id: p.accepted.taskId, payload: { indexProgress: {
-      pages: { completed: 11, total: 21 }, regions: { completed: 5, total: null },
-      embedding: { completed: 10, total: null }, indexing: { completed: 10, total: null },
-    } } });
+    await p.store.save("tasks", {
+      id: p.accepted.taskId,
+      payload: {
+        indexProgress: {
+          pages: { completed: 11, total: 21 },
+          regions: { completed: 5, total: null },
+          embedding: { completed: 10, total: null },
+          indexing: { completed: 10, total: null },
+        },
+      },
+    });
     fail = false;
     const progress: object[] = [];
-    await p.indexing.process(p.accepted.taskId, 2, async (event) => { progress.push(event); });
-    expect(progress[0]).toMatchObject({ indexProgress: {
-      pages: { completed: 0, total: 21 }, previousRecognition: { pages: 11, regions: 5 },
-      indexing: { completed: 0 },
-    } });
+    await p.indexing.process(p.accepted.taskId, 2, async (event) => {
+      progress.push(event);
+    });
+    expect(progress[0]).toMatchObject({
+      indexProgress: {
+        pages: { completed: 0, total: 21 },
+        previousRecognition: { pages: 11, regions: 5 },
+        indexing: { completed: 0 },
+      },
+    });
     expect(modelCalls).toBe(4);
     expect(p.vectors.search(vector, 30, 0)).toHaveLength(21);
-    expect((await p.tasks.get(p.accepted.taskId, 1)).status).toBe('completed');
+    expect((await p.tasks.get(p.accepted.taskId, 1)).status).toBe("completed");
   } finally {
     await p.cleanup();
   }

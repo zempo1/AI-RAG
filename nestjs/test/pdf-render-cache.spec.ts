@@ -1,13 +1,13 @@
-import { createCanvas } from '@napi-rs/canvas';
+import { createCanvas } from "@napi-rs/canvas";
 import {
   renderPdfRegion,
   withPdfPageRaster,
   verifyCachedPdfImage,
-} from '../src/modules/documents/parsers/pdf-render-cache';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { createHash } from 'node:crypto';
+} from "../src/modules/documents/parsers/pdf-render-cache";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createHash } from "node:crypto";
 
 function fixture(width = 600, height = 800) {
   let renders = 0,
@@ -19,7 +19,7 @@ function fixture(width = 600, height = 800) {
         live++;
         peak = Math.max(peak, live);
         const canvas = createCanvas(w, h);
-        return { canvas, context: canvas.getContext('2d') };
+        return { canvas, context: canvas.getContext("2d") };
       },
       destroy() {
         live--;
@@ -50,7 +50,7 @@ function fixture(width = 600, height = 800) {
 }
 const region = { bbox: [0, 0, 0.25, 0.25] as [number, number, number, number] };
 
-it('renders a page once while cropping multiple regions and releases its raster', async () => {
+it("renders a page once while cropping multiple regions and releases its raster", async () => {
   const f = fixture();
   await withPdfPageRaster(f.document, f.page, {}, async () => {
     const [a, b] = await Promise.all([
@@ -63,7 +63,7 @@ it('renders a page once while cropping multiple regions and releases its raster'
   expect(f.live).toBe(0);
 });
 
-it('uses local region rendering when a bounded page raster would lose small text resolution', async () => {
+it("uses local region rendering when a bounded page raster would lose small text resolution", async () => {
   const f = fixture(5000, 5000);
   await withPdfPageRaster(f.document, f.page, {}, async () => {
     await renderPdfRegion(f.document, f.page, region, {});
@@ -73,7 +73,7 @@ it('uses local region rendering when a bounded page raster would lose small text
   expect(f.live).toBe(0);
 });
 
-it('never keeps two full page rasters resident across concurrent page leases', async () => {
+it("never keeps two full page rasters resident across concurrent page leases", async () => {
   const f = fixture();
   const second = { ...f.page };
   await Promise.all(
@@ -89,17 +89,17 @@ it('never keeps two full page rasters resident across concurrent page leases', a
   expect(f.live).toBe(0);
 });
 
-it('validates cached image bytes incrementally and rejects same-size tampering', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'pdf-cache-image-'));
-  const path = join(root, 'large.png');
+it("validates cached image bytes incrementally and rejects same-size tampering", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pdf-cache-image-"));
+  const path = join(root, "large.png");
   const bytes = Buffer.alloc(1024 * 1024, 42);
-  const hash = createHash('sha256').update(bytes).digest('hex');
+  const hash = createHash("sha256").update(bytes).digest("hex");
   try {
     await writeFile(path, bytes);
     expect(await verifyCachedPdfImage(path, bytes.length, hash, {})).toBe(true);
     await writeFile(path, Buffer.alloc(bytes.length, 43));
     expect(await verifyCachedPdfImage(path, bytes.length, hash, {})).toBe(false);
-    const error = new Error('superseded');
+    const error = new Error("superseded");
     await expect(
       verifyCachedPdfImage(path, bytes.length, hash, {
         guard: async () => {

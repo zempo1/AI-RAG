@@ -5,9 +5,9 @@ export interface Scored {
 }
 export function tokenize(text: string): string[] {
   // 统一全半角与大小写；英文保留标识符形式，中文使用分词，兼顾代码和自然语言。
-  const normalized = text.normalize('NFKC').toLowerCase();
+  const normalized = text.normalize("NFKC").toLowerCase();
   const words: string[] = normalized.match(/[a-z0-9][a-z0-9_.:/-]*/g) || [];
-  const segmenter = new Intl.Segmenter('zh', { granularity: 'word' });
+  const segmenter = new Intl.Segmenter("zh", { granularity: "word" });
   for (const part of segmenter.segment(normalized))
     if (part.isWordLike && /\p{Script=Han}/u.test(part.segment)) words.push(part.segment);
   return words;

@@ -3,7 +3,8 @@ import { SseDecoder, type SseEvent } from "../utils/sse";
 import { dispatchChatEvent, type StreamChatCallbacks } from "../utils/chat-stream";
 import type { Citation } from "./knowledge-bases";
 
-export const getChatHistory = (id: number, signal?: AbortSignal) => request.get("/api/chats/" + id, { signal });
+export const getChatHistory = (id: number, signal?: AbortSignal) =>
+  request.get("/api/chats/" + id, { signal });
 export type QaMode = "auto" | "general" | "search" | "overview" | "compare";
 export interface RetrievalContext {
   documentIds?: number[];
@@ -15,8 +16,7 @@ export interface AcceptedAnswer {
   chatId: number;
   requestId: string;
 }
-export const getRetrievalRun = (id: number) =>
-  request.get<any, any>("/api/retrieval-runs/" + id);
+export const getRetrievalRun = (id: number) => request.get<any, any>("/api/retrieval-runs/" + id);
 export interface StreamChatParams {
   question: string;
   chatId: number | null;
@@ -53,8 +53,7 @@ export async function sendStreamChat(
       signal,
     });
     if (!response.ok) {
-      if (response.status === 401)
-        window.dispatchEvent(new Event("auth-expired"));
+      if (response.status === 401) window.dispatchEvent(new Event("auth-expired"));
       const error = await response.json().catch(() => null);
       throw new Error(error?.message || "问答请求失败");
     }

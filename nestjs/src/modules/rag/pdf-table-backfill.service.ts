@@ -1,10 +1,10 @@
-import { Injectable } from '@nestjs/common';
-import { readFile, stat } from 'node:fs/promises';
-import { DocumentOriginalsService } from '../documents/document-originals.service';
-import type { PdfTableLocation, ParsedDocument } from '../documents/parsers/parsed-document';
-import { detectPdfTableGrids, linkAdjacentPageTables } from '../documents/parsers/pdf-table-layout';
-import { textPositions, type TextPosition } from '../documents/parsers/pdf-layout';
-import type { RetrievalSession } from './retrieval.types';
+import { Injectable } from "@nestjs/common";
+import { readFile, stat } from "node:fs/promises";
+import { DocumentOriginalsService } from "../documents/document-originals.service";
+import type { PdfTableLocation, ParsedDocument } from "../documents/parsers/parsed-document";
+import { detectPdfTableGrids, linkAdjacentPageTables } from "../documents/parsers/pdf-table-layout";
+import { textPositions, type TextPosition } from "../documents/parsers/pdf-layout";
+import type { RetrievalSession } from "./retrieval.types";
 
 type Page = { tables: PdfTableLocation[]; texts: TextPosition[] };
 /** Read-only compatibility for indexes built before table geometry was recorded. */
@@ -30,7 +30,7 @@ export class PdfTableBackfillService {
     }
     for (const target of targets.values()) {
       signal?.throwIfAborted();
-      let file: Awaited<ReturnType<DocumentOriginalsService['file']>>;
+      let file: Awaited<ReturnType<DocumentOriginalsService["file"]>>;
       try {
         file = await this.originals.file(session.scope.userId, target.doc, target.version);
       } catch (error: any) {
@@ -50,7 +50,7 @@ export class PdfTableBackfillService {
       let extend = true;
       while (extend) {
         if ([...needed].some((p) => !pages!.has(p))) {
-          const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+          const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
           const loading = pdfjs.getDocument({
             data: new Uint8Array(await readFile(file.path)),
             verbosity: 0,
@@ -89,8 +89,8 @@ export class PdfTableBackfillService {
         signal?.throwIfAborted();
         const docs = new Map<number, ParsedDocument>();
         for (const [number, page] of pages) {
-          let text = '';
-          const blocks: ParsedDocument['blocks'] = page.texts
+          let text = "";
+          const blocks: ParsedDocument["blocks"] = page.texts
             .filter((t) => t.text.trim())
             .map((t) => {
               const [x0, y0, x1, y1] = t.bbox,
@@ -101,7 +101,7 @@ export class PdfTableBackfillService {
               );
               // Temporary PDF-item views for continuity checks; never become citations.
               const start = text.length;
-              text += t.text + '\n';
+              text += t.text + "\n";
               return {
                 text: t.text,
                 location: {
@@ -110,7 +110,7 @@ export class PdfTableBackfillService {
                   end: start + t.text.length,
                   paragraph: null,
                   heading: null,
-                  contentType: 'native',
+                  contentType: "native",
                   table,
                   anchorVersion: 1,
                   anchors: [
@@ -118,7 +118,7 @@ export class PdfTableBackfillService {
                       page: number,
                       start,
                       end: start + t.text.length,
-                      kind: 'native',
+                      kind: "native",
                       rects: [t.bbox],
                     },
                   ],
@@ -155,7 +155,7 @@ export class PdfTableBackfillService {
       )) {
         const number = chunk.location?.page,
           available = pages.get(number)?.tables;
-        if (!available?.length || !chunk.location?.anchors?.some((a: any) => a.kind === 'native'))
+        if (!available?.length || !chunk.location?.anchors?.some((a: any) => a.kind === "native"))
           continue;
         session.tables.set(
           chunk.id,
@@ -163,7 +163,7 @@ export class PdfTableBackfillService {
             .filter((table) =>
               chunk.location.anchors.some(
                 (a: any) =>
-                  a.kind === 'native' &&
+                  a.kind === "native" &&
                   a.rects.some(
                     (b: number[]) =>
                       (b[0] + b[2]) / 2 >= table.bbox[0] &&

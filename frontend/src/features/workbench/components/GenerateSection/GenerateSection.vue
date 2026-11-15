@@ -10,10 +10,13 @@
       <el-icon><InfoFilled /></el-icon>
       <span>请在文档管理中选择“用于工作台”</span>
     </div>
-    <el-button class="generate-btn" type="primary"
+    <el-button
+      class="generate-btn"
+      type="primary"
       :disabled="disabled"
       :loading="loading"
-      @click="$emit('generate')">
+      @click="$emit('generate')"
+    >
       <el-icon class="el-icon--left"><component :is="icon" /></el-icon>
       {{ buttonText }}
     </el-button>
@@ -21,23 +24,26 @@
 </template>
 
 <script setup lang="ts">
-import type { Component } from 'vue'
-import { Document, InfoFilled } from '@element-plus/icons-vue'
+import type { Component } from "vue";
+import { Document, InfoFilled } from "@element-plus/icons-vue";
 
-withDefaults(defineProps<{
-  fileName: string
-  buttonText: string
-  icon: Component
-  loading?: boolean
-  disabled?: boolean
-}>(), {
-  loading: false,
-  disabled: false,
-})
+withDefaults(
+  defineProps<{
+    fileName: string;
+    buttonText: string;
+    icon: Component;
+    loading?: boolean;
+    disabled?: boolean;
+  }>(),
+  {
+    loading: false,
+    disabled: false,
+  },
+);
 
-defineEmits<{ (e: 'generate'): void }>()
+defineEmits<{ (e: "generate"): void }>();
 </script>
 
 <style lang="scss" scoped>
-  @use './GenerateSection.scss';
+@use "./GenerateSection.scss";
 </style>

@@ -38,23 +38,23 @@ Node.js >=22.21.1。API 与 Worker 共用代码、MySQL 和原件目录；Qdrant
 
 生产环境先 npm run build，再分别执行 npm run start:prod 和 npm run start:worker。两进程必须使用相同数据库、模型配置、QUEUE_PREFIX、QDRANT_COLLECTION、ORIGINALS_DIR 和 PAGE_ASSETS_DIR。默认开发脚本监视已编译输出；API 的编译监视会同步更新 Worker 所用代码。
 
-| 配置 | 默认值 / 说明 |
-| --- | --- |
-| PORT | 8080 |
-| STORAGE_DRIVER | mysql |
-| VECTOR_DRIVER | qdrant；memory 仅用于临时演示或测试 |
-| QDRANT_URL / QDRANT_COLLECTION | http://127.0.0.1:6333 / rag |
-| QDRANT_API_KEY | 可选，不传到浏览器 |
-| QUEUE_DRIVER / REDIS_URL | bullmq / redis://127.0.0.1:6379 |
-| QUEUE_PREFIX | ai-rag，多个环境应使用不同值 |
-| ORIGINALS_DIR | .data/originals，必须持久化并由 API、Worker 共享 |
-| UPLOAD_TEMP_DIR | .tmp/uploads，分片续传临时目录 |
-| MODEL_CACHE_DIR | .cache/models，首次运行需下载模型 |
-| EMBEDDING_MODEL | Xenova/all-MiniLM-L6-v2，384 维 |
-| EMBEDDING_REVISION | .env.example 中固定提交版本 |
-| INDEX_RETENTION_MS | 600000，旧版及删除索引保留十分钟以支持进行中的问答 |
-| MAX_DOCUMENT_BYTES | 134217728；单个 HTTP multipart 请求仍限 10 MiB |
-| DB_TIMEZONE | +08:00 |
+| 配置                           | 默认值 / 说明                                      |
+| ------------------------------ | -------------------------------------------------- |
+| PORT                           | 8080                                               |
+| STORAGE_DRIVER                 | mysql                                              |
+| VECTOR_DRIVER                  | qdrant；memory 仅用于临时演示或测试                |
+| QDRANT_URL / QDRANT_COLLECTION | http://127.0.0.1:6333 / rag                        |
+| QDRANT_API_KEY                 | 可选，不传到浏览器                                 |
+| QUEUE_DRIVER / REDIS_URL       | bullmq / redis://127.0.0.1:6379                    |
+| QUEUE_PREFIX                   | ai-rag，多个环境应使用不同值                       |
+| ORIGINALS_DIR                  | .data/originals，必须持久化并由 API、Worker 共享   |
+| UPLOAD_TEMP_DIR                | .tmp/uploads，分片续传临时目录                     |
+| MODEL_CACHE_DIR                | .cache/models，首次运行需下载模型                  |
+| EMBEDDING_MODEL                | Xenova/all-MiniLM-L6-v2，384 维                    |
+| EMBEDDING_REVISION             | .env.example 中固定提交版本                        |
+| INDEX_RETENTION_MS             | 600000，旧版及删除索引保留十分钟以支持进行中的问答 |
+| MAX_DOCUMENT_BYTES             | 134217728；单个 HTTP multipart 请求仍限 10 MiB     |
+| DB_TIMEZONE                    | +08:00                                             |
 
 MySQL 默认连接 127.0.0.1:3306/ai_rag，DB_USER、DB_PASSWORD 必填。聊天默认使用 .env.example 的 OpenAI 兼容地址及模型名称，请按账号实际可用模型设置。
 
@@ -77,24 +77,24 @@ MySQL 默认连接 127.0.0.1:3306/ai_rag，DB_USER、DB_PASSWORD 必填。聊天
 
 所有业务接口要求 Bearer JWT，沿用 {code,data,message} 响应封装。
 
-| 接口 | 功能 |
-| --- | --- |
-| GET/POST /api/knowledge-bases | 列表、新建 |
-| PUT/DELETE /api/knowledge-bases/:id | 编辑、删除 |
-| GET/POST /api/knowledge-bases/:id/categories | 分类列表、新建 |
-| PUT/DELETE /api/knowledge-bases/:id/categories/:categoryId | 编辑、删除分类 |
-| GET /api/knowledge-bases/:id/documents | page/pageSize/name/status/categoryId 筛选；categoryId=0 为未分类 |
-| POST /api/upload | file + knowledgeBaseId/categoryId/uploadId |
-| GET /api/upload/check | md5/filename/knowledgeBaseId/uploadId，可带 documentId |
-| POST /api/upload/chunk | 原分片参数 + 同一上传作用域 |
-| POST /api/upload/merge | 合并并创建任务，重复提交返回同一文档与任务 |
-| PUT /api/documents/:id | filename/categoryId；categoryId=null 清除分类 |
-| PUT /api/documents/:id/file | 替换文件，返回 202 |
-| POST /api/documents/:id/reindex | 单文档重建 |
-| POST /api/knowledge-bases/:id/reindex | 全库重建 |
-| GET /api/tasks?knowledgeBaseId=... | 最近任务 |
-| GET /api/tasks/:id | 进度及全库子任务 |
-| POST /api/tasks/:id/retry | 重试失败任务 |
+| 接口                                                       | 功能                                                             |
+| ---------------------------------------------------------- | ---------------------------------------------------------------- |
+| GET/POST /api/knowledge-bases                              | 列表、新建                                                       |
+| PUT/DELETE /api/knowledge-bases/:id                        | 编辑、删除                                                       |
+| GET/POST /api/knowledge-bases/:id/categories               | 分类列表、新建                                                   |
+| PUT/DELETE /api/knowledge-bases/:id/categories/:categoryId | 编辑、删除分类                                                   |
+| GET /api/knowledge-bases/:id/documents                     | page/pageSize/name/status/categoryId 筛选；categoryId=0 为未分类 |
+| POST /api/upload                                           | file + knowledgeBaseId/categoryId/uploadId                       |
+| GET /api/upload/check                                      | md5/filename/knowledgeBaseId/uploadId，可带 documentId           |
+| POST /api/upload/chunk                                     | 原分片参数 + 同一上传作用域                                      |
+| POST /api/upload/merge                                     | 合并并创建任务，重复提交返回同一文档与任务                       |
+| PUT /api/documents/:id                                     | filename/categoryId；categoryId=null 清除分类                    |
+| PUT /api/documents/:id/file                                | 替换文件，返回 202                                               |
+| POST /api/documents/:id/reindex                            | 单文档重建                                                       |
+| POST /api/knowledge-bases/:id/reindex                      | 全库重建                                                         |
+| GET /api/tasks?knowledgeBaseId=...                         | 最近任务                                                         |
+| GET /api/tasks/:id                                         | 进度及全库子任务                                                 |
+| POST /api/tasks/:id/retry                                  | 重试失败任务                                                     |
 
 旧上传请求省略知识库时归入默认库。新会话省略知识库也使用默认库；已有会话省略时沿用绑定知识库，显式传入不匹配的库会拒绝。
 

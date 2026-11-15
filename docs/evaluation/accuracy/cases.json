@@ -4,13 +4,9 @@
     "split": "tune",
     "type": "fact",
     "question": "TS-999 应如何处理？",
-    "documentIds": [
-      "api"
-    ],
+    "documentIds": ["api"],
     "mode": "search",
-    "expectedPoints": [
-      "清理本地缓存"
-    ],
+    "expectedPoints": ["清理本地缓存"],
     "evidence": [
       {
         "document": "api",
@@ -24,13 +20,9 @@
     "split": "tune",
     "type": "fact",
     "question": "访问令牌多久过期？",
-    "documentIds": [
-      "api"
-    ],
+    "documentIds": ["api"],
     "mode": "search",
-    "expectedPoints": [
-      "30 分钟"
-    ],
+    "expectedPoints": ["30 分钟"],
     "evidence": [
       {
         "document": "api",
@@ -44,13 +36,9 @@
     "split": "tune",
     "type": "fact",
     "question": "刷新令牌有效期是多少？",
-    "documentIds": [
-      "api"
-    ],
+    "documentIds": ["api"],
     "mode": "search",
-    "expectedPoints": [
-      "7 天"
-    ],
+    "expectedPoints": ["7 天"],
     "evidence": [
       {
         "document": "api",
@@ -64,13 +52,9 @@
     "split": "tune",
     "type": "fact",
     "question": "刷新令牌调用哪个接口？",
-    "documentIds": [
-      "api"
-    ],
+    "documentIds": ["api"],
     "mode": "search",
-    "expectedPoints": [
-      "POST /v2/session/refresh"
-    ],
+    "expectedPoints": ["POST /v2/session/refresh"],
     "evidence": [
       {
         "document": "api",
@@ -84,13 +68,9 @@
     "split": "tune",
     "type": "fact",
     "question": "请求需要哪个租户请求头？",
-    "documentIds": [
-      "api"
-    ],
+    "documentIds": ["api"],
     "mode": "search",
-    "expectedPoints": [
-      "X-Tenant-ID"
-    ],
+    "expectedPoints": ["X-Tenant-ID"],
     "evidence": [
       {
         "document": "api",
@@ -104,14 +84,9 @@
     "split": "acceptance",
     "type": "fact",
     "question": "v2.4.1 修复了什么？",
-    "documentIds": [
-      "api"
-    ],
+    "documentIds": ["api"],
     "mode": "search",
-    "expectedPoints": [
-      "租户切换",
-      "缓存污染"
-    ],
+    "expectedPoints": ["租户切换", "缓存污染"],
     "evidence": [
       {
         "document": "api",
@@ -135,13 +110,9 @@
         "content": "清理本地缓存"
       }
     ],
-    "documentIds": [
-      "api"
-    ],
+    "documentIds": ["api"],
     "mode": "search",
-    "expectedPoints": [
-      "清理本地缓存"
-    ],
+    "expectedPoints": ["清理本地缓存"],
     "evidence": [
       {
         "document": "api",
@@ -155,9 +126,7 @@
     "split": "acceptance",
     "type": "overview",
     "question": "按章节概括这份文档的全部主要内容。",
-    "documentIds": [
-      "api"
-    ],
+    "documentIds": ["api"],
     "mode": "overview",
     "expectedPoints": [
       "清理本地缓存",
@@ -201,15 +170,9 @@
     "split": "acceptance",
     "type": "compare",
     "question": "对比技术网关手册和服务配置表中的 Gateway 超时与重试设置。",
-    "documentIds": [
-      "api",
-      "table"
-    ],
+    "documentIds": ["api", "table"],
     "mode": "compare",
-    "expectedPoints": [
-      "12",
-      "2"
-    ],
+    "expectedPoints": ["12", "2"],
     "evidence": [
       {
         "document": "api",
@@ -227,9 +190,7 @@
     "split": "acceptance",
     "type": "unanswerable",
     "question": "文档作者的家庭住址是什么？",
-    "documentIds": [
-      "api"
-    ],
+    "documentIds": ["api"],
     "mode": "search",
     "expectedPoints": [],
     "evidence": [],
@@ -241,15 +202,9 @@
     "split": "tune",
     "type": "fact",
     "question": "实验比较了哪三种检索方法？",
-    "documentIds": [
-      "paper"
-    ],
+    "documentIds": ["paper"],
     "mode": "search",
-    "expectedPoints": [
-      "向量检索",
-      "混合检索",
-      "重排"
-    ],
+    "expectedPoints": ["向量检索", "混合检索", "重排"],
     "evidence": [
       {
         "document": "paper",
@@ -263,13 +218,9 @@
     "split": "tune",
     "type": "fact",
     "question": "测试集有多少道题？",
-    "documentIds": [
-      "paper"
-    ],
+    "documentIds": ["paper"],
     "mode": "search",
-    "expectedPoints": [
-      "120"
-    ],
+    "expectedPoints": ["120"],
     "evidence": [
       {
         "document": "paper",
@@ -283,13 +234,9 @@
     "split": "tune",
     "type": "fact",
     "question": "问题来自多少份文档？",
-    "documentIds": [
-      "paper"
-    ],
+    "documentIds": ["paper"],
     "mode": "search",
-    "expectedPoints": [
-      "6"
-    ],
+    "expectedPoints": ["6"],
     "evidence": [
       {
         "document": "paper",
@@ -303,13 +250,9 @@
     "split": "tune",
     "type": "fact",
     "question": "混合检索召回率是多少？",
-    "documentIds": [
-      "paper"
-    ],
+    "documentIds": ["paper"],
     "mode": "search",
-    "expectedPoints": [
-      "84%"
-    ],
+    "expectedPoints": ["84%"],
     "evidence": [
       {
         "document": "paper",
@@ -323,13 +266,9 @@
     "split": "tune",
     "type": "fact",
     "question": "加入重排后的召回率是多少？",
-    "documentIds": [
-      "paper"
-    ],
+    "documentIds": ["paper"],
     "mode": "search",
-    "expectedPoints": [
-      "89%"
-    ],
+    "expectedPoints": ["89%"],
     "evidence": [
       {
         "document": "paper",
@@ -343,13 +282,9 @@
     "split": "acceptance",
     "type": "fact",
     "question": "这些数字能直接推广到所有知识库吗？",
-    "documentIds": [
-      "paper"
-    ],
+    "documentIds": ["paper"],
     "mode": "search",
-    "expectedPoints": [
-      "不能"
-    ],
+    "expectedPoints": ["不能"],
     "evidence": [
       {
         "document": "paper",
@@ -373,15 +308,9 @@
         "content": "向量检索，混合检索，重排"
       }
     ],
-    "documentIds": [
-      "paper"
-    ],
+    "documentIds": ["paper"],
     "mode": "search",
-    "expectedPoints": [
-      "向量检索",
-      "混合检索",
-      "重排"
-    ],
+    "expectedPoints": ["向量检索", "混合检索", "重排"],
     "evidence": [
       {
         "document": "paper",
@@ -395,20 +324,9 @@
     "split": "acceptance",
     "type": "overview",
     "question": "按章节概括这份文档的全部主要内容。",
-    "documentIds": [
-      "paper"
-    ],
+    "documentIds": ["paper"],
     "mode": "overview",
-    "expectedPoints": [
-      "向量检索",
-      "混合检索",
-      "重排",
-      "120",
-      "6",
-      "84%",
-      "89%",
-      "不能"
-    ],
+    "expectedPoints": ["向量检索", "混合检索", "重排", "120", "6", "84%", "89%", "不能"],
     "evidence": [
       {
         "document": "paper",
@@ -442,15 +360,9 @@
     "split": "acceptance",
     "type": "compare",
     "question": "对比技术网关手册和服务配置表中的 Gateway 超时与重试设置。",
-    "documentIds": [
-      "api",
-      "table"
-    ],
+    "documentIds": ["api", "table"],
     "mode": "compare",
-    "expectedPoints": [
-      "12",
-      "2"
-    ],
+    "expectedPoints": ["12", "2"],
     "evidence": [
       {
         "document": "api",
@@ -468,9 +380,7 @@
     "split": "acceptance",
     "type": "unanswerable",
     "question": "文档作者的家庭住址是什么？",
-    "documentIds": [
-      "paper"
-    ],
+    "documentIds": ["paper"],
     "mode": "search",
     "expectedPoints": [],
     "evidence": [],
@@ -482,16 +392,9 @@
     "split": "tune",
     "type": "fact",
     "question": "事务的四个特性是什么？",
-    "documentIds": [
-      "textbook"
-    ],
+    "documentIds": ["textbook"],
     "mode": "search",
-    "expectedPoints": [
-      "原子性",
-      "一致性",
-      "隔离性",
-      "持久性"
-    ],
+    "expectedPoints": ["原子性", "一致性", "隔离性", "持久性"],
     "evidence": [
       {
         "document": "textbook",
@@ -505,14 +408,9 @@
     "split": "tune",
     "type": "fact",
     "question": "原子性要求什么？",
-    "documentIds": [
-      "textbook"
-    ],
+    "documentIds": ["textbook"],
     "mode": "search",
-    "expectedPoints": [
-      "全部成功",
-      "全部撤销"
-    ],
+    "expectedPoints": ["全部成功", "全部撤销"],
     "evidence": [
       {
         "document": "textbook",
@@ -526,13 +424,9 @@
     "split": "tune",
     "type": "fact",
     "question": "B+ 树叶子节点如何连接？",
-    "documentIds": [
-      "textbook"
-    ],
+    "documentIds": ["textbook"],
     "mode": "search",
-    "expectedPoints": [
-      "链表"
-    ],
+    "expectedPoints": ["链表"],
     "evidence": [
       {
         "document": "textbook",
@@ -546,13 +440,9 @@
     "split": "tune",
     "type": "fact",
     "question": "复合索引通常遵循什么规则？",
-    "documentIds": [
-      "textbook"
-    ],
+    "documentIds": ["textbook"],
     "mode": "search",
-    "expectedPoints": [
-      "最左前缀"
-    ],
+    "expectedPoints": ["最左前缀"],
     "evidence": [
       {
         "document": "textbook",
@@ -566,13 +456,9 @@
     "split": "tune",
     "type": "fact",
     "question": "MVCC 通过什么改善并发读取？",
-    "documentIds": [
-      "textbook"
-    ],
+    "documentIds": ["textbook"],
     "mode": "search",
-    "expectedPoints": [
-      "多个数据版本"
-    ],
+    "expectedPoints": ["多个数据版本"],
     "evidence": [
       {
         "document": "textbook",
@@ -586,13 +472,9 @@
     "split": "acceptance",
     "type": "fact",
     "question": "增加索引前推荐先做什么？",
-    "documentIds": [
-      "textbook"
-    ],
+    "documentIds": ["textbook"],
     "mode": "search",
-    "expectedPoints": [
-      "查询计划"
-    ],
+    "expectedPoints": ["查询计划"],
     "evidence": [
       {
         "document": "textbook",
@@ -616,16 +498,9 @@
         "content": "原子性，一致性，隔离性，持久性"
       }
     ],
-    "documentIds": [
-      "textbook"
-    ],
+    "documentIds": ["textbook"],
     "mode": "search",
-    "expectedPoints": [
-      "原子性",
-      "一致性",
-      "隔离性",
-      "持久性"
-    ],
+    "expectedPoints": ["原子性", "一致性", "隔离性", "持久性"],
     "evidence": [
       {
         "document": "textbook",
@@ -639,9 +514,7 @@
     "split": "acceptance",
     "type": "overview",
     "question": "按章节概括这份文档的全部主要内容。",
-    "documentIds": [
-      "textbook"
-    ],
+    "documentIds": ["textbook"],
     "mode": "overview",
     "expectedPoints": [
       "原子性",
@@ -688,15 +561,9 @@
     "split": "acceptance",
     "type": "compare",
     "question": "对比技术网关手册和服务配置表中的 Gateway 超时与重试设置。",
-    "documentIds": [
-      "api",
-      "table"
-    ],
+    "documentIds": ["api", "table"],
     "mode": "compare",
-    "expectedPoints": [
-      "12",
-      "2"
-    ],
+    "expectedPoints": ["12", "2"],
     "evidence": [
       {
         "document": "api",
@@ -714,9 +581,7 @@
     "split": "acceptance",
     "type": "unanswerable",
     "question": "文档作者的家庭住址是什么？",
-    "documentIds": [
-      "textbook"
-    ],
+    "documentIds": ["textbook"],
     "mode": "search",
     "expectedPoints": [],
     "evidence": [],
@@ -728,13 +593,9 @@
     "split": "tune",
     "type": "fact",
     "question": "实验室工作日几点开放？",
-    "documentIds": [
-      "policy"
-    ],
+    "documentIds": ["policy"],
     "mode": "search",
-    "expectedPoints": [
-      "08:30"
-    ],
+    "expectedPoints": ["08:30"],
     "evidence": [
       {
         "document": "policy",
@@ -748,13 +609,9 @@
     "split": "tune",
     "type": "fact",
     "question": "原始实验数据保留多久？",
-    "documentIds": [
-      "policy"
-    ],
+    "documentIds": ["policy"],
     "mode": "search",
-    "expectedPoints": [
-      "60 天"
-    ],
+    "expectedPoints": ["60 天"],
     "evidence": [
       {
         "document": "policy",
@@ -768,13 +625,9 @@
     "split": "tune",
     "type": "fact",
     "question": "审批记录保留多久？",
-    "documentIds": [
-      "policy"
-    ],
+    "documentIds": ["policy"],
     "mode": "search",
-    "expectedPoints": [
-      "180 天"
-    ],
+    "expectedPoints": ["180 天"],
     "evidence": [
       {
         "document": "policy",
@@ -788,13 +641,9 @@
     "split": "tune",
     "type": "fact",
     "question": "借设备需要提前几天？",
-    "documentIds": [
-      "policy"
-    ],
+    "documentIds": ["policy"],
     "mode": "search",
-    "expectedPoints": [
-      "2 天"
-    ],
+    "expectedPoints": ["2 天"],
     "evidence": [
       {
         "document": "policy",
@@ -808,13 +657,9 @@
     "split": "tune",
     "type": "fact",
     "question": "谁审批设备借用？",
-    "documentIds": [
-      "policy"
-    ],
+    "documentIds": ["policy"],
     "mode": "search",
-    "expectedPoints": [
-      "管理员"
-    ],
+    "expectedPoints": ["管理员"],
     "evidence": [
       {
         "document": "policy",
@@ -828,14 +673,9 @@
     "split": "acceptance",
     "type": "fact",
     "question": "访客需要满足什么要求？",
-    "documentIds": [
-      "policy"
-    ],
+    "documentIds": ["policy"],
     "mode": "search",
-    "expectedPoints": [
-      "教师陪同",
-      "登记"
-    ],
+    "expectedPoints": ["教师陪同", "登记"],
     "evidence": [
       {
         "document": "policy",
@@ -859,13 +699,9 @@
         "content": "08:30"
       }
     ],
-    "documentIds": [
-      "policy"
-    ],
+    "documentIds": ["policy"],
     "mode": "search",
-    "expectedPoints": [
-      "08:30"
-    ],
+    "expectedPoints": ["08:30"],
     "evidence": [
       {
         "document": "policy",
@@ -879,19 +715,9 @@
     "split": "acceptance",
     "type": "overview",
     "question": "按章节概括这份文档的全部主要内容。",
-    "documentIds": [
-      "policy"
-    ],
+    "documentIds": ["policy"],
     "mode": "overview",
-    "expectedPoints": [
-      "08:30",
-      "60 天",
-      "180 天",
-      "2 天",
-      "管理员",
-      "教师陪同",
-      "登记"
-    ],
+    "expectedPoints": ["08:30", "60 天", "180 天", "2 天", "管理员", "教师陪同", "登记"],
     "evidence": [
       {
         "document": "policy",
@@ -925,15 +751,9 @@
     "split": "acceptance",
     "type": "compare",
     "question": "对比技术网关手册和服务配置表中的 Gateway 超时与重试设置。",
-    "documentIds": [
-      "api",
-      "table"
-    ],
+    "documentIds": ["api", "table"],
     "mode": "compare",
-    "expectedPoints": [
-      "12",
-      "2"
-    ],
+    "expectedPoints": ["12", "2"],
     "evidence": [
       {
         "document": "api",
@@ -951,9 +771,7 @@
     "split": "acceptance",
     "type": "unanswerable",
     "question": "文档作者的家庭住址是什么？",
-    "documentIds": [
-      "policy"
-    ],
+    "documentIds": ["policy"],
     "mode": "search",
     "expectedPoints": [],
     "evidence": [],
@@ -965,13 +783,9 @@
     "split": "tune",
     "type": "fact",
     "question": "AX-204 的工作电压是多少？",
-    "documentIds": [
-      "manual"
-    ],
+    "documentIds": ["manual"],
     "mode": "search",
-    "expectedPoints": [
-      "5 V"
-    ],
+    "expectedPoints": ["5 V"],
     "evidence": [
       {
         "document": "manual",
@@ -985,13 +799,9 @@
     "split": "tune",
     "type": "fact",
     "question": "AX-205 的采样频率是多少？",
-    "documentIds": [
-      "manual"
-    ],
+    "documentIds": ["manual"],
     "mode": "search",
-    "expectedPoints": [
-      "250 Hz"
-    ],
+    "expectedPoints": ["250 Hz"],
     "evidence": [
       {
         "document": "manual",
@@ -1005,13 +815,9 @@
     "split": "tune",
     "type": "fact",
     "question": "E-17 表示什么？",
-    "documentIds": [
-      "manual"
-    ],
+    "documentIds": ["manual"],
     "mode": "search",
-    "expectedPoints": [
-      "温度过高"
-    ],
+    "expectedPoints": ["温度过高"],
     "evidence": [
       {
         "document": "manual",
@@ -1025,14 +831,9 @@
     "split": "tune",
     "type": "fact",
     "question": "设备适用温度范围是多少？",
-    "documentIds": [
-      "manual"
-    ],
+    "documentIds": ["manual"],
     "mode": "search",
-    "expectedPoints": [
-      "0",
-      "45"
-    ],
+    "expectedPoints": ["0", "45"],
     "evidence": [
       {
         "document": "manual",
@@ -1046,13 +847,9 @@
     "split": "tune",
     "type": "fact",
     "question": "v3.2 升级使用什么接口？",
-    "documentIds": [
-      "manual"
-    ],
+    "documentIds": ["manual"],
     "mode": "search",
-    "expectedPoints": [
-      "USB-C"
-    ],
+    "expectedPoints": ["USB-C"],
     "evidence": [
       {
         "document": "manual",
@@ -1066,13 +863,9 @@
     "split": "acceptance",
     "type": "fact",
     "question": "校准周期是多少？",
-    "documentIds": [
-      "manual"
-    ],
+    "documentIds": ["manual"],
     "mode": "search",
-    "expectedPoints": [
-      "90 天"
-    ],
+    "expectedPoints": ["90 天"],
     "evidence": [
       {
         "document": "manual",
@@ -1096,13 +889,9 @@
         "content": "5 V"
       }
     ],
-    "documentIds": [
-      "manual"
-    ],
+    "documentIds": ["manual"],
     "mode": "search",
-    "expectedPoints": [
-      "5 V"
-    ],
+    "expectedPoints": ["5 V"],
     "evidence": [
       {
         "document": "manual",
@@ -1116,19 +905,9 @@
     "split": "acceptance",
     "type": "overview",
     "question": "按章节概括这份文档的全部主要内容。",
-    "documentIds": [
-      "manual"
-    ],
+    "documentIds": ["manual"],
     "mode": "overview",
-    "expectedPoints": [
-      "5 V",
-      "250 Hz",
-      "温度过高",
-      "0",
-      "45",
-      "USB-C",
-      "90 天"
-    ],
+    "expectedPoints": ["5 V", "250 Hz", "温度过高", "0", "45", "USB-C", "90 天"],
     "evidence": [
       {
         "document": "manual",
@@ -1162,15 +941,9 @@
     "split": "acceptance",
     "type": "compare",
     "question": "对比技术网关手册和服务配置表中的 Gateway 超时与重试设置。",
-    "documentIds": [
-      "api",
-      "table"
-    ],
+    "documentIds": ["api", "table"],
     "mode": "compare",
-    "expectedPoints": [
-      "12",
-      "2"
-    ],
+    "expectedPoints": ["12", "2"],
     "evidence": [
       {
         "document": "api",
@@ -1188,9 +961,7 @@
     "split": "acceptance",
     "type": "unanswerable",
     "question": "文档作者的家庭住址是什么？",
-    "documentIds": [
-      "manual"
-    ],
+    "documentIds": ["manual"],
     "mode": "search",
     "expectedPoints": [],
     "evidence": [],
@@ -1202,13 +973,9 @@
     "split": "tune",
     "type": "fact",
     "question": "Gateway 的超时是多少秒？",
-    "documentIds": [
-      "table"
-    ],
+    "documentIds": ["table"],
     "mode": "search",
-    "expectedPoints": [
-      "12"
-    ],
+    "expectedPoints": ["12"],
     "evidence": [
       {
         "document": "table",
@@ -1222,13 +989,9 @@
     "split": "tune",
     "type": "fact",
     "question": "Worker 重试次数是多少？",
-    "documentIds": [
-      "table"
-    ],
+    "documentIds": ["table"],
     "mode": "search",
-    "expectedPoints": [
-      "3"
-    ],
+    "expectedPoints": ["3"],
     "evidence": [
       {
         "document": "table",
@@ -1242,13 +1005,9 @@
     "split": "tune",
     "type": "fact",
     "question": "Indexer 的端口是多少？",
-    "documentIds": [
-      "table"
-    ],
+    "documentIds": ["table"],
     "mode": "search",
-    "expectedPoints": [
-      "8082"
-    ],
+    "expectedPoints": ["8082"],
     "evidence": [
       {
         "document": "table",
@@ -1262,13 +1021,9 @@
     "split": "tune",
     "type": "fact",
     "question": "服务采用什么协议？",
-    "documentIds": [
-      "table"
-    ],
+    "documentIds": ["table"],
     "mode": "search",
-    "expectedPoints": [
-      "TCP"
-    ],
+    "expectedPoints": ["TCP"],
     "evidence": [
       {
         "document": "table",
@@ -1282,13 +1037,9 @@
     "split": "tune",
     "type": "fact",
     "question": "超时数值的单位是什么？",
-    "documentIds": [
-      "table"
-    ],
+    "documentIds": ["table"],
     "mode": "search",
-    "expectedPoints": [
-      "seconds"
-    ],
+    "expectedPoints": ["seconds"],
     "evidence": [
       {
         "document": "table",
@@ -1302,13 +1053,9 @@
     "split": "acceptance",
     "type": "fact",
     "question": "重试值为零表示什么？",
-    "documentIds": [
-      "table"
-    ],
+    "documentIds": ["table"],
     "mode": "search",
-    "expectedPoints": [
-      "disables"
-    ],
+    "expectedPoints": ["disables"],
     "evidence": [
       {
         "document": "table",
@@ -1332,13 +1079,9 @@
         "content": "12"
       }
     ],
-    "documentIds": [
-      "table"
-    ],
+    "documentIds": ["table"],
     "mode": "search",
-    "expectedPoints": [
-      "12"
-    ],
+    "expectedPoints": ["12"],
     "evidence": [
       {
         "document": "table",
@@ -1352,18 +1095,9 @@
     "split": "acceptance",
     "type": "overview",
     "question": "按章节概括这份文档的全部主要内容。",
-    "documentIds": [
-      "table"
-    ],
+    "documentIds": ["table"],
     "mode": "overview",
-    "expectedPoints": [
-      "12",
-      "3",
-      "8082",
-      "TCP",
-      "seconds",
-      "disables"
-    ],
+    "expectedPoints": ["12", "3", "8082", "TCP", "seconds", "disables"],
     "evidence": [
       {
         "document": "table",
@@ -1397,15 +1131,9 @@
     "split": "acceptance",
     "type": "compare",
     "question": "对比技术网关手册和服务配置表中的 Gateway 超时与重试设置。",
-    "documentIds": [
-      "api",
-      "table"
-    ],
+    "documentIds": ["api", "table"],
     "mode": "compare",
-    "expectedPoints": [
-      "12",
-      "2"
-    ],
+    "expectedPoints": ["12", "2"],
     "evidence": [
       {
         "document": "api",
@@ -1423,9 +1151,7 @@
     "split": "acceptance",
     "type": "unanswerable",
     "question": "文档作者的家庭住址是什么？",
-    "documentIds": [
-      "table"
-    ],
+    "documentIds": ["table"],
     "mode": "search",
     "expectedPoints": [],
     "evidence": [],

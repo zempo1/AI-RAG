@@ -1,18 +1,18 @@
-import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn } from "typeorm";
 
-@Entity('chats')
+@Entity("chats")
 export class Chat {
-  @Column({ type: 'bigint', nullable: true, name: 'knowledge_base_id' })
+  @Column({ type: "bigint", nullable: true, name: "knowledge_base_id" })
   knowledgeBaseId: number | null;
-  @PrimaryGeneratedColumn({ type: 'bigint' })
+  @PrimaryGeneratedColumn({ type: "bigint" })
   id: number;
 
-  @Column({ type: 'bigint', name: 'user_id', nullable: true })
+  @Column({ type: "bigint", name: "user_id", nullable: true })
   userId: number | null;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Column({ type: "varchar", length: 255, nullable: true })
   title: string | null;
 
-  @Column({ type: 'datetime', precision: 6, nullable: true, name: 'created_at' })
+  @Column({ type: "datetime", precision: 6, nullable: true, name: "created_at" })
   createdAt: string | null;
 }

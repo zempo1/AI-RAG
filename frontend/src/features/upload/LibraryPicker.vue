@@ -12,14 +12,9 @@
       <template #prefix
         ><el-icon><Collection /></el-icon
       ></template>
-      <el-option
-        v-for="kb in libraries"
-        :key="kb.id"
-        :label="kb.name"
-        :value="kb.id"
+      <el-option v-for="kb in libraries" :key="kb.id" :label="kb.name" :value="kb.id"
         ><span class="library-option-name">{{ kb.name }}</span
-        ><el-icon v-if="kb.id === knowledgeBaseId" class="library-option-check"
-          ><Check /></el-icon
+        ><el-icon v-if="kb.id === knowledgeBaseId" class="library-option-check"><Check /></el-icon
       ></el-option>
       <el-option
         v-if="knowledgeBaseId && !currentLibrary"
@@ -29,10 +24,7 @@
       />
     </el-select>
     <div class="picker-actions">
-      <el-button
-        class="manage-button"
-        :disabled="!currentLibrary"
-        @click="emit('manage')"
+      <el-button class="manage-button" :disabled="!currentLibrary" @click="emit('manage')"
         ><el-icon><FolderOpened /></el-icon>管理文档</el-button
       >
       <el-button
@@ -48,9 +40,7 @@
       <el-icon><Document /></el-icon>
       <div>
         <span class="source-label">工作台来源</span
-        ><span class="source-name">{{
-          selectedDocument?.filename || "在文档管理中选择文档"
-        }}</span>
+        ><span class="source-name">{{ selectedDocument?.filename || "在文档管理中选择文档" }}</span>
       </div>
       <el-button
         v-if="selectedDocument"
@@ -64,14 +54,7 @@
   </section>
 </template>
 <script setup lang="ts">
-import {
-  Collection,
-  FolderOpened,
-  Plus,
-  Document,
-  Check,
-  Close,
-} from "@element-plus/icons-vue";
+import { Collection, FolderOpened, Plus, Document, Check, Close } from "@element-plus/icons-vue";
 import type { KnowledgeBase, ManagedDocument } from "../../api/knowledge-bases";
 defineProps<{
   knowledgeBaseId: number | null;

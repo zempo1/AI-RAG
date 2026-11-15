@@ -1,6 +1,6 @@
-import type { Citation } from './citations';
-import type { PdfTableLocation, RegionBox } from '../documents/parsers/parsed-document';
-import { mergeSourceLocations, sliceSourceLocation } from '../documents/parsers/source-anchors';
+import type { Citation } from "./citations";
+import type { PdfTableLocation, RegionBox } from "../documents/parsers/parsed-document";
+import { mergeSourceLocations, sliceSourceLocation } from "../documents/parsers/source-anchors";
 
 export function tableRegions(source: Citation) {
   return (
@@ -25,7 +25,7 @@ export function splitTableSource<T extends Citation>(source: T): T[] {
     location?.table ||
     !regions.length ||
     !location?.anchors?.length ||
-    location.anchors.some((a) => a.kind !== 'native') ||
+    location.anchors.some((a) => a.kind !== "native") ||
     source.text.length !== location.end - location.start
   )
     return [source];
@@ -62,7 +62,7 @@ export function splitTableSource<T extends Citation>(source: T): T[] {
   return result;
 }
 
-type Part = NonNullable<Citation['sourceSegments']>[number];
+type Part = NonNullable<Citation["sourceSegments"]>[number];
 type Item = {
   page: number;
   box: RegionBox;
@@ -88,11 +88,11 @@ function cellText(cell: { box: RegionBox; text: string }[]) {
       line.items
         .sort((a, b) => a.box[0] - b.box[0])
         .map(
-          (item, i, all) => (i && item.box[0] - all[i - 1].box[2] > 0.003 ? ' ' : '') + item.text,
+          (item, i, all) => (i && item.box[0] - all[i - 1].box[2] > 0.003 ? " " : "") + item.text,
         )
-        .join(''),
+        .join(""),
     )
-    .join(' ')
+    .join(" ")
     .trim();
 }
 
@@ -126,7 +126,7 @@ function snapshot<T extends Citation>(sources: T[], text: string, parts: Part[])
   return {
     ...base,
     text,
-    sectionTitle: parts[0].location.table?.title || '表格原文',
+    sectionTitle: parts[0].location.table?.title || "表格原文",
     sourceSegments: parts,
     chunkId: ids[0],
     chunkIds: ids,
@@ -193,7 +193,7 @@ function rawSnapshot<T extends Citation>(sources: T[]): T | undefined {
     }
     merged.push(part);
   }
-  return snapshot(sources, merged.map((p) => p.text).join('\n\n'), merged);
+  return snapshot(sources, merged.map((p) => p.text).join("\n\n"), merged);
 }
 
 function build<T extends Citation>(sources: T[]): T | undefined {
@@ -216,7 +216,7 @@ function build<T extends Citation>(sources: T[]): T | undefined {
       return;
     const covered = new Set<number>();
     for (const anchor of loc.anchors) {
-      if (anchor.kind !== 'native' || anchor.rects.length !== 1 || !inside(anchor.rects[0], table))
+      if (anchor.kind !== "native" || anchor.rects.length !== 1 || !inside(anchor.rects[0], table))
         return;
       const box = anchor.rects[0],
         key = `${anchor.page}:${box.map((n) => n.toFixed(6))}`;
@@ -273,12 +273,12 @@ function build<T extends Citation>(sources: T[]): T | undefined {
       )
         return;
       const chars = [...item.chars].sort(([a], [b]) => a - b);
-      cells[row][column].push({ box: item.box, text: chars.map(([, v]) => v.char).join('') });
+      cells[row][column].push({ box: item.box, text: chars.map(([, v]) => v.char).join("") });
       let part: Part | undefined;
       for (const [at, value] of chars) {
         if (!part || at !== part.location.end) {
           part = {
-            text: '',
+            text: "",
             chunkIds: [],
             location: {
               ...item.source.location!,
@@ -296,7 +296,7 @@ function build<T extends Citation>(sources: T[]): T | undefined {
         part.location.end = at + 1;
         part.chunkIds = [...new Set([...part.chunkIds, ...value.ids])].sort((a, b) => a - b);
         part.location.anchors = [
-          { page, start: part.location.start, end: at + 1, kind: 'native', rects: [[...item.box]] },
+          { page, start: part.location.start, end: at + 1, kind: "native", rects: [[...item.box]] },
         ];
       }
     }
@@ -310,11 +310,11 @@ function build<T extends Citation>(sources: T[]): T | undefined {
   }
   if (!rows.length || !parts.length) return;
   const format = (row: string[]) =>
-    '| ' + row.map((c) => c.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')).join(' | ') + ' |';
+    "| " + row.map((c) => c.replace(/\\/g, "\\\\").replace(/\|/g, "\\|")).join(" | ") + " |";
   const text = [
     format(rows[0]),
-    format(rows[0].map(() => '---')),
+    format(rows[0].map(() => "---")),
     ...rows.slice(1).map(format),
-  ].join('\n');
+  ].join("\n");
   return snapshot(sources, text, parts);
 }

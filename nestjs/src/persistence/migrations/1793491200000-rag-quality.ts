@@ -1,10 +1,10 @@
-import { MigrationInterface, QueryRunner, Table, TableColumn, TableIndex } from 'typeorm';
-import { entityTargets } from '../data-source';
+import { MigrationInterface, QueryRunner, Table, TableColumn, TableIndex } from "typeorm";
+import { entityTargets } from "../data-source";
 
 /** Explicit and resumable. Existing vectors and historical citations are never rewritten. */
 export class RagQuality1793491200000 implements MigrationInterface {
   async up(runner: QueryRunner) {
-    for (const key of ['retrievalRuns', 'summaryCaches'] as const) {
+    for (const key of ["retrievalRuns", "summaryCaches"] as const) {
       const metadata = runner.connection.getMetadata(entityTargets[key]);
       if (await runner.hasTable(metadata.tableName)) continue;
       await runner.createTable(
@@ -35,7 +35,7 @@ export class RagQuality1793491200000 implements MigrationInterface {
         true,
       );
     }
-    for (const key of ['indexRevisions', 'chunks', 'messages'] as const) {
+    for (const key of ["indexRevisions", "chunks", "messages"] as const) {
       const metadata = runner.connection.getMetadata(entityTargets[key]);
       for (const column of metadata.columns) {
         if (await runner.hasColumn(metadata.tableName, column.databaseName)) continue;
@@ -53,6 +53,6 @@ export class RagQuality1793491200000 implements MigrationInterface {
     }
   }
   async down() {
-    throw new Error('RAG quality upgrade requires an explicit restored backup to roll back');
+    throw new Error("RAG quality upgrade requires an explicit restored backup to roll back");
   }
 }

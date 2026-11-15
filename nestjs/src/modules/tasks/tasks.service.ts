@@ -1,11 +1,11 @@
 /** 实现业务处理；所属能力：后台任务状态、队列调度、重试、索引及问答任务执行。 */
-import { Injectable } from '@nestjs/common';
-import { Store, Row, now } from '../../persistence/store';
-import { ApiError } from '../../common/api-error';
-import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service';
+import { Injectable } from "@nestjs/common";
+import { Store, Row, now } from "../../persistence/store";
+import { ApiError } from "../../common/api-error";
+import { KnowledgeBasesService } from "../knowledge-bases/knowledge-bases.service";
 
 export const terminalTask = (status: string) =>
-  ['completed', 'failed', 'partial_failed', 'canceled'].includes(status);
+  ["completed", "failed", "partial_failed", "canceled"].includes(status);
 
 @Injectable()
 export class TasksService {
@@ -18,13 +18,19 @@ export class TasksService {
     // 对外隐藏执行令牌、幂等键；问答任务只返回展示所需字段，避免暴露加密凭据和证据快照。
     const { executionToken, idempotencyKey, ...result } = row;
     const raw = row.payload?.notBefore;
-    const waitingUntil = raw ? (/[zZ]|[+-]\d\d:\d\d$/.test(raw) ? raw : raw + 'Z') : null;
+    const waitingUntil = raw ? (/[zZ]|[+-]\d\d:\d\d$/.test(raw) ? raw : raw + "Z") : null;
     const delayed =
       waitingUntil && Date.parse(waitingUntil) > Date.now() && !terminalTask(row.status);
     return {
       ...result,
-      payload: row.payload ? Object.fromEntries(['notBefore', 'indexProgress'].filter(key => row.payload[key] !== undefined).map(key => [key, row.payload[key]])) : null,
-      ...(row.kind === 'qa'
+      payload: row.payload
+        ? Object.fromEntries(
+            ["notBefore", "indexProgress"]
+              .filter((key) => row.payload[key] !== undefined)
+              .map((key) => [key, row.payload[key]]),
+          )
+        : null,
+      ...(row.kind === "qa"
         ? {
             payload: {
               chatId: row.payload?.chatId,
@@ -32,33 +38,38 @@ export class TasksService {
               qaResult: row.payload?.qaResult,
             },
             qaResult: row.payload?.qaResult,
-            ...(row.payload?.engine === 'agentic-v1' ? { agentProgress: row.payload?.agentProgress,
-              retrievalRunId: row.payload?.retrievalRunId } : {}),
+            ...(row.payload?.engine === "agentic-v1"
+              ? {
+                  agentProgress: row.payload?.agentProgress,
+                  retrievalRunId: row.payload?.retrievalRunId,
+                }
+              : {}),
           }
         : {}),
-      ...(row.kind === 'qa' && row.payload?.engine === 'agentic-v1'
-        ? { agentProgress: row.payload?.agentProgress, retrievalRunId: row.payload?.retrievalRunId } : {}),
-      ...(row.kind === 'index' && row.payload?.indexProgress
+      ...(row.kind === "qa" && row.payload?.engine === "agentic-v1"
+        ? { agentProgress: row.payload?.agentProgress, retrievalRunId: row.payload?.retrievalRunId }
+        : {}),
+      ...(row.kind === "index" && row.payload?.indexProgress
         ? { indexProgress: row.payload.indexProgress }
         : {}),
       canDismiss: terminalTask(row.status) && !executionToken && !row.parentTaskId,
       waitingUntil: delayed ? waitingUntil : null,
       waitingReason: delayed
-        ? '等待索引保留期结束，保护已经开始的问答'
-        : row.stage === 'waiting'
-          ? '等待关联文档处理任务结束'
+        ? "等待索引保留期结束，保护已经开始的问答"
+        : row.stage === "waiting"
+          ? "等待关联文档处理任务结束"
           : null,
     };
   }
 
   create(tx: Store, values: Partial<Row>) {
-    return tx.save('tasks', {
+    return tx.save("tasks", {
       documentId: null,
       indexRevisionId: null,
       parentTaskId: null,
       idempotencyKey: null,
-      status: 'queued',
-      stage: 'queued',
+      status: "queued",
+      stage: "queued",
       completed: 0,
       total: null,
       attempts: 0,
@@ -73,10 +84,10 @@ export class TasksService {
   }
 
   async get(id: number, userId: number) {
-    const task = await this.store.get('tasks', id);
-    if (!task || task.userId !== userId) throw new ApiError(404, '任务不存在');
+    const task = await this.store.get("tasks", id);
+    if (!task || task.userId !== userId) throw new ApiError(404, "任务不存在");
     const children =
-      task.kind === 'rebuild' ? await this.store.list('tasks', { parentTaskId: id }) : undefined;
+      task.kind === "rebuild" ? await this.store.list("tasks", { parentTaskId: id }) : undefined;
     const sanitize = (row: Row) => {
       return this.present(row);
     };
@@ -85,7 +96,7 @@ export class TasksService {
 
   async list(userId: number, knowledgeBaseId: number) {
     await this.libraries.owned(knowledgeBaseId, userId);
-    const rows = await this.store.list('tasks', { userId, knowledgeBaseId });
+    const rows = await this.store.list("tasks", { userId, knowledgeBaseId });
     let historyCount = 0;
     return rows
       .filter((t) => !t.parentTaskId && !t.payload?.dismissedAt)
@@ -99,19 +110,19 @@ export class TasksService {
   async dismiss(id: number, userId: number) {
     const initial = await this.get(id, userId);
     await this.store.transaction(async (tx) => {
-      await tx.lock('knowledgeBases', initial.knowledgeBaseId);
-      const task = await tx.lock('tasks', id);
-      if (!task || task.userId !== userId) throw new ApiError(404, '任务不存在');
+      await tx.lock("knowledgeBases", initial.knowledgeBaseId);
+      const task = await tx.lock("tasks", id);
+      if (!task || task.userId !== userId) throw new ApiError(404, "任务不存在");
       if (
         !terminalTask(task.status) ||
         task.executionToken ||
         task.parentTaskId ||
-        (await tx.list('tasks', { parentTaskId: id })).some(
+        (await tx.list("tasks", { parentTaskId: id })).some(
           (t) => !terminalTask(t.status) || t.executionToken,
         )
       )
-        throw new ApiError(409, '进行中的任务不能移除');
-      await tx.save('tasks', { id, payload: { ...task.payload, dismissedAt: now() } });
+        throw new ApiError(409, "进行中的任务不能移除");
+      await tx.save("tasks", { id, payload: { ...task.payload, dismissedAt: now() } });
     });
     return { removed: true };
   }
@@ -119,12 +130,12 @@ export class TasksService {
   async clearCompleted(userId: number, knowledgeBaseId: number) {
     await this.libraries.owned(knowledgeBaseId, userId);
     let removed = 0;
-    for (const task of await this.store.list('tasks', { userId, knowledgeBaseId })) {
+    for (const task of await this.store.list("tasks", { userId, knowledgeBaseId })) {
       if (
         task.parentTaskId ||
         task.executionToken ||
         task.payload?.dismissedAt ||
-        !['completed', 'canceled'].includes(task.status)
+        !["completed", "canceled"].includes(task.status)
       )
         continue;
       try {
@@ -140,70 +151,70 @@ export class TasksService {
   async retry(id: number, userId: number) {
     const initial = await this.get(id, userId);
     await this.store.transaction(async (tx) => {
-      const kb = await tx.lock('knowledgeBases', initial.knowledgeBaseId);
+      const kb = await tx.lock("knowledgeBases", initial.knowledgeBaseId);
       if (!kb || kb.deletedAt) {
-        if (!['cleanup', 'cleanup-library', 'retire'].includes(initial.kind))
-          throw new ApiError(409, '知识库已删除');
+        if (!["cleanup", "cleanup-library", "retire"].includes(initial.kind))
+          throw new ApiError(409, "知识库已删除");
       }
-      if (initial.kind === 'rebuild') {
+      if (initial.kind === "rebuild") {
         if (
           kb?.rebuildTaskId ||
-          (await tx.list('tasks', { knowledgeBaseId: initial.knowledgeBaseId })).some(
-            (t) => t.kind === 'index' && !terminalTask(t.status),
+          (await tx.list("tasks", { knowledgeBaseId: initial.knowledgeBaseId })).some(
+            (t) => t.kind === "index" && !terminalTask(t.status),
           )
         )
-          throw new ApiError(409, '知识库有进行中的任务');
-        const parent = await tx.lock('tasks', id);
-        if (!parent || !['failed', 'partial_failed'].includes(parent.status))
-          throw new ApiError(409, '任务不可重试');
-        for (const child of await tx.list('tasks', { parentTaskId: id })) {
-          if (child.status !== 'failed') continue;
-          const doc = await tx.lock('documents', child.documentId);
+          throw new ApiError(409, "知识库有进行中的任务");
+        const parent = await tx.lock("tasks", id);
+        if (!parent || !["failed", "partial_failed"].includes(parent.status))
+          throw new ApiError(409, "任务不可重试");
+        for (const child of await tx.list("tasks", { parentTaskId: id })) {
+          if (child.status !== "failed") continue;
+          const doc = await tx.lock("documents", child.documentId);
           if (!doc || doc.deletedAt || doc.desiredIndexRevisionId !== child.indexRevisionId) {
-            await tx.save('tasks', { id: child.id, status: 'canceled', stage: 'canceled' });
+            await tx.save("tasks", { id: child.id, status: "canceled", stage: "canceled" });
           } else {
             await this.reset(tx, child);
           }
         }
-        await tx.save('knowledgeBases', { id: initial.knowledgeBaseId, rebuildTaskId: id });
-        await tx.save('tasks', {
+        await tx.save("knowledgeBases", { id: initial.knowledgeBaseId, rebuildTaskId: id });
+        await tx.save("tasks", {
           id,
-          status: 'running',
-          stage: 'rebuilding',
+          status: "running",
+          stage: "rebuilding",
           error: null,
           payload: { ...parent.payload, dismissedAt: null },
           updatedAt: now(),
         });
       } else {
-        const doc = initial.documentId ? await tx.lock('documents', initial.documentId) : undefined;
-        const task = await tx.lock('tasks', id);
+        const doc = initial.documentId ? await tx.lock("documents", initial.documentId) : undefined;
+        const task = await tx.lock("tasks", id);
         if (
           !task ||
-          !['failed', ...(task.kind === 'qa' ? ['partial_failed'] : [])].includes(task.status) ||
+          !["failed", ...(task.kind === "qa" ? ["partial_failed"] : [])].includes(task.status) ||
           !task.retryable
         )
-          throw new ApiError(409, '任务不可重试');
-        if (task.kind === 'index') {
+          throw new ApiError(409, "任务不可重试");
+        if (task.kind === "index") {
           if (kb?.rebuildTaskId && kb.rebuildTaskId !== task.parentTaskId)
-            throw new ApiError(409, '知识库正在重建');
+            throw new ApiError(409, "知识库正在重建");
           if (!doc || doc.deletedAt || doc.desiredIndexRevisionId !== task.indexRevisionId)
-            throw new ApiError(409, '文档已删除或已有更新版本');
-          if (task.parentTaskId) throw new ApiError(409, '请重试所属知识库重建任务');
-          await tx.save('documents', { id: doc.id, status: 'queued' });
+            throw new ApiError(409, "文档已删除或已有更新版本");
+          if (task.parentTaskId) throw new ApiError(409, "请重试所属知识库重建任务");
+          await tx.save("documents", { id: doc.id, status: "queued" });
         }
         await this.reset(tx, task);
       }
     });
-    if (initial.kind === 'rebuild') await this.refreshParent(id);
+    if (initial.kind === "rebuild") await this.refreshParent(id);
     return this.get(id, userId);
   }
 
   private reset(tx: Store, task: Row) {
     // 手动重试递增投递代数，让队列将其识别为新一轮执行，而非复用已失败的 job。
-    return tx.save('tasks', {
+    return tx.save("tasks", {
       id: task.id,
-      status: 'queued',
-      stage: 'queued',
+      status: "queued",
+      stage: "queued",
       completed: 0,
       total: null,
       error: null,
@@ -217,35 +228,35 @@ export class TasksService {
 
   async refreshParent(parentId?: number | null) {
     if (!parentId) return;
-    const initial = await this.store.get('tasks', parentId);
+    const initial = await this.store.get("tasks", parentId);
     if (!initial) return;
     await this.store.transaction(async (tx) => {
-      const kb = await tx.lock('knowledgeBases', initial.knowledgeBaseId);
-      const parent = await tx.lock('tasks', parentId);
-      if (!parent || parent.status === 'canceled') return;
-      const children = await tx.list('tasks', { parentTaskId: parentId });
+      const kb = await tx.lock("knowledgeBases", initial.knowledgeBaseId);
+      const parent = await tx.lock("tasks", parentId);
+      if (!parent || parent.status === "canceled") return;
+      const children = await tx.list("tasks", { parentTaskId: parentId });
       const done = children.filter((c) => terminalTask(c.status)).length;
       // 父重建任务本身不执行索引，根据所有子任务汇总进度与完整/部分失败状态。
-      const failed = children.filter((c) => c.status === 'failed').length;
+      const failed = children.filter((c) => c.status === "failed").length;
       const complete = done === children.length;
       const status = complete
         ? failed
           ? failed === children.length
-            ? 'failed'
-            : 'partial_failed'
-          : 'completed'
-        : 'running';
-      await tx.save('tasks', {
+            ? "failed"
+            : "partial_failed"
+          : "completed"
+        : "running";
+      await tx.save("tasks", {
         id: parentId,
         status,
-        stage: complete ? status : 'rebuilding',
+        stage: complete ? status : "rebuilding",
         completed: done,
         total: children.length,
-        error: failed ? String(failed) + ' 份文档处理失败' : null,
+        error: failed ? String(failed) + " 份文档处理失败" : null,
         updatedAt: now(),
       });
       if (complete && kb?.rebuildTaskId === parentId)
-        await tx.save('knowledgeBases', { id: kb.id, rebuildTaskId: null });
+        await tx.save("knowledgeBases", { id: kb.id, rebuildTaskId: null });
     });
   }
 }

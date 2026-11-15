@@ -1,10 +1,10 @@
-import { ModelCallObserver, ModelCallOutcome, ModelCallRequest } from '../llm/llm.types';
+import { ModelCallObserver, ModelCallOutcome, ModelCallRequest } from "../llm/llm.types";
 
 export class AgentLimitError extends Error {
   readonly retryable = false;
-  constructor(message = 'Agent 预算已耗尽') {
+  constructor(message = "Agent 预算已耗尽") {
     super(message);
-    this.name = 'AgentLimitError';
+    this.name = "AgentLimitError";
   }
 }
 export interface AgentBudgetState {
@@ -79,12 +79,12 @@ export class AgentBudget implements ModelCallObserver {
       this.signal?.throwIfAborted();
       await this.guard?.();
       const input = Buffer.byteLength(
-        typeof request.input === 'string' ? request.input : JSON.stringify(request.input),
-        'utf8',
+        typeof request.input === "string" ? request.input : JSON.stringify(request.input),
+        "utf8",
       );
       const amount = input + request.maxOutputTokens;
       if (this.limits.contextTokens && amount + 512 > this.limits.contextTokens)
-        throw new AgentLimitError('模型上下文达到上限');
+        throw new AgentLimitError("模型上下文达到上限");
       if (
         this.state.calls >= this.limits.calls - (this.final ? 0 : 1) ||
         this.state.tokens + amount >

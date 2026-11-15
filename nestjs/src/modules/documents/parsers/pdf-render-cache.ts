@@ -1,8 +1,8 @@
-import { localRendering } from './vision-scheduler';
-import { RegionBox } from './parsed-document';
-import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { localRendering } from "./vision-scheduler";
+import { RegionBox } from "./parsed-document";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 
 interface RenderScope {
   signal?: AbortSignal;
@@ -27,7 +27,7 @@ export async function verifyCachedPdfImage(
     return false;
   const metadata = await stat(path);
   if (!metadata.isFile() || metadata.size !== expectedBytes) return false;
-  const hash = createHash('sha256');
+  const hash = createHash("sha256");
   let actualBytes = 0;
   const stream = createReadStream(path, { highWaterMark: 64 * 1024, signal: scope.signal });
   try {
@@ -42,7 +42,7 @@ export async function verifyCachedPdfImage(
   }
   await scope.guard?.();
   scope.signal?.throwIfAborted();
-  return actualBytes === expectedBytes && hash.digest('hex') === expectedHash;
+  return actualBytes === expectedBytes && hash.digest("hex") === expectedHash;
 }
 interface Raster {
   canvas: any;
@@ -146,7 +146,7 @@ export async function renderPdfRegion(
           Math.ceil(width * scale),
           Math.ceil(height * scale),
         );
-        return crop.canvas.toBuffer('image/png');
+        return crop.canvas.toBuffer("image/png");
       } finally {
         document.canvasFactory.destroy(crop);
       }
@@ -163,7 +163,7 @@ export async function renderPdfRegion(
         viewport,
         transform: [1, 0, 0, 1, -x0 * viewport.width, -y0 * viewport.height],
       }).promise;
-      return canvas.canvas.toBuffer('image/png');
+      return canvas.canvas.toBuffer("image/png");
     } finally {
       document.canvasFactory.destroy(canvas);
     }

@@ -1,38 +1,38 @@
-require('dotenv/config');
-const fs = require('node:fs/promises'),
-  path = require('node:path');
-const { ConfigService } = require('@nestjs/config');
+require("dotenv/config");
+const fs = require("node:fs/promises"),
+  path = require("node:path");
+const { ConfigService } = require("@nestjs/config");
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(name);
   return i < 0 ? fallback : process.argv[i + 1];
 };
 (async () => {
-  if (!process.argv.includes('--live')) {
-    console.log('加 --live --file <PDF> 后比较3个区域的串行/并发，最多6次真实视觉调用。');
+  if (!process.argv.includes("--live")) {
+    console.log("加 --live --file <PDF> 后比较3个区域的串行/并发，最多6次真实视觉调用。");
     return;
   }
-  const file = arg('--file');
-  if (!file) throw Error('--file required');
-  const build = path.resolve(arg('--build-dir', 'dist'));
-  const { validateConfig } = require(path.join(build, 'config/configuration'));
+  const file = arg("--file");
+  if (!file) throw Error("--file required");
+  const build = path.resolve(arg("--build-dir", "dist"));
+  const { validateConfig } = require(path.join(build, "config/configuration"));
   const { PdfVisualService } = require(
-    path.join(build, 'modules/documents/parsers/pdf-visual.service'),
+    path.join(build, "modules/documents/parsers/pdf-visual.service"),
   );
-  const { PageAssetsService } = require(path.join(build, 'modules/documents/page-assets.service'));
-  const { LlmService } = require(path.join(build, 'modules/llm/llm.service'));
-  const { MemoryStore } = require(path.join(build, 'persistence/memory.store'));
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const { PageAssetsService } = require(path.join(build, "modules/documents/page-assets.service"));
+  const { LlmService } = require(path.join(build, "modules/llm/llm.service"));
+  const { MemoryStore } = require(path.join(build, "persistence/memory.store"));
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const bytes = await fs.readFile(file),
-    root = path.resolve('.data/concurrency-benchmark/' + Date.now());
+    root = path.resolve(".data/concurrency-benchmark/" + Date.now());
   await fs.mkdir(root, { recursive: true });
   const report = [];
   for (const concurrency of [1, 3]) {
     const config = new ConfigService(
       validateConfig({
         ...process.env,
-        STORAGE_DRIVER: 'memory',
-        VECTOR_DRIVER: 'memory',
-        QUEUE_DRIVER: 'memory',
+        STORAGE_DRIVER: "memory",
+        VECTOR_DRIVER: "memory",
+        QUEUE_DRIVER: "memory",
         VISION_CONCURRENCY: concurrency,
         PAGE_ASSETS_DIR: path.join(root, String(concurrency)),
       }),
@@ -76,14 +76,14 @@ const arg = (name, fallback) => {
           return visual.page(
             doc,
             page,
-            content.items.map((x) => x.str || '').join(' '),
+            content.items.map((x) => x.str || "").join(" "),
             { userId: 1, documentId: 1, versionId: 1 },
             content,
           );
         }),
       );
       row.elapsedMs = Date.now() - started;
-      if (results.some((r) => r.status === 'rejected')) throw Error('部分识别失败，见模型日志');
+      if (results.some((r) => r.status === "rejected")) throw Error("部分识别失败，见模型日志");
       row.results = results.map((r) => r.value);
     } finally {
       global.fetch = originalFetch;
@@ -91,10 +91,10 @@ const arg = (name, fallback) => {
     }
     report.push(row);
   }
-  await fs.writeFile(path.join(root, 'report.json'), JSON.stringify(report, null, 2));
+  await fs.writeFile(path.join(root, "report.json"), JSON.stringify(report, null, 2));
   console.log(
     JSON.stringify(
-      { report: path.join(root, 'report.json'), metrics: report.map(({ results, ...row }) => row) },
+      { report: path.join(root, "report.json"), metrics: report.map(({ results, ...row }) => row) },
       null,
       2,
     ),

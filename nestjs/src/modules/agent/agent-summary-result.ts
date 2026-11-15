@@ -1,5 +1,5 @@
-import { AgentSnapshot } from './agent.types';
-import { OriginalEvidence } from '../rag/retrieval.types';
+import { AgentSnapshot } from "./agent.types";
+import { OriginalEvidence } from "../rag/retrieval.types";
 
 /** Already verified sections can remain useful when the complete original will not fit one answer. */
 export function verifiedSummaryResult(state: AgentSnapshot, outputBudget: number) {
@@ -18,7 +18,7 @@ export function verifiedSummaryResult(state: AgentSnapshot, outputBudget: number
       (_m, n) => `[${next.get(group.refs[n])!.number}]`,
     );
     if (
-      Buffer.byteLength([...paragraphs, paragraph].join('\n\n'), 'utf8') >
+      Buffer.byteLength([...paragraphs, paragraph].join("\n\n"), "utf8") >
       Math.max(0, outputBudget - 400)
     )
       break;
@@ -37,7 +37,7 @@ export function verifiedSummaryResult(state: AgentSnapshot, outputBudget: number
     coverage.length > 0 &&
     coverage.every((c) => c.complete && c.fullDocument === true);
   const notice = complete
-    ? ''
-    : '说明：以下为通过原文核查的部分分组要点，未覆盖的内容不作推测。\n\n';
-  return { answer: notice + paragraphs.join('\n\n'), sources: [...selected.values()], complete };
+    ? ""
+    : "说明：以下为通过原文核查的部分分组要点，未覆盖的内容不作推测。\n\n";
+  return { answer: notice + paragraphs.join("\n\n"), sources: [...selected.values()], complete };
 }

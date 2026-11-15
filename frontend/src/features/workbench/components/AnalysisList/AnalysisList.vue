@@ -15,24 +15,16 @@
             <span class="analysis-doc">{{ item.documentName }}</span>
           </el-tooltip>
           <span class="analysis-time">{{ formatTime(item.createdAt) }}</span>
-          <el-tag v-if="item.sourceOutdated" type="warning" size="small"
-            >旧版本来源</el-tag
-          >
+          <el-tag v-if="item.sourceOutdated" type="warning" size="small">旧版本来源</el-tag>
         </div>
         <div class="analysis-header-right">
-          <el-icon
-            class="toggle-chevron"
-            :class="{ expanded: expandedId === item.id }"
+          <el-icon class="toggle-chevron" :class="{ expanded: expandedId === item.id }"
             ><ArrowRight
           /></el-icon>
           <el-tooltip content="导出 Markdown" placement="left" :hide-after="0">
-            <el-icon class="export-icon" @click.stop="$emit('export', item)"
-              ><Download
-            /></el-icon>
+            <el-icon class="export-icon" @click.stop="$emit('export', item)"><Download /></el-icon>
           </el-tooltip>
-          <el-icon class="delete-icon" @click.stop="$emit('delete', item)"
-            ><Delete
-          /></el-icon>
+          <el-icon class="delete-icon" @click.stop="$emit('delete', item)"><Delete /></el-icon>
         </div>
       </div>
       <div
@@ -73,10 +65,7 @@ function formatTime(iso: string): string {
   const d = new Date(iso);
   const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000);
   if (diffDays === 0)
-    return (
-      "今天 " +
-      d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
-    );
+    return "今天 " + d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
   if (diffDays === 1) return "昨天";
   if (diffDays < 7) return `${diffDays} 天前`;
   return d.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });

@@ -1,11 +1,11 @@
 /** 以数据库任务为准，将任务 ID 投递到队列并组织消费。 */
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy, Optional } from '@nestjs/common';
-import { QaTasksService } from './qa-tasks.service';
-import { ConfigService } from '@nestjs/config';
-import { Queue, Worker, UnrecoverableError, DelayedError } from 'bullmq';
-import { Store, now } from '../../persistence/store';
-import { IndexingService } from '../documents/indexing.service';
-import { TasksService, terminalTask } from './tasks.service';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy, Optional } from "@nestjs/common";
+import { QaTasksService } from "./qa-tasks.service";
+import { ConfigService } from "@nestjs/config";
+import { Queue, Worker, UnrecoverableError, DelayedError } from "bullmq";
+import { Store, now } from "../../persistence/store";
+import { IndexingService } from "../documents/indexing.service";
+import { TasksService, terminalTask } from "./tasks.service";
 
 /** SQL is the outbox and source of truth; Redis only transports task ids. */
 @Injectable()
@@ -27,45 +27,45 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    if (this.config.get('QUEUE_DRIVER') === 'bullmq') {
-      for (const name of ['documents', 'cleanup', 'qa']) {
+    if (this.config.get("QUEUE_DRIVER") === "bullmq") {
+      for (const name of ["documents", "cleanup", "qa"]) {
         const queue = new Queue(name, {
-          prefix: this.config.get('QUEUE_PREFIX'),
+          prefix: this.config.get("QUEUE_PREFIX"),
           connection: this.connection(false),
         });
-        queue.on('error', () => this.logger.warn('Redis 暂不可用，任务保留在 MySQL 等待补投'));
+        queue.on("error", () => this.logger.warn("Redis 暂不可用，任务保留在 MySQL 等待补投"));
         this.queues.set(name, queue);
         // API 进程负责接收和投递；独立 Worker 进程负责消费，避免每个 API 实例都执行任务。
-        if (process.env.PROCESS_ROLE === 'worker') {
+        if (process.env.PROCESS_ROLE === "worker") {
           const worker = new Worker(
             name,
             async (job) => {
               try {
-                const result = await (name === 'qa' ? this.qa! : this.indexing).process(
+                const result = await (name === "qa" ? this.qa! : this.indexing).process(
                   job.data.taskId,
                   job.attemptsMade + 1,
                   (progress) => job.updateProgress(progress),
                 );
                 // 依赖未就绪属于等待而非失败，延迟再处理，不消耗普通错误重试逻辑。
-                if (result === 'waiting') {
+                if (result === "waiting") {
                   await job.moveToDelayed(Date.now() + 2000, job.token);
                   throw new DelayedError();
                 }
               } catch (error) {
-                const task = await this.store.get('tasks', job.data.taskId);
-                if (task?.status === 'failed' && !task.retryable)
-                  throw new UnrecoverableError(task.error || '文档处理失败');
+                const task = await this.store.get("tasks", job.data.taskId);
+                if (task?.status === "failed" && !task.retryable)
+                  throw new UnrecoverableError(task.error || "文档处理失败");
                 throw error;
               }
             },
             {
-              prefix: this.config.get('QUEUE_PREFIX'),
+              prefix: this.config.get("QUEUE_PREFIX"),
               connection: this.connection(true),
               concurrency: 1,
             },
           );
-          worker.on('error', () => this.logger.warn('Worker 等待 Redis 连接恢复'));
-          worker.on('failed', (_job, error) => this.logger.warn('任务失败: ' + error.message));
+          worker.on("error", () => this.logger.warn("Worker 等待 Redis 连接恢复"));
+          worker.on("failed", (_job, error) => this.logger.warn("任务失败: " + error.message));
           this.workers.push(worker);
         }
       }
@@ -73,21 +73,21 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
     this.timer = setInterval(() => {
       if (this.busy || this.stopping) return;
       this.activeDispatch = this.dispatch().catch((error) =>
-        this.logger.warn('任务分发稍后重试: ' + error.message),
+        this.logger.warn("任务分发稍后重试: " + error.message),
       );
     }, 1000);
     this.timer.unref();
   }
 
   private connection(worker: boolean) {
-    const url = new URL(this.config.getOrThrow<string>('REDIS_URL'));
+    const url = new URL(this.config.getOrThrow<string>("REDIS_URL"));
     return {
       host: url.hostname,
       port: Number(url.port || 6379),
       username: url.username ? decodeURIComponent(url.username) : undefined,
       password: url.password ? decodeURIComponent(url.password) : undefined,
       db: Number(url.pathname.slice(1) || 0),
-      ...(url.protocol === 'rediss:' ? { tls: {} } : {}),
+      ...(url.protocol === "rediss:" ? { tls: {} } : {}),
       maxRetriesPerRequest: worker ? null : 1,
       enableOfflineQueue: worker,
       connectTimeout: 2000,
@@ -99,25 +99,29 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
     this.busy = true;
     try {
       // 每轮从数据库补投未完成任务，因此 Redis 短暂不可用不会丢失业务任务记录。
-      const pending = (await this.store.list('tasks'))
+      const pending = (await this.store.list("tasks"))
         .filter(
           (t) =>
-            t.kind !== 'rebuild' &&
-            !(t.payload?.engine === 'agentic-v1' && t.payload?.foreground &&
-              t.status === 'running' && t.payload?.leaseUntil > Date.now()) &&
-            (!terminalTask(t.status) || (t.status === 'canceled' && t.executionToken)),
+            t.kind !== "rebuild" &&
+            !(
+              t.payload?.engine === "agentic-v1" &&
+              t.payload?.foreground &&
+              t.status === "running" &&
+              t.payload?.leaseUntil > Date.now()
+            ) &&
+            (!terminalTask(t.status) || (t.status === "canceled" && t.executionToken)),
         )
         .sort((a, b) => a.id - b.id);
       for (const task of pending) {
         if (this.stopping) break;
         const notBefore = task.payload?.notBefore;
         const delay = notBefore
-          ? Math.max(0, Date.parse(notBefore + 'Z') - Date.parse(now() + 'Z'))
+          ? Math.max(0, Date.parse(notBefore + "Z") - Date.parse(now() + "Z"))
           : 0;
-        if (this.config.get('QUEUE_DRIVER') === 'memory') {
+        if (this.config.get("QUEUE_DRIVER") === "memory") {
           if (delay) continue;
           try {
-            await (task.kind === 'qa' ? this.qa! : this.indexing).process(
+            await (task.kind === "qa" ? this.qa! : this.indexing).process(
               task.id,
               task.attempts + 1,
             );
@@ -126,15 +130,15 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
           }
         } else {
           const queue = this.queues.get(
-            task.kind === 'qa' ? 'qa' : task.kind === 'index' ? 'documents' : 'cleanup',
+            task.kind === "qa" ? "qa" : task.kind === "index" ? "documents" : "cleanup",
           );
           if (!queue) continue;
           // 任务 ID 加投递代数构成队列标识，普通补投可去重，手动重试可创建新一代队列任务。
-          const jobId = 'task-' + task.id + '-' + task.dispatchGeneration;
+          const jobId = "task-" + task.id + "-" + task.dispatchGeneration;
           const existing = await queue.getJob(jobId);
           if (existing) {
             const state = await existing.getState();
-            if (!['failed', 'completed'].includes(state)) continue;
+            if (!["failed", "completed"].includes(state)) continue;
             // A crash between SQL completion and Redis ack can leave either side ahead.
             await existing.remove();
           }
@@ -144,7 +148,7 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
             {
               jobId,
               attempts: 3,
-              backoff: { type: 'exponential', delay: 1000 },
+              backoff: { type: "exponential", delay: 1000 },
               delay,
               removeOnComplete: { count: 1000 },
               removeOnFail: { count: 1000 },
@@ -152,8 +156,8 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
           );
         }
       }
-      for (const parent of (await this.store.list('tasks')).filter(
-        (t) => t.kind === 'rebuild' && !terminalTask(t.status),
+      for (const parent of (await this.store.list("tasks")).filter(
+        (t) => t.kind === "rebuild" && !terminalTask(t.status),
       ))
         await this.tasks.refreshParent(parent.id);
     } finally {

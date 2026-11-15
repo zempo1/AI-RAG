@@ -1,7 +1,7 @@
-import { Store, now } from '../../persistence/store';
-import { AgentBudget, AgentBudgetState } from './agent-budget';
-import { AgentGraphOwner, withAgentGraphOwner } from './agent-graph-owner';
-import type { AgentSnapshot, PublicStep } from './agent.types';
+import { Store, now } from "../../persistence/store";
+import { AgentBudget, AgentBudgetState } from "./agent-budget";
+import { AgentGraphOwner, withAgentGraphOwner } from "./agent-graph-owner";
+import type { AgentSnapshot, PublicStep } from "./agent.types";
 
 export interface AgentLedger {
   budget: AgentBudgetState;
@@ -42,14 +42,23 @@ export class AgentGraphRun {
     this.repairUsed ||= state.repairUsed;
     if (!this.owner) return;
     await withAgentGraphOwner(this.store, this.owner, async (tx, task) => {
-      await tx.save('tasks', {
-        id: task.id, updatedAt: now(), stage: state.phase, completed: this.budget.decisions,
+      await tx.save("tasks", {
+        id: task.id,
+        updatedAt: now(),
+        stage: state.phase,
+        completed: this.budget.decisions,
         payload: {
-          ...task.payload, leaseUntil: Date.now() + 300000,
-          agentBudgetLedger: { budget: this.budget, repairUsed: this.repairUsed } satisfies AgentLedger,
+          ...task.payload,
+          leaseUntil: Date.now() + 300000,
+          agentBudgetLedger: {
+            budget: this.budget,
+            repairUsed: this.repairUsed,
+          } satisfies AgentLedger,
           agentProgress: {
-            ...task.payload.agentProgress, budget: this.publicBudget(),
-            status: state.status ?? state.phase, stopReason: state.stopReason ?? null,
+            ...task.payload.agentProgress,
+            budget: this.publicBudget(),
+            status: state.status ?? state.phase,
+            stopReason: state.stopReason ?? null,
           },
         },
       });
@@ -60,10 +69,16 @@ export class AgentGraphRun {
     if (!this.owner) {
       this.steps = [...this.steps, { ...step, sequence: (this.steps.at(-1)?.sequence ?? 0) + 1 }];
       const event = this.steps.at(-1)!;
-      await this.finish(state, { engine: state.engine, agent: {
-        plan: state.plan, steps: this.steps, budget: this.publicBudget(), stopReason: state.stopReason,
-        status: step.kind === 'stop' ? 'ready' : 'running',
-      } });
+      await this.finish(state, {
+        engine: state.engine,
+        agent: {
+          plan: state.plan,
+          steps: this.steps,
+          budget: this.publicBudget(),
+          stopReason: state.stopReason,
+          status: step.kind === "stop" ? "ready" : "running",
+        },
+      });
       return event;
     }
     const result = await withAgentGraphOwner(this.store, this.owner, async (tx, task) => {
@@ -73,28 +88,44 @@ export class AgentGraphRun {
       const event = { ...step, sequence };
       const steps = [...(task.payload.agentProgress?.steps ?? []), event].slice(-100);
       const progress = {
-        plan: state.plan, steps, budget: this.publicBudget(),
-        stopReason: state.stopReason ?? null, status: state.status ?? state.phase,
+        plan: state.plan,
+        steps,
+        budget: this.publicBudget(),
+        stopReason: state.stopReason ?? null,
+        status: state.status ?? state.phase,
       };
-      await tx.save('tasks', { id: task.id, updatedAt: now(), payload: {
-        ...task.payload, agentProgress: progress, agentEventSequence: sequence,
-        agentEventSequences: { ...events, [key]: sequence },
-      } });
-      await tx.save('retrievalRuns', { id: state.runId, payload: {
-        engine: state.engine, agent: { ...progress, status: step.kind === 'stop' ? 'ready' : 'running' },
-      } });
+      await tx.save("tasks", {
+        id: task.id,
+        updatedAt: now(),
+        payload: {
+          ...task.payload,
+          agentProgress: progress,
+          agentEventSequence: sequence,
+          agentEventSequences: { ...events, [key]: sequence },
+        },
+      });
+      await tx.save("retrievalRuns", {
+        id: state.runId,
+        payload: {
+          engine: state.engine,
+          agent: { ...progress, status: step.kind === "stop" ? "ready" : "running" },
+        },
+      });
       return { event, steps };
     });
-    if (result && result.event.sequence > (this.steps.at(-1)?.sequence ?? 0)) this.steps = result.steps;
+    if (result && result.event.sequence > (this.steps.at(-1)?.sequence ?? 0))
+      this.steps = result.steps;
     return result?.event;
   }
 
   async finish(state: AgentSnapshot, payload: object) {
     if (!this.owner) {
-      if (this.store?.save && state.runId) await this.store.save('retrievalRuns', { id: state.runId, payload });
+      if (this.store?.save && state.runId)
+        await this.store.save("retrievalRuns", { id: state.runId, payload });
       return;
     }
     await withAgentGraphOwner(this.store, this.owner, (tx) =>
-      tx.save('retrievalRuns', { id: state.runId, payload }));
+      tx.save("retrievalRuns", { id: state.runId, payload }),
+    );
   }
 }

@@ -1,23 +1,23 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { ConfigService } from '@nestjs/config';
-import { validateConfig } from '../../src/config/configuration';
-import { MemoryStore } from '../../src/persistence/memory.store';
-import { KnowledgeBasesService } from '../../src/modules/knowledge-bases/knowledge-bases.service';
-import { TasksService } from '../../src/modules/tasks/tasks.service';
-import { DocumentsService } from '../../src/modules/documents/documents.service';
-import { IndexingService } from '../../src/modules/documents/indexing.service';
-import { DocumentParser } from '../../src/modules/documents/parsers/document.parser';
-import { RecursiveChunker } from '../../src/modules/documents/chunkers/recursive.chunker';
-import { InMemoryVectorStore } from '../../src/modules/vector-store/in-memory-vector-store.service';
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ConfigService } from "@nestjs/config";
+import { validateConfig } from "../../src/config/configuration";
+import { MemoryStore } from "../../src/persistence/memory.store";
+import { KnowledgeBasesService } from "../../src/modules/knowledge-bases/knowledge-bases.service";
+import { TasksService } from "../../src/modules/tasks/tasks.service";
+import { DocumentsService } from "../../src/modules/documents/documents.service";
+import { IndexingService } from "../../src/modules/documents/indexing.service";
+import { DocumentParser } from "../../src/modules/documents/parsers/document.parser";
+import { RecursiveChunker } from "../../src/modules/documents/chunkers/recursive.chunker";
+import { InMemoryVectorStore } from "../../src/modules/vector-store/in-memory-vector-store.service";
 
 export async function pipeline() {
-  const directory = await mkdtemp(join(tmpdir(), 'rag-pipeline-'));
+  const directory = await mkdtemp(join(tmpdir(), "rag-pipeline-"));
   const config = new ConfigService(
     validateConfig({
-      STORAGE_DRIVER: 'memory',
-      JWT_SECRET: 'x'.repeat(32),
+      STORAGE_DRIVER: "memory",
+      JWT_SECRET: "x".repeat(32),
       ORIGINALS_DIR: directory,
       INDEX_RETENTION_MS: 0,
     }),
@@ -31,7 +31,7 @@ export async function pipeline() {
   const embeddings = {
     embedDocuments: async (texts: string[]) => {
       await beforeEmbedding?.();
-      if (fail) throw new Error('embedding unavailable');
+      if (fail) throw new Error("embedding unavailable");
       return texts.map(() => [1, 0]);
     },
     embedQuery: async () => [1, 0],

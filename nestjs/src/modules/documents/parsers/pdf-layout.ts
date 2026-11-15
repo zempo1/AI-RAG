@@ -1,5 +1,5 @@
-import { RegionBox } from './parsed-document';
-import { createHash } from 'node:crypto';
+import { RegionBox } from "./parsed-document";
+import { createHash } from "node:crypto";
 
 export interface TextPosition {
   text: string;
@@ -10,13 +10,13 @@ export interface PdfRegion {
   /** Original graphic bounds, before nearby text/caption expansion. */
   inkBox?: RegionBox;
   bbox: RegionBox;
-  kind: 'region' | 'scan' | 'fallback';
+  kind: "region" | "scan" | "fallback";
   reason?: string;
   context: string;
   textIndexes: number[];
   scaleLimit?: number;
   rasterOnly?: boolean;
-  recognition?: 'ocr' | 'vision' | 'classify';
+  recognition?: "ocr" | "vision" | "classify";
   analysisProfile?: string;
   /** Semantic tables retain their own bounds instead of absorbing nearby paragraphs. */
   table?: boolean;
@@ -33,14 +33,19 @@ export function groupNearbyCrops(
 ): PdfRegion[] {
   const grouped: PdfRegion[] = [];
   for (const region of regions) {
-    if (region.kind !== 'region') {
+    if (region.kind !== "region") {
       grouped.push(region);
       continue;
     }
     const b = region.bbox;
     const index = grouped.findIndex((item) => {
-      if (item.kind !== 'region' || item.scaleLimit !== region.scaleLimit ||
-          item.rasterOnly || region.rasterOnly) return false;
+      if (
+        item.kind !== "region" ||
+        item.scaleLimit !== region.scaleLimit ||
+        item.rasterOnly ||
+        region.rasterOnly
+      )
+        return false;
       const a = item.bbox;
       const merged = union(a, b);
       const horizontalOverlap = Math.min(a[2], b[2]) - Math.max(a[0], b[0]);
@@ -49,7 +54,8 @@ export function groupNearbyCrops(
         horizontalOverlap >= 0.6 * Math.min(a[2] - a[0], b[2] - b[0]) &&
         b[1] - a[3] <= 0.06 &&
         area(merged) <= 1.25 * (area(a) + area(b)) &&
-        scale(merged, item.scaleLimit) >= Math.max(scale(a, item.scaleLimit), scale(b, region.scaleLimit))
+        scale(merged, item.scaleLimit) >=
+          Math.max(scale(a, item.scaleLimit), scale(b, region.scaleLimit))
       );
     });
     if (index < 0) {
@@ -61,9 +67,9 @@ export function groupNearbyCrops(
       ...item,
       inkBox: union(item.inkBox ?? item.bbox, region.inkBox ?? b),
       bbox: union(item.bbox, b),
-      context: [...new Set([...item.context.split('\n'), ...region.context.split('\n')])]
+      context: [...new Set([...item.context.split("\n"), ...region.context.split("\n")])]
         .filter(Boolean)
-        .join('\n')
+        .join("\n")
         .slice(0, 4000),
       textIndexes: [...new Set([...item.textIndexes, ...region.textIndexes])].sort((a, b) => a - b),
     };
@@ -81,13 +87,13 @@ const near = (a: RegionBox, b: RegionBox, gap: number) =>
   a[0] <= b[2] + gap && b[0] <= a[2] + gap && a[1] <= b[3] + gap && b[1] <= a[3] + gap;
 const clamp = (b: RegionBox): RegionBox => b.map((v) => Math.max(0, Math.min(1, v))) as RegionBox;
 const imageNames = [
-  'paintImageXObject',
-  'paintInlineImageXObject',
-  'paintImageXObjectRepeat',
-  'paintImageMaskXObject',
-  'paintImageMaskXObjectRepeat',
-  'paintImageMaskXObjectGroup',
-  'paintInlineImageXObjectGroup',
+  "paintImageXObject",
+  "paintInlineImageXObject",
+  "paintImageXObjectRepeat",
+  "paintImageMaskXObject",
+  "paintImageMaskXObjectRepeat",
+  "paintImageMaskXObjectGroup",
+  "paintInlineImageXObjectGroup",
 ];
 
 /** PDF.js packs the terminating paint operation into constructPath[0].
@@ -101,14 +107,19 @@ export function hasPdfGraphics(list: any, ops: any): boolean {
   );
 }
 const decorationCache = new WeakMap<object, Promise<Set<string>>>();
-const imageSignatures = new WeakMap<object, { hash: string; meanAlpha: number; maxAlpha: number }>();
+const imageSignatures = new WeakMap<
+  object,
+  { hash: string; meanAlpha: number; maxAlpha: number }
+>();
 
 function imageSignature(object: any) {
   let signature = imageSignatures.get(object);
   if (signature) return signature;
-  let meanAlpha = 1, maxAlpha = 1;
+  let meanAlpha = 1,
+    maxAlpha = 1;
   if (object.kind === 3 && object.data.length === object.width * object.height * 4) {
-    let sum = 0, max = 0;
+    let sum = 0,
+      max = 0;
     for (let i = 3; i < object.data.length; i += 4) {
       sum += object.data[i];
       max = Math.max(max, object.data[i]);
@@ -117,7 +128,7 @@ function imageSignature(object: any) {
     maxAlpha = max / 255;
   }
   signature = {
-    hash: createHash('sha256').update(object.data).digest('hex'),
+    hash: createHash("sha256").update(object.data).digest("hex"),
     meanAlpha,
     maxAlpha,
   };
@@ -130,15 +141,15 @@ async function operationInfo(list: any, ops: any, page: any) {
   const ids = new Set<string>(
     list.fnArray
       .map((op: number, i: number) =>
-        imageNames.some((name) => ops[name] === op) && typeof list.argsArray[i][0] === 'string'
+        imageNames.some((name) => ops[name] === op) && typeof list.argsArray[i][0] === "string"
           ? list.argsArray[i][0]
-          : '',
+          : "",
       )
       .filter(Boolean),
   );
   await Promise.all(
     [...ids].map((id) => {
-      const pool = id.startsWith('g_') ? page.commonObjs : page.objs;
+      const pool = id.startsWith("g_") ? page.commonObjs : page.objs;
       if (!pool || pool.has(id)) return;
       return new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, 1500);
@@ -174,13 +185,13 @@ async function operationInfo(list: any, ops: any, page: any) {
       }
     } else if (op === ops.transform) transform = multiply(transform, args);
     else if (op === ops.setGState)
-      for (const [name, value] of args[0]) if (name === 'ca') alpha = value;
+      for (const [name, value] of args[0]) if (name === "ca") alpha = value;
     const image = imageNames.some((name) => ops[name] === op);
     let identity: string | undefined;
     let bitmap: ReturnType<typeof imageSignature> | undefined;
     let bitmapKey: string | undefined;
-    if (image && typeof args[0] === 'string') {
-      const pool = args[0].startsWith('g_') ? page.commonObjs : page.objs;
+    if (image && typeof args[0] === "string") {
+      const pool = args[0].startsWith("g_") ? page.commonObjs : page.objs;
       const object = pool?.has(args[0]) ? pool.get(args[0]) : undefined;
       if (object?.data) {
         bitmap = imageSignature(object);
@@ -195,9 +206,9 @@ async function operationInfo(list: any, ops: any, page: any) {
       alpha,
       bitmap,
       bitmapKey,
-      key: createHash('sha256')
+      key: createHash("sha256")
         .update(JSON.stringify([op, data, transform, alpha]))
-        .digest('hex'),
+        .digest("hex"),
     };
   });
 }
@@ -218,7 +229,7 @@ async function repeatedOperations(document: any, ops: any): Promise<Set<string>>
                 list.fnArray[i] === ops.constructPath ||
                 imageNames.some((name) => ops[name] === list.fnArray[i]),
             )
-            .flatMap((r) => r.bitmapKey ? [r.key, r.bitmapKey] : [r.key]),
+            .flatMap((r) => (r.bitmapKey ? [r.key, r.bitmapKey] : [r.key])),
         );
         for (const key of keys) counts.set(key, (counts.get(key) || 0) + 1);
       }
@@ -235,7 +246,7 @@ export function textPositions(
   options: { fontMetrics?: boolean } = {},
 ): TextPosition[] {
   return content.items
-    .filter((i: any) => typeof i.str === 'string')
+    .filter((i: any) => typeof i.str === "string")
     .map((item: any, index: number) => {
       const [a, b, c, d, e, f] = viewport.transform;
       const x = item.transform[4],
@@ -292,7 +303,7 @@ export async function locateRegions(
   native: string,
   content: any,
 ): Promise<PdfRegion[]> {
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const ops = pdfjs.OPS as any;
   const list = await page.getOperatorList();
   const images = new Set(imageNames.map((n) => ops[n]));
@@ -303,7 +314,7 @@ export async function locateRegions(
     (native.length > 20 && (native.match(/[\x00-\x08]/g)?.length || 0) > native.length / 10);
   const viewport = page.getViewport({ scale: 1 });
   const texts = textPositions(content, viewport);
-  const full = (kind: 'scan' | 'fallback', reason: string): PdfRegion[] => [
+  const full = (kind: "scan" | "fallback", reason: string): PdfRegion[] => [
     {
       kind,
       reason,
@@ -312,7 +323,7 @@ export async function locateRegions(
       textIndexes: texts.map((t) => t.index),
     },
   ];
-  if (corrupt) return full('fallback', '原生文字层乱码');
+  if (corrupt) return full("fallback", "原生文字层乱码");
   if (!hasGraphics) return [];
   const repeated = await repeatedOperations(document, ops);
   const info = await operationInfo(list, ops, page);
@@ -332,15 +343,22 @@ export async function locateRegions(
     document.canvasFactory.destroy(canvas);
   }
   const reader = page.recordedBBoxes;
-  if (!reader) return full('fallback', '绘图边界不可用');
-  const candidates: { bbox: RegionBox; image: boolean; rasterOnly: boolean; count: number; scaleLimit?: number }[] = [];
+  if (!reader) return full("fallback", "绘图边界不可用");
+  const candidates: {
+    bbox: RegionBox;
+    image: boolean;
+    rasterOnly: boolean;
+    count: number;
+    scaleLimit?: number;
+  }[] = [];
   let missing = false;
   for (let i = 0; i < list.fnArray.length; i++) {
     const op = list.fnArray[i];
     if (!graphics.has(op) || (op === ops.constructPath && list.argsArray[i]?.[0] === ops.endPath))
       continue;
     const { bitmap, bitmapKey } = info[i];
-    const recurringBitmap = native.trim().length >= 16 && bitmap && bitmapKey && repeated.has(bitmapKey);
+    const recurringBitmap =
+      native.trim().length >= 16 && bitmap && bitmapKey && repeated.has(bitmapKey);
     // Watermark opacity can be baked into RGBA rather than set in the PDF graphics state.
     if (recurringBitmap && bitmap.maxAlpha * info[i].alpha <= 0.25) continue;
     if (reader.isEmpty(i)) {
@@ -355,8 +373,14 @@ export async function locateRegions(
     const width = bbox[2] - bbox[0],
       height = bbox[3] - bbox[1];
     const image = images.has(op);
-    if (recurringBitmap && repeated.has(info[i].key) && bitmap.meanAlpha <= 0.25 &&
-        height <= 0.09 && (bbox[1] >= 0.9 || bbox[3] <= 0.1)) continue;
+    if (
+      recurringBitmap &&
+      repeated.has(info[i].key) &&
+      bitmap.meanAlpha <= 0.25 &&
+      height <= 0.09 &&
+      (bbox[1] >= 0.9 || bbox[3] <= 0.1)
+    )
+      continue;
     if (
       repeated.has(info[i].key) &&
       (info[i].alpha <= 0.25 ||
@@ -366,7 +390,7 @@ export async function locateRegions(
       continue;
     if (image && area(bbox) > 0.78) {
       // 可用 OCR 层保留；整页扫描图仍作为一个识别输入，不逐字重做原生正文。
-      return full('scan', native.trim() ? '整页扫描图含文字层' : '整页扫描图');
+      return full("scan", native.trim() ? "整页扫描图含文字层" : "整页扫描图");
     }
     if (!image && width > 0.94 && height > 0.94) continue; // 页背景/边框
     if (area(bbox) < 0.00003 && !image) continue;
@@ -378,7 +402,7 @@ export async function locateRegions(
         : undefined;
     candidates.push({ bbox, image, rasterOnly: image, count: 1, scaleLimit });
   }
-  if (missing) return full('fallback', '图片或渐变区域无法可靠定位');
+  if (missing) return full("fallback", "图片或渐变区域无法可靠定位");
   // 合并相交/相邻的绘图构件，箭头、节点与表格线共同形成一个区域。
   let changed = true;
   while (changed) {
@@ -434,7 +458,7 @@ export async function locateRegions(
         bbox = union(bbox, t);
     }
     bbox = clamp([bbox[0] - 0.005, bbox[1] - 0.005, bbox[2] + 0.005, bbox[3] + 0.005]);
-    if (area(bbox) > 0.85) return full('fallback', '图形区域覆盖整页，无法安全分离');
+    if (area(bbox) > 0.85) return full("fallback", "图形区域覆盖整页，无法安全分离");
     const nearby = texts.filter((t) => {
       if (!t.text.trim()) return false;
       const overlap = Math.min(bbox[2], t.bbox[2]) - Math.max(bbox[0], t.bbox[0]);
@@ -448,12 +472,12 @@ export async function locateRegions(
     result.push({
       inkBox: b,
       bbox,
-      kind: 'region',
+      kind: "region",
       scaleLimit: candidate.scaleLimit,
       rasterOnly: candidate.rasterOnly,
       context: nearby
         .map((t) => t.text)
-        .join('\n')
+        .join("\n")
         .slice(0, 4000),
       textIndexes: nearby.map((t) => t.index),
     });

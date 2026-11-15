@@ -1,11 +1,7 @@
 <template>
   <aside class="workbench" :class="{ collapsed: isCollapsed }">
     <!-- 折叠状态 -->
-    <div
-      v-if="isCollapsed"
-      class="collapsed-strip"
-      @click="isCollapsed = false"
-    >
+    <div v-if="isCollapsed" class="collapsed-strip" @click="isCollapsed = false">
       <el-tooltip content="展开工作台" placement="left">
         <div class="expand-btn">
           <el-icon><ArrowLeft /></el-icon>
@@ -143,14 +139,7 @@
 
 <script setup lang="ts">
 import { ref, watch, type Ref } from "vue";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Grid,
-  Connection,
-  List,
-  Memo,
-} from "@element-plus/icons-vue";
+import { ArrowLeft, ArrowRight, Grid, Connection, List, Memo } from "@element-plus/icons-vue";
 import MindMapEditor from "../mindmap/MindMapEditor.vue";
 import FlashcardViewer from "../flashcard/FlashcardViewer.vue";
 import GenerateSection from "./components/GenerateSection/GenerateSection.vue";
@@ -188,9 +177,7 @@ const tabs: {
   { key: "outline", label: "文档大纲" },
   { key: "flashcard", label: "学习卡片" },
 ];
-const activeTab = ref<"mindmap" | "summary" | "outline" | "flashcard">(
-  "mindmap",
-);
+const activeTab = ref<"mindmap" | "summary" | "outline" | "flashcard">("mindmap");
 const isCollapsed = ref(false);
 
 // 思维导图
@@ -278,7 +265,9 @@ const refreshTab = (tab: keyof typeof loaders) => {
 // 首次访问、失效或读取失败后才按需加载。
 watch(
   activeTab,
-  (tab) => { void loaders[tab].ensure(); },
+  (tab) => {
+    void loaders[tab].ensure();
+  },
   { immediate: true },
 );
 
@@ -307,10 +296,7 @@ const handleOpenMindMap = (map: MindMap) => {
   editorVisible.value = true;
 };
 const handleDeleteMindMap = async (map: MindMap) => {
-  const ok = await confirm.danger(
-    "确定要删除这个思维导图吗？删除后无法恢复。",
-    "删除确认",
-  );
+  const ok = await confirm.danger("确定要删除这个思维导图吗？删除后无法恢复。", "删除确认");
   if (!ok) return;
   try {
     await apiDeleteMindMap(map.id);
@@ -363,7 +349,8 @@ const handleDeleteAnalysis = async (item: DocumentAnalysis) => {
   if (!ok) return;
   try {
     await apiDeleteAnalysis(item.id);
-    const tab = item.type === "SUMMARY" ? "summary" : item.type === "OUTLINE" ? "outline" : "flashcard";
+    const tab =
+      item.type === "SUMMARY" ? "summary" : item.type === "OUTLINE" ? "outline" : "flashcard";
     loaders[tab].invalidate();
     summaries.value = summaries.value.filter((s) => s.id !== item.id);
     outlines.value = outlines.value.filter((o) => o.id !== item.id);
@@ -394,10 +381,7 @@ function formatTime(iso: string): string {
   const d = new Date(iso);
   const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000);
   if (diffDays === 0)
-    return (
-      "今天 " +
-      d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
-    );
+    return "今天 " + d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
   if (diffDays === 1) return "昨天";
   if (diffDays < 7) return `${diffDays} 天前`;
   return d.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
@@ -409,18 +393,10 @@ const openFlashcard = (item: DocumentAnalysis) => {
 };
 
 const onSourceDeleted = async (documentId: number) => {
-  mindMaps.value = mindMaps.value.filter(
-    (item) => item.documentId !== documentId,
-  );
-  summaries.value = summaries.value.filter(
-    (item) => item.documentId !== documentId,
-  );
-  outlines.value = outlines.value.filter(
-    (item) => item.documentId !== documentId,
-  );
-  flashcards.value = flashcards.value.filter(
-    (item) => item.documentId !== documentId,
-  );
+  mindMaps.value = mindMaps.value.filter((item) => item.documentId !== documentId);
+  summaries.value = summaries.value.filter((item) => item.documentId !== documentId);
+  outlines.value = outlines.value.filter((item) => item.documentId !== documentId);
+  flashcards.value = flashcards.value.filter((item) => item.documentId !== documentId);
   if (currentMindMap.value?.documentId === documentId) {
     editorVisible.value = false;
     currentMindMap.value = null;

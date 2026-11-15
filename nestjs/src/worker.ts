@@ -1,8 +1,8 @@
-import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
+import "reflect-metadata";
+import { NestFactory } from "@nestjs/core";
+import { AppModule } from "./app.module";
 
-process.env.PROCESS_ROLE = 'worker';
+process.env.PROCESS_ROLE = "worker";
 async function main() {
   const app = await NestFactory.createApplicationContext(AppModule);
   app.enableShutdownHooks();

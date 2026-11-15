@@ -1,5 +1,5 @@
-import { Type } from 'class-transformer';
-import { IsInt, IsString, IsOptional, Matches, Max, Min, MaxLength } from 'class-validator';
+import { Type } from "class-transformer";
+import { IsInt, IsString, IsOptional, Matches, Max, Min, MaxLength } from "class-validator";
 
 export class UploadOptionsDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) knowledgeBaseId?: number;

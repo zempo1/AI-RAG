@@ -1,6 +1,6 @@
-import { IsIn } from 'class-validator';
+import { IsIn } from "class-validator";
 
 export class AnalysisTypeDto {
-  @IsIn(['SUMMARY', 'OUTLINE', 'FLASHCARD'])
+  @IsIn(["SUMMARY", "OUTLINE", "FLASHCARD"])
   type: string;
 }

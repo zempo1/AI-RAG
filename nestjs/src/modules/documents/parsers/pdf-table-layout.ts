@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto';
-import type { ParsedBlock, ParsedDocument, PdfTableLocation, RegionBox } from './parsed-document';
-import type { TextPosition } from './pdf-layout';
-import { sliceSourceLocation } from './source-anchors';
+import { createHash } from "node:crypto";
+import type { ParsedBlock, ParsedDocument, PdfTableLocation, RegionBox } from "./parsed-document";
+import type { TextPosition } from "./pdf-layout";
+import { sliceSourceLocation } from "./source-anchors";
 
 type Matrix = number[];
 type Segment = { horizontal: boolean; at: number; start: number; end: number };
@@ -200,7 +200,7 @@ export function detectPdfTableGrids(
       })
     )
       continue;
-    const identity = createHash('sha256')
+    const identity = createHash("sha256")
       .update(
         JSON.stringify([
           pageNumber,
@@ -208,7 +208,7 @@ export function detectPdfTableGrids(
           rows.map((y) => +y.toFixed(4)),
         ]),
       )
-      .digest('hex')
+      .digest("hex")
       .slice(0, 20);
     const id = `pdf-table:${pageNumber}:${identity}`;
     grids.push({ id, groupId: id, bbox, columns, rows });
@@ -218,8 +218,8 @@ export function detectPdfTableGrids(
 
 /** Absolute edges as well as relative column widths must agree; adjacent layouts alone do not link. */
 export function tableColumnsMatch(
-  left: Pick<PdfTableLocation, 'bbox' | 'columns'>,
-  right: Pick<PdfTableLocation, 'bbox' | 'columns'>,
+  left: Pick<PdfTableLocation, "bbox" | "columns">,
+  right: Pick<PdfTableLocation, "bbox" | "columns">,
 ): boolean {
   return (
     left.columns.length >= 3 &&
@@ -336,7 +336,7 @@ function obstructed(
   );
 }
 function firstRow(page: ParsedDocument, table: PdfTableLocation): string[] {
-  const cells = table.columns.slice(1).map(() => '');
+  const cells = table.columns.slice(1).map(() => "");
   const anchors = tableBlocks(page)
     .filter((block) => block.location.table!.id === table.id)
     .flatMap((block) => block.location.anchors || []);
@@ -349,7 +349,7 @@ function firstRow(page: ParsedDocument, table: PdfTableLocation): string[] {
         i < cells.length && x >= edge - TOLERANCE && x <= table.columns[i + 1] + TOLERANCE,
     );
     if (col >= 0)
-      cells[col] += page.text.slice(anchor.start, anchor.end).replace(/\s/g, '').toLowerCase();
+      cells[col] += page.text.slice(anchor.start, anchor.end).replace(/\s/g, "").toLowerCase();
   }
   return cells;
 }

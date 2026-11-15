@@ -13,11 +13,7 @@ export interface CheckResult {
   documentId?: number;
   taskId?: number;
 }
-export const checkUpload = (
-  md5: string,
-  filename: string,
-  scope: UploadScope,
-) =>
+export const checkUpload = (md5: string, filename: string, scope: UploadScope) =>
   request.get<any, CheckResult>("/api/upload/check", {
     params: { md5, filename, ...scope },
   });

@@ -1,30 +1,30 @@
-import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn } from "typeorm";
 
-@Entity('messages')
+@Entity("messages")
 export class Message {
-  @Column({ type: 'json', nullable: true, name: 'retrieval_context' }) retrievalContext: Record<
+  @Column({ type: "json", nullable: true, name: "retrieval_context" }) retrievalContext: Record<
     string,
     unknown
   > | null;
-  @Column({ type: 'bigint', nullable: true, name: 'retrieval_run_id' }) retrievalRunId:
+  @Column({ type: "bigint", nullable: true, name: "retrieval_run_id" }) retrievalRunId:
     number | null;
-  @Column({ type: 'json', nullable: true }) diagnostics: Record<string, unknown> | null;
-  @Column({ type: 'json', nullable: true })
+  @Column({ type: "json", nullable: true }) diagnostics: Record<string, unknown> | null;
+  @Column({ type: "json", nullable: true })
   citations: unknown[] | null;
-  @Column({ type: 'varchar', length: 30, nullable: true, name: 'generation_status' })
+  @Column({ type: "varchar", length: 30, nullable: true, name: "generation_status" })
   generationStatus: string | null;
-  @PrimaryGeneratedColumn({ type: 'bigint' })
+  @PrimaryGeneratedColumn({ type: "bigint" })
   id: number;
 
-  @Column({ type: 'bigint', name: 'chat_id', nullable: true })
+  @Column({ type: "bigint", name: "chat_id", nullable: true })
   chatId: number | null;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Column({ type: "varchar", length: 255, nullable: true })
   role: string | null;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: "text", nullable: true })
   content: string | null;
 
-  @Column({ type: 'datetime', precision: 6, nullable: true, name: 'created_at' })
+  @Column({ type: "datetime", precision: 6, nullable: true, name: "created_at" })
   createdAt: string | null;
 }

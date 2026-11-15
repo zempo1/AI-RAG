@@ -1,7 +1,7 @@
 /** 接收分片、检查上传状态并合并原始文件。 */
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { createHash, randomUUID } from 'node:crypto';
+import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { createHash, randomUUID } from "node:crypto";
 import {
   mkdir,
   readdir,
@@ -12,13 +12,13 @@ import {
   stat,
   open,
   unlink,
-} from 'node:fs/promises';
-import { createReadStream } from 'node:fs';
-import { join } from 'node:path';
-import { DocumentParser } from './parsers/document.parser';
-import { DocumentsService } from './documents.service';
-import { ChunkDto, MergeDto, UploadCheckDto } from './dto/upload.dto';
-import { ApiError } from '../../common/api-error';
+} from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { join } from "node:path";
+import { DocumentParser } from "./parsers/document.parser";
+import { DocumentsService } from "./documents.service";
+import { ChunkDto, MergeDto, UploadCheckDto } from "./dto/upload.dto";
+import { ApiError } from "../../common/api-error";
 
 @Injectable()
 export class ChunkUploadService {
@@ -38,7 +38,7 @@ export class ChunkUploadService {
     );
     const session = dto.uploadId || dto.md5.toLowerCase();
     // 上传目录同时绑定用户、知识库、目标文档及文件指纹，隔离不同上传会话。
-    const key = createHash('sha256')
+    const key = createHash("sha256")
       .update(
         JSON.stringify([
           user,
@@ -49,11 +49,11 @@ export class ChunkUploadService {
           dto.md5.toLowerCase(),
         ]),
       )
-      .digest('hex');
+      .digest("hex");
     return {
       knowledgeBaseId,
       key,
-      dir: join(this.config.getOrThrow<string>('UPLOAD_TEMP_DIR'), key),
+      dir: join(this.config.getOrThrow<string>("UPLOAD_TEMP_DIR"), key),
     };
   }
   private async locked<T>(key: string, work: () => Promise<T>): Promise<T> {
@@ -81,7 +81,7 @@ export class ChunkUploadService {
       try {
         files = await readdir(scope.dir);
       } catch (error: any) {
-        if (error.code !== 'ENOENT') throw error;
+        if (error.code !== "ENOENT") throw error;
         files = [];
       }
       return {
@@ -95,26 +95,26 @@ export class ChunkUploadService {
   }
   async upload(dto: ChunkDto, file: Express.Multer.File | undefined, user: number) {
     const scope = await this.scope(user, dto);
-    if (!file?.size) throw new ApiError(400, '分片不能为空');
-    if (dto.chunkIndex >= dto.totalChunks) throw new ApiError(400, '分片编号超出范围');
+    if (!file?.size) throw new ApiError(400, "分片不能为空");
+    if (dto.chunkIndex >= dto.totalChunks) throw new ApiError(400, "分片编号超出范围");
     return this.locked(scope.key, async () => {
       await mkdir(scope.dir, { recursive: true });
-      const path = join(scope.dir, 'metadata.json');
+      const path = join(scope.dir, "metadata.json");
       try {
-        const metadata = JSON.parse(await readFile(path, 'utf8'));
-        if (metadata.totalChunks !== dto.totalChunks) throw new ApiError(400, '分片总数不一致');
+        const metadata = JSON.parse(await readFile(path, "utf8"));
+        if (metadata.totalChunks !== dto.totalChunks) throw new ApiError(400, "分片总数不一致");
       } catch (error: any) {
-        if (error.code !== 'ENOENT') throw error;
+        if (error.code !== "ENOENT") throw error;
         await writeFile(path, JSON.stringify({ totalChunks: dto.totalChunks }));
       }
       // 先写临时文件再重命名，避免状态检查把尚未写完的分片当成已上传。
-      const temporary = join(scope.dir, 'pending_' + randomUUID());
+      const temporary = join(scope.dir, "pending_" + randomUUID());
       try {
-        await writeFile(temporary, file.buffer, { flag: 'wx' });
-        await rename(temporary, join(scope.dir, 'chunk_' + dto.chunkIndex));
+        await writeFile(temporary, file.buffer, { flag: "wx" });
+        await rename(temporary, join(scope.dir, "chunk_" + dto.chunkIndex));
       } finally {
         await unlink(temporary).catch((error) => {
-          if (error.code !== 'ENOENT') throw error;
+          if (error.code !== "ENOENT") throw error;
         });
       }
       return { chunkIndex: dto.chunkIndex, received: true };
@@ -134,26 +134,26 @@ export class ChunkUploadService {
       let total = 0;
       for (let i = 0; i < dto.totalChunks; i++) {
         try {
-          total += (await stat(join(scope.dir, 'chunk_' + i))).size;
+          total += (await stat(join(scope.dir, "chunk_" + i))).size;
         } catch (error: any) {
-          if (error.code === 'ENOENT') throw new ApiError(400, 'Missing chunk: ' + i);
+          if (error.code === "ENOENT") throw new ApiError(400, "Missing chunk: " + i);
           throw error;
         }
-        if (total > this.config.getOrThrow<number>('MAX_DOCUMENT_BYTES'))
-          throw new ApiError(413, '文件超过文档解析大小限制');
+        if (total > this.config.getOrThrow<number>("MAX_DOCUMENT_BYTES"))
+          throw new ApiError(413, "文件超过文档解析大小限制");
       }
       if (
-        JSON.parse(await readFile(join(scope.dir, 'metadata.json'), 'utf8')).totalChunks !==
+        JSON.parse(await readFile(join(scope.dir, "metadata.json"), "utf8")).totalChunks !==
         dto.totalChunks
       )
-        throw new ApiError(400, '分片总数不一致');
-      const merged = join(scope.dir, 'merge_' + randomUUID());
-      const output = await open(merged, 'wx');
+        throw new ApiError(400, "分片总数不一致");
+      const merged = join(scope.dir, "merge_" + randomUUID());
+      const output = await open(merged, "wx");
       // 按序流式拼接并计算整文件指纹，校验顺序与内容；MD5 在这里用于上传完整性检查。
-      const hash = createHash('md5');
+      const hash = createHash("md5");
       try {
         for (let i = 0; i < dto.totalChunks; i++)
-          for await (const buffer of createReadStream(join(scope.dir, 'chunk_' + i))) {
+          for await (const buffer of createReadStream(join(scope.dir, "chunk_" + i))) {
             hash.update(buffer);
             await output.writeFile(buffer);
           }
@@ -161,8 +161,8 @@ export class ChunkUploadService {
         await output.close();
       }
       try {
-        if (hash.digest('hex') !== dto.md5.toLowerCase())
-          throw new ApiError(400, '文件指纹不一致，请重新上传');
+        if (hash.digest("hex") !== dto.md5.toLowerCase())
+          throw new ApiError(400, "文件指纹不一致，请重新上传");
         const accepted = await this.documents.ingest(await readFile(merged), dto.filename, user, {
           knowledgeBaseId: scope.knowledgeBaseId,
           categoryId: dto.categoryId,

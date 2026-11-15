@@ -1,9 +1,9 @@
 /** 将解析内容切为检索片段并保留上下文元数据。 */
-import { Injectable } from '@nestjs/common';
-import { ParsedBlock, ParsedDocument } from '../parsers/parsed-document';
-import { TokenizerService } from '../../embeddings/tokenizer.service';
-import { ModelProfile } from '../../embeddings/model-profile';
-import { sliceSourceLocation, mergeSourceLocations } from '../parsers/source-anchors';
+import { Injectable } from "@nestjs/common";
+import { ParsedBlock, ParsedDocument } from "../parsers/parsed-document";
+import { TokenizerService } from "../../embeddings/tokenizer.service";
+import { ModelProfile } from "../../embeddings/model-profile";
+import { sliceSourceLocation, mergeSourceLocations } from "../parsers/source-anchors";
 
 @Injectable()
 export class RecursiveChunker {
@@ -36,8 +36,8 @@ export class RecursiveChunker {
     const output: (ParsedBlock & { retrievalMetadata: Record<string, unknown> })[] = [];
     for (const group of groups) {
       const context = group.contextText
-        ? (await tokenizer.windows(group.contextText, 96, 0, profile.tokenizer))[0]?.text || ''
-        : '';
+        ? (await tokenizer.windows(group.contextText, 96, 0, profile.tokenizer))[0]?.text || ""
+        : "";
       const contextRanges = this.contextRanges(document, group, textOffset);
       // 父块保留较完整上下文；子块负责精确检索，命中后可展开父块补足语义。
       for (const parent of await tokenizer.windows(group.text, 1536, 0, profile.tokenizer)) {
@@ -48,7 +48,7 @@ export class RecursiveChunker {
           group.location.start + parent.end,
           textOffset,
         );
-        const parentId = `${parentLocation.page ?? 'legacy'}:${parentLocation.start}:${parentLocation.end}`;
+        const parentId = `${parentLocation.page ?? "legacy"}:${parentLocation.start}:${parentLocation.end}`;
         // 子块保留 token 重叠，减少句子在切块边缘被截断而导致漏检。
         for (const child of await tokenizer.windows(parent.text, 384, 64, profile.tokenizer)) {
           if (!child.text.trim()) continue;
@@ -60,8 +60,8 @@ export class RecursiveChunker {
           // 将词频随片段保存，构建关键词索引时可直接复用，减少重复分词。
           const terms: Record<string, number> = {};
           const embeddingText = context ? `${child.text}\n\n相关正文：\n${context}` : child.text;
-          const normalized = embeddingText.normalize('NFKC').toLowerCase();
-          const words = [...new Intl.Segmenter('zh', { granularity: 'word' }).segment(normalized)]
+          const normalized = embeddingText.normalize("NFKC").toLowerCase();
+          const words = [...new Intl.Segmenter("zh", { granularity: "word" }).segment(normalized)]
             .filter((w) => w.isWordLike && /\p{Script=Han}/u.test(w.segment))
             .map((w) => w.segment);
           words.push(...(normalized.match(/[a-z0-9][a-z0-9_.:/-]*/g) || []));
@@ -80,7 +80,7 @@ export class RecursiveChunker {
               parentLocation,
               embeddingText,
               contextRanges,
-              sectionId: group.location.heading || `${group.location.page ?? 'legacy'}`,
+              sectionId: group.location.heading || `${group.location.page ?? "legacy"}`,
               terms,
               tokenCount: child.tokenCount,
             },
@@ -94,7 +94,7 @@ export class RecursiveChunker {
     return document.blocks
       .filter(
         (b) =>
-          b.location.contentType === 'native' &&
+          b.location.contentType === "native" &&
           b.location.page === block.location.page &&
           block.location.relatedParagraphs?.includes(b.location.paragraph!),
       )
@@ -118,7 +118,7 @@ export class RecursiveChunker {
           ...(block.contextText
             ? {
                 retrievalMetadata: {
-                  embeddingText: text + '\n\n相关正文：\n' + block.contextText.slice(0, 300),
+                  embeddingText: text + "\n\n相关正文：\n" + block.contextText.slice(0, 300),
                   contextRanges: this.contextRanges(document, block, textOffset),
                 },
               }
@@ -130,7 +130,7 @@ export class RecursiveChunker {
     return result;
   }
   split(text: string, size = 500, overlap = 50): string[] {
-    if (size <= overlap || overlap < 0) throw new Error('Invalid chunk size/overlap');
+    if (size <= overlap || overlap < 0) throw new Error("Invalid chunk size/overlap");
     const result: string[] = [];
     let start = 0;
     text = text.trim();
@@ -139,7 +139,7 @@ export class RecursiveChunker {
       if (end < text.length) {
         const window = text.slice(start, end);
         // Prefer paragraph, line, sentence and word boundaries before character fallback.
-        for (const separator of ['\n\n', '\n', '。', '. ', '！', '？', ' ']) {
+        for (const separator of ["\n\n", "\n", "。", ". ", "！", "？", " "]) {
           const index = window.lastIndexOf(separator);
           if (index >= size / 2) {
             end = start + index + separator.length;

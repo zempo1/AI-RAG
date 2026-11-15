@@ -9,8 +9,8 @@ import {
   ArrayUnique,
   IsIn,
   IsUUID,
-} from 'class-validator';
-import { Type } from 'class-transformer';
+} from "class-validator";
+import { Type } from "class-transformer";
 
 export class ChatDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) chatId?: number | null;
@@ -21,8 +21,8 @@ export class ChatDto {
   @IsInt({ each: true })
   @Min(1, { each: true })
   documentIds?: number[];
-  @IsOptional() @IsIn(['auto', 'general', 'search', 'overview', 'compare']) mode?:
-    'auto' | 'general' | 'search' | 'overview' | 'compare';
+  @IsOptional() @IsIn(["auto", "general", "search", "overview", "compare"]) mode?:
+    "auto" | "general" | "search" | "overview" | "compare";
   @IsOptional() @IsUUID() requestId?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) knowledgeBaseId?: number;
   @IsOptional()

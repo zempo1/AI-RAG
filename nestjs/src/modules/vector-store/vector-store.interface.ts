@@ -1,5 +1,5 @@
-import { ModelProfile } from '../embeddings/model-profile';
-import { SourceLocation } from '../documents/parsers/parsed-document';
+import { ModelProfile } from "../embeddings/model-profile";
+import { SourceLocation } from "../documents/parsers/parsed-document";
 export interface Segment {
   text: string;
   userId: number;

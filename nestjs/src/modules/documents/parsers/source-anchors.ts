@@ -1,4 +1,4 @@
-import type { PdfSourceAnchor, SourceLocation } from './parsed-document';
+import type { PdfSourceAnchor, SourceLocation } from "./parsed-document";
 
 /** Text slicing and geometry must always travel together, including global offset rebasing. */
 export function sliceSourceLocation(
@@ -49,10 +49,17 @@ export function mergeSourceLocations(left: SourceLocation, right: SourceLocation
 /** Keep geometry in persistent evidence, but out of model tokens and vector payloads. */
 export function withoutSourceGeometry<T>(value: T): T {
   if (Array.isArray(value)) return value.map(withoutSourceGeometry) as T;
-  if (!value || typeof value !== 'object') return value;
+  if (!value || typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key]) => key !== 'anchors' && key !== 'anchorVersion' && key !== 'sourceSegments' && key !== 'tableRegions' && key !== 'table')
+      .filter(
+        ([key]) =>
+          key !== "anchors" &&
+          key !== "anchorVersion" &&
+          key !== "sourceSegments" &&
+          key !== "tableRegions" &&
+          key !== "table",
+      )
       .map(([key, v]) => [key, withoutSourceGeometry(v)]),
   ) as T;
 }

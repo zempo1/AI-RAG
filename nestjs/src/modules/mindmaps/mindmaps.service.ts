@@ -1,25 +1,25 @@
 /** 实现业务处理；所属能力：生成、保存和更新思维导图。 */
-import { Injectable } from '@nestjs/common';
-import { DocumentsService } from '../documents/documents.service';
-import { LlmService } from '../llm/llm.service';
-import { Store, Row, publicRow } from '../../persistence/store';
-import { mindMapPrompt } from '../analysis/prompts';
-import { ApiError } from '../../common/api-error';
+import { Injectable } from "@nestjs/common";
+import { DocumentsService } from "../documents/documents.service";
+import { LlmService } from "../llm/llm.service";
+import { Store, Row, publicRow } from "../../persistence/store";
+import { mindMapPrompt } from "../analysis/prompts";
+import { ApiError } from "../../common/api-error";
 
 function validate(data: string): void {
   let json: any;
   try {
     json = JSON.parse(data);
   } catch {
-    throw new ApiError(500, '模型返回无效的思维导图 JSON');
+    throw new ApiError(500, "模型返回无效的思维导图 JSON");
   }
   const node = (n: any, depth = 0): boolean =>
     depth < 100 &&
     !!n &&
-    typeof n.data?.text === 'string' &&
+    typeof n.data?.text === "string" &&
     (n.children === undefined ||
       (Array.isArray(n.children) && n.children.every((c: any) => node(c, depth + 1))));
-  if (!node(json.root)) throw new ApiError(500, '思维导图结构无效');
+  if (!node(json.root)) throw new ApiError(500, "思维导图结构无效");
 }
 
 @Injectable()
@@ -40,15 +40,15 @@ export class MindMapsService {
     validate(data);
     return publicRow(
       await this.store.transaction(async (tx) => {
-        const kb = await tx.lock('knowledgeBases', doc.knowledgeBaseId);
-        const source = await tx.lock('documents', doc.id);
+        const kb = await tx.lock("knowledgeBases", doc.knowledgeBaseId);
+        const source = await tx.lock("documents", doc.id);
         if (!kb || kb.deletedAt || !source || source.userId !== userId || source.deletedAt)
-          throw new ApiError(500, 'Document not found: ' + doc.id);
-        return tx.save('mindmaps', {
+          throw new ApiError(500, "Document not found: " + doc.id);
+        return tx.save("mindmaps", {
           userId,
           documentId: doc.id,
           versionId: doc.activeVersionId,
-          title: doc.filename + ' - Mind Map',
+          title: doc.filename + " - Mind Map",
           data,
         });
       }),
@@ -56,25 +56,25 @@ export class MindMapsService {
   }
 
   async owned(id: number, userId: number) {
-    const row = await this.store.get('mindmaps', id);
-    if (!row || row.userId !== userId) throw new ApiError(500, 'Mind Map not found');
+    const row = await this.store.get("mindmaps", id);
+    if (!row || row.userId !== userId) throw new ApiError(500, "Mind Map not found");
     return row;
   }
 
   async get(id: number, userId: number) {
     const row = await this.owned(id, userId);
-    const doc = row.documentId ? await this.store.get('documents', row.documentId) : null;
+    const doc = row.documentId ? await this.store.get("documents", row.documentId) : null;
     return { ...publicRow(row), sourceOutdated: !!doc && row.versionId !== doc.activeVersionId };
   }
 
   async list(userId: number) {
     const sources = new Map<number, Promise<Row | undefined>>();
     return Promise.all(
-      (await this.store.list('mindmaps', { userId }))
+      (await this.store.list("mindmaps", { userId }))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)
         .map(async (row) => {
           if (row.documentId && !sources.has(row.documentId))
-            sources.set(row.documentId, this.store.get('documents', row.documentId));
+            sources.set(row.documentId, this.store.get("documents", row.documentId));
           const source = row.documentId ? await sources.get(row.documentId) : null;
           return {
             ...publicRow(row),
@@ -86,11 +86,11 @@ export class MindMapsService {
 
   async update(id: number, userId: number, data: string) {
     const row = await this.owned(id, userId);
-    return publicRow(await this.store.save('mindmaps', { ...row, data }));
+    return publicRow(await this.store.save("mindmaps", { ...row, data }));
   }
 
   async delete(id: number, userId: number): Promise<void> {
     await this.owned(id, userId);
-    await this.store.delete('mindmaps', id);
+    await this.store.delete("mindmaps", id);
   }
 }

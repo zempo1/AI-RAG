@@ -1,16 +1,16 @@
 /** 实现业务处理；所属能力：将文本转换为向量，管理模型配置和 token 计数。 */
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable, OnModuleDestroy } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import {
   currentModelProfile,
   legacyModelProfile,
   ModelProfile,
   assertTokenizerProfile,
-} from './model-profile';
-import { TokenizerService } from './tokenizer.service';
-import { RequestScheduler } from '../../common/request-scheduler';
-import { retryTransientRequest } from '../../common/transient-request';
-import { modelBinding, redactModelError } from '../model-settings/model-runtime';
+} from "./model-profile";
+import { TokenizerService } from "./tokenizer.service";
+import { RequestScheduler } from "../../common/request-scheduler";
+import { retryTransientRequest } from "../../common/transient-request";
+import { modelBinding, redactModelError } from "../model-settings/model-runtime";
 
 export const REMOTE_EMBEDDING_BATCH_SIZE = 10;
 export const REMOTE_EMBEDDING_CONCURRENCY = 2;
@@ -35,12 +35,12 @@ export class EmbeddingsService implements OnModuleDestroy {
     // 延迟加载并复用模型；加载失败清空 Promise，让下一次请求可以重新尝试。
     if (!this.extractor)
       this.extractor = (async () => {
-        const { env, pipeline } = await import('@huggingface/transformers');
-        env.cacheDir = this.config.getOrThrow('MODEL_CACHE_DIR');
-        return pipeline('feature-extraction', legacyModelProfile(this.config).model, {
+        const { env, pipeline } = await import("@huggingface/transformers");
+        env.cacheDir = this.config.getOrThrow("MODEL_CACHE_DIR");
+        return pipeline("feature-extraction", legacyModelProfile(this.config).model, {
           revision: legacyModelProfile(this.config).revision,
-          dtype: 'fp32',
-          device: 'cpu',
+          dtype: "fp32",
+          device: "cpu",
         });
       })().catch((error) => {
         this.extractor = undefined;
@@ -56,9 +56,12 @@ export class EmbeddingsService implements OnModuleDestroy {
   ): Promise<number[][]> {
     signal?.throwIfAborted();
     assertTokenizerProfile(profile);
-    if (profile.provider !== 'local') {
-      try { return await this.remote(texts, profile, signal); }
-      catch (error) { throw redactModelError(this.config, error); }
+    if (profile.provider !== "local") {
+      try {
+        return await this.remote(texts, profile, signal);
+      } catch (error) {
+        throw redactModelError(this.config, error);
+      }
     }
     if (!texts.length) return [];
     const run = async () => {
@@ -69,7 +72,7 @@ export class EmbeddingsService implements OnModuleDestroy {
       for (let i = 0; i < texts.length; i += 16) {
         signal?.throwIfAborted();
         const tensor = await extractor(texts.slice(i, i + 16), {
-          pooling: 'mean',
+          pooling: "mean",
           normalize: true,
         });
         signal?.throwIfAborted();
@@ -78,7 +81,7 @@ export class EmbeddingsService implements OnModuleDestroy {
           batch.length !== Math.min(16, texts.length - i) ||
           batch.some((v) => v.length !== 384 || !v.every(Number.isFinite))
         )
-          throw new Error('Invalid MiniLM embedding response');
+          throw new Error("Invalid MiniLM embedding response");
         vectors.push(...batch);
       }
       return vectors;
@@ -103,43 +106,47 @@ export class EmbeddingsService implements OnModuleDestroy {
     signal?: AbortSignal,
   ): Promise<number[][]> {
     if (!texts.length) return [];
-    const binding = modelBinding(this.config, 'embedding');
+    const binding = modelBinding(this.config, "embedding");
     const key = binding.apiKey;
-    if (!key) throw new Error('请配置 EMBEDDING_API_KEY 或 CHAT_API_KEY');
+    if (!key) throw new Error("请配置 EMBEDDING_API_KEY 或 CHAT_API_KEY");
     // 调用前检查输入长度，拒绝静默截断，保证向量代表完整片段。
     const tokenizer = new TokenizerService(this.config);
     for (const text of texts)
       if ((await tokenizer.count(text, profile.tokenizer)) > 8192)
-        throw new Error('Embedding 输入超过模型 token 上限，拒绝静默截断');
+        throw new Error("Embedding 输入超过模型 token 上限，拒绝静默截断");
     const all: number[][] = [];
     for (let i = 0; i < texts.length; i += REMOTE_EMBEDDING_BATCH_SIZE) {
       signal?.throwIfAborted();
       const input = texts.slice(i, i + REMOTE_EMBEDDING_BATCH_SIZE);
       const body: any = await remoteRequests.run(async () => {
-        const response = await retryTransientRequest(() => fetch(
-          (
-            profile.baseUrl || binding.baseUrl
-          ).replace(/\/$/, '') + '/embeddings',
-          {
-            method: 'POST',
-            headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model: profile.model,
-              input,
-              ...((profile.sendDimensions ?? binding.sendDimensions ?? true) ? { dimensions: profile.dimensions } : {}),
-              encoding_format: 'float',
+        const response = await retryTransientRequest(
+          () =>
+            fetch((profile.baseUrl || binding.baseUrl).replace(/\/$/, "") + "/embeddings", {
+              method: "POST",
+              headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: profile.model,
+                input,
+                ...((profile.sendDimensions ?? binding.sendDimensions ?? true)
+                  ? { dimensions: profile.dimensions }
+                  : {}),
+                encoding_format: "float",
+              }),
+              signal: signal
+                ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+                : AbortSignal.timeout(30000),
             }),
-            signal: signal
-              ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
-              : AbortSignal.timeout(30000),
-          },
-        ), signal).catch((error) => {
+          signal,
+        ).catch((error) => {
           signal?.throwIfAborted();
-          throw new Error('向量化请求失败：' + (error instanceof Error ? error.message : String(error)), { cause: error });
+          throw new Error(
+            "向量化请求失败：" + (error instanceof Error ? error.message : String(error)),
+            { cause: error },
+          );
         });
         if (!response.ok) {
           remoteRequests.cooldown(response);
-          throw new Error('Embedding API HTTP ' + response.status);
+          throw new Error("Embedding API HTTP " + response.status);
         }
         return response.json();
       }, signal);
@@ -156,7 +163,7 @@ export class EmbeddingsService implements OnModuleDestroy {
             !r.embedding.some((x: number) => x !== 0),
         )
       )
-        throw new Error('Invalid API embedding response');
+        throw new Error("Invalid API embedding response");
       all.push(...rows.map((r) => r.embedding));
     }
     return all;

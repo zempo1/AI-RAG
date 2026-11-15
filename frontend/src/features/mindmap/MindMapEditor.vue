@@ -48,9 +48,7 @@
           </template>
         </el-dropdown>
         <el-button class="btn-close" @click="handleClose">关闭</el-button>
-        <el-button type="primary" class="btn-save" @click="saveMap"
-          >保存更改</el-button
-        >
+        <el-button type="primary" class="btn-save" @click="saveMap">保存更改</el-button>
       </div>
     </div>
     <div class="mindmap-container" ref="mindmapRef"></div>
@@ -249,26 +247,26 @@ const handleClose = () => {
   visible.value = false;
 };
 
-const handleExport = async (type: 'png' | 'svg') => {
+const handleExport = async (type: "png" | "svg") => {
   if (!mindMap) return;
   try {
-    const title = currentMap.value?.title || '思维导图';
-    if (type === 'png') {
-      const data: string = await mindMap.export('png', true, title);
+    const title = currentMap.value?.title || "思维导图";
+    if (type === "png") {
+      const data: string = await mindMap.export("png", true, title);
       downloadDataUrl(data, `${title}.png`);
     } else {
-      const data: string = await mindMap.export('svg', true, title);
+      const data: string = await mindMap.export("svg", true, title);
       downloadDataUrl(data, `${title}.svg`);
     }
     toast.success(`已导出为 ${type.toUpperCase()}`);
   } catch (e) {
     console.error(e);
-    toast.error('导出失败');
+    toast.error("导出失败");
   }
 };
 
 function downloadDataUrl(dataUrl: string, filename: string) {
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = dataUrl;
   a.download = filename;
   a.click();
@@ -279,8 +277,6 @@ onBeforeUnmount(() => {
     mindMap.destroy();
   }
 });
-
-
 </script>
 
 <style lang="scss" src="./MindMapEditor.scss" scoped></style>

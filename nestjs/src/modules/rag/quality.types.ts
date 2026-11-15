@@ -1,5 +1,5 @@
-import { Citation } from './citations';
-export type QueryMode = 'auto' | 'general' | 'search' | 'overview' | 'compare';
+import { Citation } from "./citations";
+export type QueryMode = "auto" | "general" | "search" | "overview" | "compare";
 export interface HistoryTurn {
   role: string;
   content: string;

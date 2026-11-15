@@ -1,4 +1,4 @@
-import { RegionBox } from './parsed-document';
+import { RegionBox } from "./parsed-document";
 
 const median = (values: number[]) => {
   const sorted = values.slice().sort((a, b) => a - b);

@@ -4,21 +4,16 @@
     class="page-preview"
     aria-label="来源图片"
   >
-    <p v-if="loading" role="status">
-      正在加载第 {{ source.location.page }} 页{{ imageLabel }}…
-    </p>
+    <p v-if="loading" role="status">正在加载第 {{ source.location.page }} 页{{ imageLabel }}…</p>
     <div v-else-if="error" role="status">
       <p>{{ error }}</p>
       <el-button size="small" @click="attempt++">重新加载原图</el-button>
     </div>
     <template v-else-if="url">
       <a :href="url" target="_blank" rel="noopener"
-        >查看{{ source.location?.regionImage ? imageLabel : '完整页面原图' }}（新窗口）</a
+        >查看{{ source.location?.regionImage ? imageLabel : "完整页面原图" }}（新窗口）</a
       >
-      <img
-        :src="url"
-        :alt="`${source.filename} 第 ${source.location.page} 页${imageLabel}`"
-      />
+      <img :src="url" :alt="`${source.filename} 第 ${source.location.page} 页${imageLabel}`" />
     </template>
   </section>
 </template>
@@ -30,7 +25,13 @@ import { getCitationPageImage, type Citation } from "../../api/knowledge-bases";
 const props = defineProps<{ source: Citation }>();
 const imageLabel = computed(() => {
   const kind = props.source.location?.regionImage?.kind;
-  return kind === 'region' ? '图片区域' : kind === 'scan' ? '整页扫描图' : kind === 'fallback' ? '整页兜底图' : '原图';
+  return kind === "region"
+    ? "图片区域"
+    : kind === "scan"
+      ? "整页扫描图"
+      : kind === "fallback"
+        ? "整页兜底图"
+        : "原图";
 });
 const attempt = ref(0),
   loading = ref(false),
@@ -48,7 +49,8 @@ watch(
     url.value = "";
     error.value = "";
     loading.value = false;
-    if (!(source.location?.regionImage || source.location?.pageImage) || source.sourceDeleted) return;
+    if (!(source.location?.regionImage || source.location?.pageImage) || source.sourceDeleted)
+      return;
     loading.value = true;
     try {
       const blob = await getCitationPageImage(source, controller.signal);

@@ -14,7 +14,7 @@ export class RequestScheduler {
       await new Promise<void>((resolve, reject) => {
         const finish = () => {
           clearTimeout(timer);
-          signal?.removeEventListener('abort', abort);
+          signal?.removeEventListener("abort", abort);
           resolve();
         };
         const abort = () => {
@@ -22,7 +22,7 @@ export class RequestScheduler {
           reject(signal?.reason);
         };
         const timer = setTimeout(finish, Math.min(2147483647, this.until - Date.now()));
-        signal?.addEventListener('abort', abort, { once: true });
+        signal?.addEventListener("abort", abort, { once: true });
       });
     }
     signal?.throwIfAborted();
@@ -30,7 +30,7 @@ export class RequestScheduler {
   cooldown(error: any) {
     if (Number(error?.status ?? error?.statusCode) !== 429) return;
     this.rateLimits++;
-    const raw = error.headers?.get?.('retry-after') ?? error.headers?.['retry-after'];
+    const raw = error.headers?.get?.("retry-after") ?? error.headers?.["retry-after"];
     const seconds = raw == null ? NaN : Number(raw);
     const delay =
       Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : Date.parse(raw) - Date.now();
@@ -58,7 +58,7 @@ export class RequestScheduler {
         const done = () => {
           clearTimeout(timer);
           this.waiters.delete(done);
-          signal?.removeEventListener('abort', aborted);
+          signal?.removeEventListener("abort", aborted);
           resolve();
         };
         const aborted = () => {
@@ -72,7 +72,7 @@ export class RequestScheduler {
             : 100,
         );
         this.waiters.add(done);
-        signal?.addEventListener('abort', aborted, { once: true });
+        signal?.addEventListener("abort", aborted, { once: true });
       });
     }
   }

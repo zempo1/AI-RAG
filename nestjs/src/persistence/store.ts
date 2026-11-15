@@ -4,23 +4,23 @@ export interface Row {
 }
 
 export interface EntityMap {
-  modelSettings: import('../modules/model-settings/model-setting.entity').ModelSetting;
-  agentCheckpoints: import('./agent-checkpoint.persistence').AgentCheckpoint;
-  agentCheckpointWrites: import('./agent-checkpoint.persistence').AgentCheckpointWrite;
-  retrievalRuns: import('./quality.persistence').RetrievalRun;
-  summaryCaches: import('./quality.persistence').SummaryCache;
-  knowledgeBases: import('../modules/knowledge-bases/entities/knowledge-base.entity').KnowledgeBase;
-  categories: import('../modules/knowledge-bases/entities/knowledge-base.entity').DocumentCategory;
-  versions: import('../modules/documents/entities/document-version.entity').DocumentVersion;
-  indexRevisions: import('../modules/documents/entities/document-version.entity').DocumentIndexRevision;
-  chunks: import('../modules/documents/entities/document-version.entity').DocumentChunk;
-  tasks: import('../modules/tasks/entities/processing-task.entity').ProcessingTask;
-  users: import('../modules/auth/entities/user.entity').User;
-  documents: import('../modules/documents/entities/document.entity').DocumentFile;
-  chats: import('../modules/history/entities/chat.entity').Chat;
-  messages: import('../modules/history/entities/message.entity').Message;
-  analyses: import('../modules/analysis/entities/document-analysis.entity').DocumentAnalysis;
-  mindmaps: import('../modules/mindmaps/entities/mindmap.entity').MindMap;
+  modelSettings: import("../modules/model-settings/model-setting.entity").ModelSetting;
+  agentCheckpoints: import("./agent-checkpoint.persistence").AgentCheckpoint;
+  agentCheckpointWrites: import("./agent-checkpoint.persistence").AgentCheckpointWrite;
+  retrievalRuns: import("./quality.persistence").RetrievalRun;
+  summaryCaches: import("./quality.persistence").SummaryCache;
+  knowledgeBases: import("../modules/knowledge-bases/entities/knowledge-base.entity").KnowledgeBase;
+  categories: import("../modules/knowledge-bases/entities/knowledge-base.entity").DocumentCategory;
+  versions: import("../modules/documents/entities/document-version.entity").DocumentVersion;
+  indexRevisions: import("../modules/documents/entities/document-version.entity").DocumentIndexRevision;
+  chunks: import("../modules/documents/entities/document-version.entity").DocumentChunk;
+  tasks: import("../modules/tasks/entities/processing-task.entity").ProcessingTask;
+  users: import("../modules/auth/entities/user.entity").User;
+  documents: import("../modules/documents/entities/document.entity").DocumentFile;
+  chats: import("../modules/history/entities/chat.entity").Chat;
+  messages: import("../modules/history/entities/message.entity").Message;
+  analyses: import("../modules/analysis/entities/document-analysis.entity").DocumentAnalysis;
+  mindmaps: import("../modules/mindmaps/entities/mindmap.entity").MindMap;
 }
 
 export type Table = keyof EntityMap;
@@ -52,17 +52,17 @@ export abstract class Store {
 }
 
 export const now = () => {
-  const zone = process.env.DB_TIMEZONE || '+08:00';
+  const zone = process.env.DB_TIMEZONE || "+08:00";
   const match = /^([+-])(\d\d):(\d\d)$/.exec(zone);
   const minutes = match
-    ? (Number(match[2]) * 60 + Number(match[3])) * (match[1] === '+' ? 1 : -1)
+    ? (Number(match[2]) * 60 + Number(match[3])) * (match[1] === "+" ? 1 : -1)
     : 0;
   return new Date(Date.now() + minutes * 60000).toISOString().slice(0, 23);
 };
 
 export function publicRow(row: Row): Record<string, unknown> {
   const { userId, password, chatId, ...result } = row;
-  for (const key of ['createdAt', 'uploadTime'])
-    if (typeof result[key] === 'string') result[key] = result[key].replace(' ', 'T');
+  for (const key of ["createdAt", "uploadTime"])
+    if (typeof result[key] === "string") result[key] = result[key].replace(" ", "T");
   return result;
 }

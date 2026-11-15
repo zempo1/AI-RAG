@@ -51,9 +51,9 @@ import Sidebar from "../features/sidebar/Sidebar.vue";
 import Chat from "../features/chat/Chat.vue";
 import Workbench from "../features/workbench/Workbench.vue";
 import LoginLanding from "../features/landing/LoginLanding.vue";
-import ModelSettingsDialog from '../features/settings/ModelSettingsDialog.vue';
-import type { DocumentTarget } from '../features/reader/types';
-const SourcePanel = defineAsyncComponent(() => import('../features/reader/SourcePanel.vue'));
+import ModelSettingsDialog from "../features/settings/ModelSettingsDialog.vue";
+import type { DocumentTarget } from "../features/reader/types";
+const SourcePanel = defineAsyncComponent(() => import("../features/reader/SourcePanel.vue"));
 
 const chatRef = ref<any>(null);
 const modelSettingsRef = ref<InstanceType<typeof ModelSettingsDialog>>();
@@ -69,7 +69,7 @@ const readerTarget = ref<DocumentTarget | null>(null);
 let readerTrigger: HTMLElement | null = null;
 const openReader = (target: DocumentTarget) => {
   const active = document.activeElement;
-  if (active instanceof HTMLElement && !active.closest('.source-panel')) readerTrigger = active;
+  if (active instanceof HTMLElement && !active.closest(".source-panel")) readerTrigger = active;
   readerTarget.value = target;
 };
 const closeReader = () => {
@@ -77,11 +77,18 @@ const closeReader = () => {
   const trigger = readerTrigger;
   readerTrigger = null;
   void nextTick(() => {
-    if (trigger?.isConnected && trigger.getClientRects().length) trigger.focus({ preventScroll: true });
-    else (document.querySelector('.library-feature button') as HTMLElement | null)?.focus({ preventScroll: true });
+    if (trigger?.isConnected && trigger.getClientRects().length)
+      trigger.focus({ preventScroll: true });
+    else
+      (document.querySelector(".library-feature button") as HTMLElement | null)?.focus({
+        preventScroll: true,
+      });
   });
 };
-const clearReader = () => { readerTarget.value = null; readerTrigger = null; };
+const clearReader = () => {
+  readerTarget.value = null;
+  readerTrigger = null;
+};
 
 const isLoggedIn = computed(() => !!authToken.value);
 

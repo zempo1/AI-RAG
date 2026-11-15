@@ -18,12 +18,7 @@
         }
       "
     >
-      <el-option
-        v-for="doc in documents"
-        :key="doc.id"
-        :label="doc.filename"
-        :value="doc.id"
-      />
+      <el-option v-for="doc in documents" :key="doc.id" :label="doc.filename" :value="doc.id" />
       <el-option
         v-for="id in unavailable"
         :key="'missing-' + id"
@@ -39,26 +34,22 @@
       popper-class="knowledge-theme knowledge-popper"
       @update:model-value="emit('update:mode', $event)"
     >
-      <el-option label="自动判断" value="auto" /><el-option label="通用回答" value="general" /><el-option
-        label="知识问答"
-        value="search"
-      /><el-option label="全文概览" value="overview" /><el-option
-        label="文档比较"
-        value="compare"
-      />
+      <el-option label="自动判断" value="auto" /><el-option
+        label="通用回答"
+        value="general"
+      /><el-option label="知识问答" value="search" /><el-option
+        label="全文概览"
+        value="overview"
+      /><el-option label="文档比较" value="compare" />
     </el-select>
     <span v-if="error" class="qa-control-error" role="alert"
       >来源加载失败 <button @click="load()">重试</button></span
     >
-
   </div>
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import {
-  listLibraryDocuments,
-  type ManagedDocument,
-} from "../../api/knowledge-bases";
+import { listLibraryDocuments, type ManagedDocument } from "../../api/knowledge-bases";
 import type { QaMode } from "../../api/chat";
 const props = defineProps<{
   knowledgeBaseId: number | null;
@@ -85,13 +76,20 @@ async function load(clear = false) {
   flight?.controller.abort();
   const current = ++sequence;
   error.value = false;
-  if (!id) { loading.value = false; flight = undefined; return; }
+  if (!id) {
+    loading.value = false;
+    flight = undefined;
+    return;
+  }
   loading.value = true;
   const controller = new AbortController();
   const request = fetchSources(id, current, controller.signal);
   flight = { id, controller, request };
-  try { await request; }
-  finally { if (flight?.request === request) flight = undefined; }
+  try {
+    await request;
+  } finally {
+    if (flight?.request === request) flight = undefined;
+  }
 }
 async function fetchSources(id: number, current: number, signal: AbortSignal) {
   try {
@@ -114,5 +112,8 @@ watch(
   () => load(true),
   { immediate: true },
 );
-onBeforeUnmount(() => { sequence++; flight?.controller.abort(); });
+onBeforeUnmount(() => {
+  sequence++;
+  flight?.controller.abort();
+});
 </script>

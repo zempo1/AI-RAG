@@ -1,18 +1,18 @@
 /** 从 PDF 文本层或 UTF-8 Markdown 提取带位置的文本块。 */
-import { Injectable, Optional, Logger } from '@nestjs/common';
-import { createHash } from 'node:crypto';
-import { ApiError } from '../../../common/api-error';
-import { ParsedDocument, PdfSourceAnchor, paragraphBlocks } from './parsed-document';
-import { shiftSourceLocation, sliceSourceLocation } from './source-anchors';
-import { PdfVisualService, ParseContext, markPdfFailure } from './pdf-visual.service';
-import { localRendering } from './vision-scheduler';
-import { textPositions } from './pdf-layout';
+import { Injectable, Optional, Logger } from "@nestjs/common";
+import { createHash } from "node:crypto";
+import { ApiError } from "../../../common/api-error";
+import { ParsedDocument, PdfSourceAnchor, paragraphBlocks } from "./parsed-document";
+import { shiftSourceLocation, sliceSourceLocation } from "./source-anchors";
+import { PdfVisualService, ParseContext, markPdfFailure } from "./pdf-visual.service";
+import { localRendering } from "./vision-scheduler";
+import { textPositions } from "./pdf-layout";
 import {
   detectPdfTableGrids,
   hasPageTailTable,
   linkAdjacentPageTables,
   splitNativeTableBlocks,
-} from './pdf-table-layout';
+} from "./pdf-table-layout";
 
 type PageProgress = (done: number, total: number) => void | Promise<void>;
 
@@ -27,7 +27,7 @@ export class DocumentParser {
       /[\\/\x00-\x1f]/.test(filename) ||
       !/\.(pdf|md)$/i.test(filename)
     )
-      throw new ApiError(400, '文件必须是 PDF 或 Markdown 格式！');
+      throw new ApiError(400, "文件必须是 PDF 或 Markdown 格式！");
   }
 
   async parse(bytes: Buffer, filename: string): Promise<string> {
@@ -41,20 +41,20 @@ export class DocumentParser {
     context?: ParseContext,
   ): Promise<ParsedDocument> {
     this.validateFilename(filename);
-    if (!bytes.length) throw new ApiError(400, '文件不能为空');
+    if (!bytes.length) throw new ApiError(400, "文件不能为空");
     if (!/\.pdf$/i.test(filename)) {
       let text: string;
       try {
-        text = new TextDecoder('utf-8', { fatal: true }).decode(bytes).replace(/\r\n?/g, '\n');
+        text = new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/\r\n?/g, "\n");
       } catch {
-        throw new ApiError(400, 'Markdown 必须使用 UTF-8 编码');
+        throw new ApiError(400, "Markdown 必须使用 UTF-8 编码");
       }
-      if (!text.trim()) throw new ApiError(400, '文档内容不能为空');
+      if (!text.trim()) throw new ApiError(400, "文档内容不能为空");
       await progress?.(1, 1);
       return { text, blocks: paragraphBlocks(text, null) };
     }
     const pages: string[] = [];
-    const blocks: ParsedDocument['blocks'] = [];
+    const blocks: ParsedDocument["blocks"] = [];
     let offset = 0;
     for await (const page of this.parsePages(bytes, context, progress)) {
       pages.push(page.text);
@@ -65,7 +65,7 @@ export class DocumentParser {
         });
       offset += page.text.length + 1;
     }
-    return { text: pages.join('\n'), blocks };
+    return { text: pages.join("\n"), blocks };
   }
 
   /** A bounded stream of page-local text and offsets, in PDF page order. */
@@ -74,12 +74,12 @@ export class DocumentParser {
     original?: ParseContext,
     progress?: PageProgress,
   ): AsyncGenerator<ParsedDocument> {
-    if (!bytes.length) throw new ApiError(400, '文件不能为空');
-    if (!Buffer.from(bytes.subarray(0, 1024)).includes(Buffer.from('%PDF-')))
-      throw new ApiError(400, 'PDF 文件格式无效');
+    if (!bytes.length) throw new ApiError(400, "文件不能为空");
+    if (!Buffer.from(bytes.subarray(0, 1024)).includes(Buffer.from("%PDF-")))
+      throw new ApiError(400, "PDF 文件格式无效");
     await original?.guard?.();
     original?.signal?.throwIfAborted();
-    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const task = pdfjs.getDocument({
       data: new Uint8Array(bytes),
       useSystemFonts: true,
@@ -91,7 +91,7 @@ export class DocumentParser {
     } catch (error) {
       await task.destroy();
       original?.signal?.throwIfAborted();
-      throw Object.assign(new ApiError(400, 'PDF 解析失败：文件损坏、加密或格式不受支持'), {
+      throw Object.assign(new ApiError(400, "PDF 解析失败：文件损坏、加密或格式不受支持"), {
         cause: error,
       });
     }
@@ -122,7 +122,7 @@ export class DocumentParser {
     let regionTotal = 0;
     let regionDone = 0;
     let lastReport = -Infinity;
-    let stage: 'ocr' | 'vision' | undefined;
+    let stage: "ocr" | "vision" | undefined;
     let initialRecognition: { done: number; total: number | null } | undefined;
     let reporting = Promise.resolve();
     let polling: Promise<void> | undefined;
@@ -154,17 +154,17 @@ export class DocumentParser {
     const beforeRequest = () => {
       signal.throwIfAborted();
       if (firstFailure) throw firstFailure;
-      if (closed) throw new Error('PDF 页面流已关闭');
+      if (closed) throw new Error("PDF 页面流已关闭");
       original?.beforeRequest?.();
     };
     const context: ParseContext | undefined = enhanced
       ? {
           ...original!,
-          sourceHash: createHash('sha256').update(bytes).digest('hex'),
+          sourceHash: createHash("sha256").update(bytes).digest("hex"),
           signal,
           guard: check,
           stage: async (nextStage) => {
-            if (nextStage === 'vision' || (nextStage === 'ocr' && !stage)) {
+            if (nextStage === "vision" || (nextStage === "ocr" && !stage)) {
               const changed = stage !== nextStage;
               stage = nextStage;
               if (changed) await report(true);
@@ -196,7 +196,7 @@ export class DocumentParser {
         }, 1000)
       : undefined;
     const processPage = async (i: number): Promise<ParsedDocument> => {
-      const blocks: ParsedDocument['blocks'] = [];
+      const blocks: ParsedDocument["blocks"] = [];
       beforeRequest();
       await check();
       const page = await document.getPage(i);
@@ -204,16 +204,16 @@ export class DocumentParser {
         // 保留原生文字，再逐页补充图片、扫描文字和图解。
         const content = await localRendering.run(() => page.getTextContent(), signal);
         let previous: any;
-        let pageText = '';
+        let pageText = "";
         const itemRanges: { start: number; end: number }[] = [];
         const viewport = page.getViewport({ scale: 1 });
         const positions = textPositions(content, viewport);
         const sourcePositions = textPositions(content, viewport, { fontMetrics: true });
         for (const item of content.items as any[]) {
-          if (!('str' in item)) continue;
+          if (!("str" in item)) continue;
           // PDF.js 可能用一个宽空白 item 表示栏间距。
           if (!item.str.trim() && item.width > Math.max(previous?.height || 10, item.height) * 2)
-            pageText += '\n\n';
+            pageText += "\n\n";
           // 根据文字纵向位置推断段落边界，减少 PDF 提取后所有内容粘成一段的问题。
           if (
             previous &&
@@ -224,11 +224,11 @@ export class DocumentParser {
                 item.transform[4] - previous.transform[4] - previous.width >
                   Math.max(previous.height, item.height) * 2))
           )
-            pageText += '\n\n';
+            pageText += "\n\n";
           const itemStart = pageText.length;
           pageText += item.str;
           itemRanges.push({ start: itemStart, end: pageText.length });
-          if (item.hasEOL) pageText += '\n';
+          if (item.hasEOL) pageText += "\n";
           previous = item;
         }
         const nativeAnchors: PdfSourceAnchor[] = itemRanges.flatMap((range, index) => {
@@ -236,13 +236,18 @@ export class DocumentParser {
           if (!position?.text.trim() || range.end <= range.start) return [];
           const box = position.bbox;
           if (box[2] <= box[0] || box[3] <= box[1]) return [];
-          return [{ page: i, ...range, rects: [box], kind: 'native' as const }];
+          return [{ page: i, ...range, rects: [box], kind: "native" as const }];
         });
         // 每页独立保留局部偏移；收集整份文档时统一平移为全局偏移。
         const paragraphs = paragraphBlocks(pageText, i).map((b) => ({
           ...b,
           location: sliceSourceLocation(
-            { ...b.location, contentType: 'native' as const, anchorVersion: 1, anchors: nativeAnchors },
+            {
+              ...b.location,
+              contentType: "native" as const,
+              anchorVersion: 1,
+              anchors: nativeAnchors,
+            },
             b.location.start,
             b.location.end,
           ),
@@ -254,7 +259,7 @@ export class DocumentParser {
           i,
         );
         const nativeBlocks = splitNativeTableBlocks(paragraphs, grids, positions, itemRanges);
-        const entries: { order: number; block: ParsedDocument['blocks'][number] }[] =
+        const entries: { order: number; block: ParsedDocument["blocks"][number] }[] =
           nativeBlocks.map((block, n) => ({ order: n, block }));
         if (context && this.visual) {
           try {
@@ -272,7 +277,7 @@ export class DocumentParser {
                 )
               : [];
             for (const supplement of result.blocks) {
-              const labels = { ocr: '图片文字识别', table: '表格识别', figure: '模型生成的图解' };
+              const labels = { ocr: "图片文字识别", table: "表格识别", figure: "模型生成的图解" };
               const value = `[${labels[supplement.type]}]\n${supplement.text}`;
               const ref = supplement.regionImage;
               // Labels are generated metadata; only recognized body text has source geometry.
@@ -284,7 +289,7 @@ export class DocumentParser {
                 )
                 .filter((n) => n > 0);
               let anchor = nativeBlocks.length - 1;
-              if (ref?.kind === 'region') {
+              if (ref?.kind === "region") {
                 const [x0, y0, x1] = ref.bbox;
                 anchor = -1;
                 for (let n = 0; n < nativeBlocks.length; n++) {
@@ -315,13 +320,15 @@ export class DocumentParser {
                     ...(sourceBox
                       ? {
                           anchorVersion: 1 as const,
-                          anchors: [{
-                            page: i,
-                            start: sourceStart,
-                            end: value.length,
-                            rects: [sourceBox],
-                            kind: supplement.anchorKind ?? ('region' as const),
-                          }],
+                          anchors: [
+                            {
+                              page: i,
+                              start: sourceStart,
+                              end: value.length,
+                              rects: [sourceBox],
+                              kind: supplement.anchorKind ?? ("region" as const),
+                            },
+                          ],
                         }
                       : {}),
                   },
@@ -334,9 +341,9 @@ export class DocumentParser {
             throw error;
           }
         }
-        pageText = '';
+        pageText = "";
         for (const { block } of entries.sort((a, b) => a.order - b.order)) {
-          if (pageText) pageText += '\n\n';
+          if (pageText) pageText += "\n\n";
           const start = pageText.length;
           blocks.push({
             ...block,
@@ -382,31 +389,31 @@ export class DocumentParser {
         const result = await pending.get(i);
         pending.delete(i);
         beforeRequest();
-        if (!result) throw new Error('PDF 页面未解析完成');
+        if (!result) throw new Error("PDF 页面未解析完成");
         // A possible tail table waits for exactly one adjacent page. Ordinary pages
         // retain the existing streaming latency and recognition concurrency bound.
         if (i < document.numPages && hasPageTailTable(result)) {
           if (!pending.has(i + 1)) prepare(next++);
           const following = await pending.get(i + 1);
           beforeRequest();
-          if (!following) throw new Error('PDF 续页未解析完成');
+          if (!following) throw new Error("PDF 续页未解析完成");
           linkAdjacentPageTables(result, following);
         }
         hasContent ||= Boolean(result.text.trim());
         yield result;
       }
       if (enhanced) {
-        if (regionTotal > 0) stage ??= 'vision';
+        if (regionTotal > 0) stage ??= "vision";
         await report(true);
         this.logger.log(
-          JSON.stringify({ event: 'pdf-document-layout', pages: document.numPages, ...counts }),
+          JSON.stringify({ event: "pdf-document-layout", pages: document.numPages, ...counts }),
         );
       }
       beforeRequest();
       if (!hasContent)
         throw new ApiError(
           400,
-          'PDF 中未提取到有效内容；扫描件请配置并启用视觉解析（OCR/图表）后重建索引',
+          "PDF 中未提取到有效内容；扫描件请配置并启用视觉解析（OCR/图表）后重建索引",
         );
     } finally {
       closed = true;

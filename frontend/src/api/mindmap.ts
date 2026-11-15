@@ -11,11 +11,7 @@ export interface MindMap {
 }
 
 export const generateMindMap = (documentId: number) => {
-  return request.post<any, MindMap>(
-    "/api/mindmaps/generate",
-    { documentId },
-    { timeout: 120000 },
-  );
+  return request.post<any, MindMap>("/api/mindmaps/generate", { documentId }, { timeout: 120000 });
 };
 
 export const getMindMaps = () => {

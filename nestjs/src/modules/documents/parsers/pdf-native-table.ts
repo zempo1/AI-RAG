@@ -1,5 +1,5 @@
-import type { RegionBox } from './parsed-document';
-import type { TextPosition } from './pdf-layout';
+import type { RegionBox } from "./parsed-document";
+import type { TextPosition } from "./pdf-layout";
 
 /** Preserve rows and visible cell gaps without inferring labels or rewriting values. */
 export function nativeTableMarkdown(texts: TextPosition[], box: RegionBox): string | undefined {
@@ -32,8 +32,8 @@ export function nativeTableMarkdown(texts: TextPosition[], box: RegionBox): stri
           item.bbox[0] - previous.right > 0.002 &&
           /[a-z0-9]$/i.test(previous.text) &&
           /^[a-z0-9]/i.test(item.text)
-            ? ' '
-            : '';
+            ? " "
+            : "";
         previous.text += space + item.text;
         previous.right = Math.max(previous.right, item.bbox[2]);
       } else result.push({ left: item.bbox[0], right: item.bbox[2], text: item.text });
@@ -48,20 +48,20 @@ export function nativeTableMarkdown(texts: TextPosition[], box: RegionBox): stri
     ...columns.slice(1).map((cell, i) => (columns[i].right + cell.left) / 2),
     box[2],
   ];
-  const escape = (text: string) => text.trim().replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
-  const format = (row: string[]) => '| ' + row.join(' | ') + ' |';
+  const escape = (text: string) => text.trim().replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
+  const format = (row: string[]) => "| " + row.join(" | ") + " |";
   // Empty headers avoid falsely treating a title or the first data row as column names.
-  const output = [format(columns.map(() => '')), format(columns.map(() => '---'))];
+  const output = [format(columns.map(() => "")), format(columns.map(() => "---"))];
   for (const row of cells) {
-    const values = columns.map(() => '');
+    const values = columns.map(() => "");
     for (const cell of row) {
       const column = columns.findIndex(
         (_c, i) => cell.left >= boundaries[i] - 0.001 && cell.right <= boundaries[i + 1] + 0.001,
       );
       if (column < 0 || values[column]) return undefined;
-      values[column] += (values[column] ? ' ' : '') + escape(cell.text);
+      values[column] += (values[column] ? " " : "") + escape(cell.text);
     }
     output.push(format(values));
   }
-  return output.join('\n');
+  return output.join("\n");
 }

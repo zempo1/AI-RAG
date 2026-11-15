@@ -10,11 +10,7 @@
     "PP-OCRv6_small_rec/inference.pdiparams": "406e1e689c9a7fbb04178007a3fe10cf852afe7bf8bb3bc6dbb9d532b13bd907",
     "PP-OCRv6_small_rec/inference.yml": "ab078671bb49f06228eadccd34f1bb501e157f7a047095ffb943ba81512c77d1"
   },
-  "models": [
-    "PP-DocLayout-M",
-    "PP-OCRv6_small_det",
-    "PP-OCRv6_small_rec"
-  ],
+  "models": ["PP-DocLayout-M", "PP-OCRv6_small_det", "PP-OCRv6_small_rec"],
   "schema": 1,
   "versions": {
     "paddleocr": "3.7.0",

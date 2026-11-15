@@ -1,15 +1,15 @@
-const fs = require('node:fs');
+const fs = require("node:fs");
 
-const crypto = require('node:crypto');
+const crypto = require("node:crypto");
 
 const baseline = JSON.parse(
-  fs.readFileSync(__dirname + '/original-files.sha256.json', 'utf8').replace(/^\uFEFF/, ''),
+  fs.readFileSync(__dirname + "/original-files.sha256.json", "utf8").replace(/^\uFEFF/, ""),
 );
 
 const changed = baseline.filter(
   ({ path, hash }) =>
     !fs.existsSync(path) ||
-    crypto.createHash('sha256').update(fs.readFileSync(path)).digest('hex').toUpperCase() !== hash,
+    crypto.createHash("sha256").update(fs.readFileSync(path)).digest("hex").toUpperCase() !== hash,
 );
 
 if (changed.length) {
