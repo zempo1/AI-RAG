@@ -142,7 +142,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { ref, watch, type Ref } from "vue";
 import {
   ArrowLeft,
   ArrowRight,
@@ -217,66 +217,68 @@ const flashcards = ref<DocumentAnalysis[]>([]);
 const flashcardViewerVisible = ref(false);
 const currentFlashcard = ref<DocumentAnalysis | null>(null);
 
-// 加载
-const loadMindMaps = async () => {
-  mindmapLoading.value = true;
-  try {
-    mindMaps.value = await getMindMaps();
-  } catch (e) {
-    console.error(e);
-  } finally {
-    mindmapLoading.value = false;
-  }
+// 每个标签独立缓存：仅成功读取才有效，同一轮读取共享请求。
+function createTabLoader<T>(
+  loading: Ref<boolean>,
+  items: Ref<T[]>,
+  fetchItems: () => Promise<T[]>,
+) {
+  let loaded = false;
+  let revision = 0;
+  let pending: Promise<void> | null = null;
+  const load = () => {
+    if (pending) return pending;
+    const requestRevision = revision;
+    loaded = false;
+    loading.value = true;
+    pending = (async () => {
+      try {
+        const result = await fetchItems();
+        if (requestRevision !== revision) return;
+        items.value = result;
+        loaded = true;
+      } catch (e) {
+        console.error(e);
+      } finally {
+        // 已失效的旧请求不能覆盖新数据或结束新请求的加载状态。
+        if (requestRevision === revision) {
+          loading.value = false;
+          pending = null;
+        }
+      }
+    })();
+    return pending;
+  };
+  return {
+    load,
+    ensure: () => (loaded ? Promise.resolve() : load()),
+    invalidate: () => {
+      revision++;
+      loaded = false;
+      pending = null;
+      loading.value = false;
+    },
+  };
+}
+
+const loaders = {
+  mindmap: createTabLoader(mindmapLoading, mindMaps, getMindMaps),
+  summary: createTabLoader(summaryLoading, summaries, () => getAnalyses("SUMMARY")),
+  outline: createTabLoader(outlineLoading, outlines, () => getAnalyses("OUTLINE")),
+  flashcard: createTabLoader(flashcardLoading, flashcards, () => getAnalyses("FLASHCARD")),
 };
-const loadSummaries = async () => {
-  summaryLoading.value = true;
-  try {
-    summaries.value = await getAnalyses("SUMMARY");
-  } catch (e) {
-    console.error(e);
-  } finally {
-    summaryLoading.value = false;
-  }
-};
-const loadOutlines = async () => {
-  outlineLoading.value = true;
-  try {
-    outlines.value = await getAnalyses("OUTLINE");
-  } catch (e) {
-    console.error(e);
-  } finally {
-    outlineLoading.value = false;
-  }
-};
-const loadFlashcards = async () => {
-  flashcardLoading.value = true;
-  try {
-    flashcards.value = await getAnalyses("FLASHCARD");
-  } catch (e) {
-    console.error(e);
-  } finally {
-    flashcardLoading.value = false;
-  }
+const loadMindMaps = loaders.mindmap.load;
+const loadSummaries = loaders.summary.load;
+const loadOutlines = loaders.outline.load;
+const refreshTab = (tab: keyof typeof loaders) => {
+  loaders[tab].invalidate();
+  return activeTab.value === tab ? loaders[tab].ensure() : Promise.resolve();
 };
 
-// 懒加载：仅在首次切换到该 tab 时获取数据
-const loaders: Record<
-  "mindmap" | "summary" | "outline" | "flashcard",
-  () => Promise<void>
-> = {
-  mindmap: loadMindMaps,
-  summary: loadSummaries,
-  outline: loadOutlines,
-  flashcard: loadFlashcards,
-};
-const loadedTabs = new Set<string>();
+// 首次访问、失效或读取失败后才按需加载。
 watch(
   activeTab,
-  (tab) => {
-    if (loadedTabs.has(tab)) return;
-    loadedTabs.add(tab);
-    loaders[tab]();
-  },
+  (tab) => { void loaders[tab].ensure(); },
   { immediate: true },
 );
 
@@ -292,7 +294,7 @@ const handleGenerateMindMap = async () => {
     currentMindMap.value = map;
     editorVisible.value = true;
     toast.success("思维导图生成成功！");
-    await loadMindMaps();
+    await refreshTab("mindmap");
   } catch (e) {
     console.error(e);
     toast.error("生成思维导图失败");
@@ -312,6 +314,7 @@ const handleDeleteMindMap = async (map: MindMap) => {
   if (!ok) return;
   try {
     await apiDeleteMindMap(map.id);
+    loaders.mindmap.invalidate();
     mindMaps.value = mindMaps.value.filter((m) => m.id !== map.id);
     toast.success("已删除");
   } catch (e) {
@@ -320,7 +323,7 @@ const handleDeleteMindMap = async (map: MindMap) => {
   }
 };
 const onMindMapSaved = () => {
-  loadMindMaps();
+  void refreshTab("mindmap");
 };
 
 // 摘要/大纲操作
@@ -336,13 +339,13 @@ const handleGenerate = async (type: "SUMMARY" | "OUTLINE" | "FLASHCARD") => {
     const result = await generateAnalysis(props.uploadedDocumentId, type);
     if (type === "SUMMARY") {
       toast.success("AI 摘要生成成功！");
-      await loadSummaries();
+      await refreshTab("summary");
     } else if (type === "OUTLINE") {
       toast.success("文档大纲生成成功！");
-      await loadOutlines();
+      await refreshTab("outline");
     } else {
       toast.success("学习卡片生成成功！");
-      await loadFlashcards();
+      await refreshTab("flashcard");
       currentFlashcard.value = result;
       flashcardViewerVisible.value = true;
     }
@@ -360,6 +363,8 @@ const handleDeleteAnalysis = async (item: DocumentAnalysis) => {
   if (!ok) return;
   try {
     await apiDeleteAnalysis(item.id);
+    const tab = item.type === "SUMMARY" ? "summary" : item.type === "OUTLINE" ? "outline" : "flashcard";
+    loaders[tab].invalidate();
     summaries.value = summaries.value.filter((s) => s.id !== item.id);
     outlines.value = outlines.value.filter((o) => o.id !== item.id);
     flashcards.value = flashcards.value.filter((f) => f.id !== item.id);
@@ -424,21 +429,13 @@ const onSourceDeleted = async (documentId: number) => {
     flashcardViewerVisible.value = false;
     currentFlashcard.value = null;
   }
-  await Promise.all([
-    loadMindMaps(),
-    loadSummaries(),
-    loadOutlines(),
-    loadFlashcards(),
-  ]);
+  await refresh();
 };
 
-const refresh = () =>
-  Promise.all([
-    loadMindMaps(),
-    loadSummaries(),
-    loadOutlines(),
-    loadFlashcards(),
-  ]);
+const refresh = () => {
+  Object.values(loaders).forEach((loader) => loader.invalidate());
+  return loaders[activeTab.value].ensure();
+};
 defineExpose({
   loadMindMaps,
   loadSummaries,

@@ -88,10 +88,8 @@ const isLoggedIn = computed(() => !!authToken.value);
 const onAuthSuccess = async (name: string) => {
   authToken.value = localStorage.getItem("token");
   username.value = name;
-  setTimeout(() => {
-    sidebarRef.value?.loadChats();
-    workbenchRef.value?.loadMindMaps();
-  }, 100);
+  await nextTick();
+  sidebarRef.value?.loadChats();
 };
 
 const handleAuthExpired = () => {
@@ -177,7 +175,6 @@ onMounted(async () => {
   if (isLoggedIn.value) {
     await nextTick();
     sidebarRef.value?.loadChats();
-    workbenchRef.value?.loadMindMaps();
   }
 });
 

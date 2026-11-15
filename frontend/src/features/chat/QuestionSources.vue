@@ -74,27 +74,37 @@ const documents = ref<ManagedDocument[]>([]),
   loading = ref(false),
   error = ref(false);
 let sequence = 0;
+let flight: { id: number; controller: AbortController; request: Promise<void> } | undefined;
 const unavailable = computed(() =>
   props.documentIds.filter((id) => !documents.value.some((d) => d.id === id)),
 );
 async function load(clear = false) {
-  const current = ++sequence,
-    id = props.knowledgeBaseId;
+  const id = props.knowledgeBaseId;
   if (clear) documents.value = [];
+  if (flight?.id === id) return flight.request;
+  flight?.controller.abort();
+  const current = ++sequence;
   error.value = false;
-  if (!id) return;
+  if (!id) { loading.value = false; flight = undefined; return; }
   loading.value = true;
+  const controller = new AbortController();
+  const request = fetchSources(id, current, controller.signal);
+  flight = { id, controller, request };
+  try { await request; }
+  finally { if (flight?.request === request) flight = undefined; }
+}
+async function fetchSources(id: number, current: number, signal: AbortSignal) {
   try {
     const collected: ManagedDocument[] = [];
     for (let page = 1; ; page++) {
-      const data = await listLibraryDocuments(id, { page, pageSize: 100 });
+      const data = await listLibraryDocuments(id, { page, pageSize: 100 }, false, signal);
       if (current !== sequence) return;
       collected.push(...data.items.filter((d) => !!d.activeIndexRevisionId));
       if (page * 100 >= data.total || !data.items.length) break;
     }
     documents.value = collected;
   } catch {
-    if (current === sequence) error.value = true;
+    if (current === sequence && !signal.aborted) error.value = true;
   } finally {
     if (current === sequence) loading.value = false;
   }
@@ -104,5 +114,5 @@ watch(
   () => load(true),
   { immediate: true },
 );
-onBeforeUnmount(() => sequence++);
+onBeforeUnmount(() => { sequence++; flight?.controller.abort(); });
 </script>

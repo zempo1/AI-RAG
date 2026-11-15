@@ -352,6 +352,7 @@ const openCitation = (source: Citation) => emit('open-source', {
   documentId: source.documentId, versionId: source.versionId, citation: source,
 });
 let streamAbort: AbortController | undefined;
+let historyAbort: AbortController | undefined;
 let epoch = 0;
 const handleCitationClick = (event: MouseEvent, message: Message) => {
   const button = (event.target as HTMLElement).closest("[data-citation]");
@@ -415,6 +416,10 @@ const adjustTextareaHeight = () => {
 };
 
 const loadHistory = async (id: number) => {
+  if (chatId.value === id && historyAbort && !historyAbort.signal.aborted) return;
+  historyAbort?.abort();
+  const controller = new AbortController();
+  historyAbort = controller;
   streamAbort?.abort();
   stopTaskPolling();
   const currentEpoch = ++epoch;
@@ -423,7 +428,7 @@ const loadHistory = async (id: number) => {
   loading.value = true;
   messages.value = [];
   try {
-    const data: any = await getChatHistory(id);
+    const data: any = await getChatHistory(id, controller.signal);
     if (currentEpoch !== epoch) return;
     messages.value = data.messages || [];
     restoreContext(messages.value);
@@ -432,15 +437,18 @@ const loadHistory = async (id: number) => {
     const pending = data.pendingTasks?.[0];
     if (pending) pollTask(pending, id, currentEpoch);
   } catch (e) {
+    if (controller.signal.aborted || currentEpoch !== epoch) return;
     console.error(e);
     toast.error("加载聊天记录失败");
   } finally {
+    if (historyAbort === controller) historyAbort = undefined;
     if (currentEpoch === epoch && !activeTask.value) loading.value = false;
     scrollToBottom(true);
   }
 };
 
 const reset = () => {
+  historyAbort?.abort();
   streamAbort?.abort();
   epoch++;
   canceling.value = false; stopRequested.value = false; cancelError.value = "";
@@ -601,6 +609,7 @@ const sendMessage = async () => {
   );
 };
 onBeforeUnmount(() => {
+  historyAbort?.abort();
   resizeObserver?.disconnect();
   epoch++;
   stopTaskPolling();

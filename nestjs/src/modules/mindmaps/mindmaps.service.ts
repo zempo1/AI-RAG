@@ -2,7 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { DocumentsService } from '../documents/documents.service';
 import { LlmService } from '../llm/llm.service';
-import { Store, publicRow } from '../../persistence/store';
+import { Store, Row, publicRow } from '../../persistence/store';
 import { mindMapPrompt } from '../analysis/prompts';
 import { ApiError } from '../../common/api-error';
 
@@ -68,10 +68,19 @@ export class MindMapsService {
   }
 
   async list(userId: number) {
+    const sources = new Map<number, Promise<Row | undefined>>();
     return Promise.all(
       (await this.store.list('mindmaps', { userId }))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)
-        .map((row) => this.get(row.id, userId)),
+        .map(async (row) => {
+          if (row.documentId && !sources.has(row.documentId))
+            sources.set(row.documentId, this.store.get('documents', row.documentId));
+          const source = row.documentId ? await sources.get(row.documentId) : null;
+          return {
+            ...publicRow(row),
+            sourceOutdated: !!source && row.versionId !== source.activeVersionId,
+          };
+        }),
     );
   }
 

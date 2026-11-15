@@ -445,6 +445,9 @@ let uploadAbort: AbortController | undefined,
   disposed = false;
 let pendingActivation: { documentId: number; taskId: number } | null = null,
   polling = false;
+let managementFlight: { key: string; request: Promise<boolean> } | undefined;
+let categoriesForLibrary: number | null = null;
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
 const stageLabels: Record<string, string> = {
   queued: "排队中",
   parsing: "解析中",
@@ -518,7 +521,7 @@ async function fetchDocuments(pollOnly = false) {
       categoryId: categoryFilter.value,
     }, true),
     api.listTasks(id, true),
-    pollOnly ? Promise.resolve(categories.value) : api.listCategories(id),
+    pollOnly || categoriesForLibrary === id ? Promise.resolve(categories.value) : api.listCategories(id),
   ]);
   // 一轮请求全部收敛后再重试，避免其中一个快速失败时其他请求持续堆积。
   if (documentResult.status === 'rejected') throw documentResult.reason;
@@ -531,6 +534,7 @@ async function fetchDocuments(pollOnly = false) {
   total.value = result.total;
   tasks.value = taskList;
   categories.value = categoryList;
+  if (!pollOnly) categoriesForLibrary = id;
   if (props.documentId)
     selectedDocument.value =
       result.items.find((d) => d.id === props.documentId) ||
@@ -565,25 +569,37 @@ async function refresh() {
 }
 let pollFailures = 0;
 async function refreshData(pollOnly = false) {
+  if (!props.knowledgeBaseId || !currentLibrary.value || disposed ||
+    (!visible.value && !pendingActivation && !uploading.value)) return false;
+  const key = JSON.stringify([props.knowledgeBaseId, page.value, keyword.value,
+    categoryFilter.value, statusFilter.value, pollOnly]);
+  if (managementFlight?.key === key) return managementFlight.request;
+  const request = loadManagementData(pollOnly);
+  managementFlight = { key, request };
+  try { return await request; }
+  finally { if (managementFlight?.request === request) managementFlight = undefined; }
+}
+async function loadManagementData(pollOnly = false) {
   const id = props.knowledgeBaseId;
+  const sequence = requestSequence + 1;
   loading.value = true;
   try {
     await fetchDocuments(pollOnly);
-    if (id === props.knowledgeBaseId) {
+    if (id === props.knowledgeBaseId && sequence === requestSequence) {
       loaded.value = true;
       loadError.value = "";
       pollFailures = 0;
     }
     return true;
   } catch {
-    if (id === props.knowledgeBaseId) {
+    if (id === props.knowledgeBaseId && sequence === requestSequence) {
       loadError.value = "暂时无法获取文档和任务进度，正在自动重试。";
       pollFailures++;
       nextPollAt = Date.now() + Math.min(10000, 2000 * 2 ** Math.min(pollFailures - 1, 3));
     }
     return false;
   } finally {
-    loading.value = false;
+    if (sequence === requestSequence) loading.value = false;
   }
 }
 function libraryCommand(command: string) {
@@ -612,6 +628,10 @@ function editName(
     name: initial,
     onSave: async (name) => {
       await save(name);
+      requestSequence++;
+      loading.value = false;
+      categoriesForLibrary = null;
+      managementFlight = undefined;
       await refresh();
     },
   });
@@ -619,6 +639,10 @@ function editName(
 async function run(action: () => Promise<unknown>) {
   try {
     await action();
+    requestSequence++;
+    loading.value = false;
+    categoriesForLibrary = null;
+    managementFlight = undefined;
     await loadLibraries();
     await refresh();
   } catch {
@@ -937,7 +961,9 @@ watch(
     documents.value = [];
     tasks.value = [];
     selectedDocument.value = null;
-    void refresh().catch(() => undefined);
+    categoriesForLibrary = null;
+    managementFlight = undefined;
+    if (currentLibrary.value) void refresh().catch(() => undefined);
   },
 );
 watch(
@@ -946,12 +972,17 @@ watch(
     if (!id) selectedDocument.value = null;
   },
 );
-watch([keyword, categoryFilter, statusFilter], () => {
+watch([keyword, categoryFilter, statusFilter], ([name, category, status], [oldName, oldCategory, oldStatus]) => {
+  clearTimeout(searchTimer);
   page.value = 1;
-  void refresh().catch(() => undefined);
+  const update = () => { void refresh().catch(() => undefined); };
+  if (name && name !== oldName && category === oldCategory && status === oldStatus)
+    searchTimer = setTimeout(update, 250);
+  else update();
 });
 watch(visible, (open) => {
   if (open) {
+    categoriesForLibrary = null;
     nextPollAt = 0;
     void refresh();
   }
@@ -966,7 +997,9 @@ onMounted(async () => {
   document.addEventListener("visibilitychange", onPageVisible);
   try {
     await loadLibraries();
-    await refresh();
+    // The watcher owns default selection. Also cover history opened before the
+    // libraries arrived, without repeating a refresh already started by it.
+    if (props.knowledgeBaseId && !loading.value) await refresh();
   } catch {
     /* interceptor */
   }
@@ -1019,6 +1052,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   document.removeEventListener("visibilitychange", onPageVisible);
   disposed = true;
+  clearTimeout(searchTimer);
   requestSequence++;
   cancelUpload();
   if (timer) clearInterval(timer);

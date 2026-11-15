@@ -138,10 +138,11 @@ export const listLibraryDocuments = (
   id: number,
   params: Record<string, unknown>,
   silentError = false,
+  signal?: AbortSignal,
 ) =>
   request.get<any, { items: ManagedDocument[]; total: number }>(
     "/api/knowledge-bases/" + id + "/documents",
-    { params, silentError },
+    { params, silentError, signal },
   );
 export const updateDocument = (
   id: number,

@@ -2,7 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { DocumentsService } from '../documents/documents.service';
 import { LlmService } from '../llm/llm.service';
-import { Store, publicRow } from '../../persistence/store';
+import { Store, Row, publicRow } from '../../persistence/store';
 import { analysisPrompt } from './prompts';
 import { ApiError } from '../../common/api-error';
 
@@ -56,11 +56,14 @@ export class AnalysisService {
   }
 
   async list(type: string, userId: number) {
+    const sources = new Map<number, Promise<Row | undefined>>();
     return Promise.all(
       (await this.store.list('analyses', { type, userId }))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)
         .map(async (row) => {
-          const source = row.documentId ? await this.store.get('documents', row.documentId) : null;
+          if (row.documentId && !sources.has(row.documentId))
+            sources.set(row.documentId, this.store.get('documents', row.documentId));
+          const source = row.documentId ? await sources.get(row.documentId) : null;
           return {
             ...publicRow(row),
             sourceOutdated: !!source && row.versionId !== source.activeVersionId,

@@ -3,7 +3,7 @@ import { SseDecoder, type SseEvent } from "../utils/sse";
 import { dispatchChatEvent, type StreamChatCallbacks } from "../utils/chat-stream";
 import type { Citation } from "./knowledge-bases";
 
-export const getChatHistory = (id: number) => request.get("/api/chats/" + id);
+export const getChatHistory = (id: number, signal?: AbortSignal) => request.get("/api/chats/" + id, { signal });
 export type QaMode = "auto" | "general" | "search" | "overview" | "compare";
 export interface RetrievalContext {
   documentIds?: number[];

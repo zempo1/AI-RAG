@@ -611,8 +611,8 @@ test("clears a previous library category before requesting documents from the ne
     .locator(".el-select-dropdown__item:visible")
     .filter({ hasText: "知识库B" })
     .click();
-  await expect.poll(() => state.categoryB).toBeNull();
   await page.getByRole("button", { name: "管理文档", exact: true }).click();
+  await expect.poll(() => state.categoryB).toBeNull();
   await expect(page.locator(".filters .el-select").first()).not.toContainText(
     "分类A",
   );
@@ -679,6 +679,8 @@ test("tracks a manually retried replacement until it publishes and refreshes the
   page,
 }) => {
   const state = await fixture(page);
+  await page.getByText("AI 摘要", { exact: true }).click();
+  await expect.poll(() => state.analysisRequests).toBeGreaterThan(0);
   await page.getByRole("button", { name: "管理文档", exact: true }).click();
   const baseline = state.analysisRequests;
   const chooser = page.waitForEvent("filechooser");

@@ -45,8 +45,14 @@ export class KnowledgeBasesService {
   }
 
   async list(userId: number) {
-    await this.default(userId);
-    return (await this.store.list('knowledgeBases', { userId })).filter((k) => !k.deletedAt);
+    let rows = await this.store.list('knowledgeBases', { userId });
+    // Ordinary reads need no creation lock. Missing defaults still use the
+    // existing locked, rechecked creation path to handle concurrent first visits.
+    if (!rows.some(k => k.isDefault === 1 && !k.deletedAt)) {
+      await this.default(userId);
+      rows = await this.store.list('knowledgeBases', { userId });
+    }
+    return rows.filter(k => !k.deletedAt);
   }
 
   create(userId: number, name: string, description = '') {

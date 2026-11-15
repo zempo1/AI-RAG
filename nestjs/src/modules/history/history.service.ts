@@ -24,12 +24,19 @@ export class HistoryService {
     const rows = (await this.store.list('messages', { chatId: id })).sort(
       (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id - b.id,
     );
+    // Repeated citations share a lookup within this response, never across users/requests.
+    const documents = new Map<number, Promise<Awaited<ReturnType<Store['get']>>>>();
+    const document = (id: number) => {
+      let pending = documents.get(id);
+      if (!pending) { pending = this.store.get('documents', id); documents.set(id, pending); }
+      return pending;
+    };
     const messages = await Promise.all(
       // 引用保存的是回答时的原文快照；读取时仅补充来源删除/过期标记，不替换历史原文。
       rows.map(async (row) => {
         const citations = await Promise.all(
           ((row.citations || []) as Citation[]).map(async (citation) => {
-            const doc = await this.store.get('documents', citation.documentId);
+            const doc = await document(citation.documentId);
             return {
               ...citation,
               sourceDeleted: !doc || !!doc.deletedAt || !!kb?.deletedAt,
@@ -75,7 +82,12 @@ export class HistoryService {
 
   async list(userId: number) {
     const chats = (await this.store.list('chats', { userId })).sort((a, b) => b.id - a.id);
-    return Promise.all(chats.map((chat) => this.get(chat.id, userId)));
+    const libraries = new Map((await this.store.list('knowledgeBases', { userId })).map(kb => [kb.id, kb]));
+    // Sidebar metadata only. Full messages, citation snapshots and tasks belong to GET /:id.
+    return chats.map(chat => {
+      const kb = libraries.get(chat.knowledgeBaseId);
+      return { ...publicRow(chat), readOnly: chat.knowledgeBaseId ? !kb || !!kb.deletedAt : false };
+    });
   }
 
   async create(title: string, userId: number, knowledgeBaseId?: number) {

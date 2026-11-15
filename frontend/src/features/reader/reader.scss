@@ -31,6 +31,9 @@
 .pdf-find-status:empty { display:none; }
 .pdf-toolbar input { text-align:left; }
 .pdf-page-control input { text-align:center; font-variant-numeric:tabular-nums; }
+.pdf-page-control input[type="number"] { appearance:textfield; -moz-appearance:textfield; }
+.pdf-page-control input[type="number"]::-webkit-inner-spin-button,
+.pdf-page-control input[type="number"]::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
 .pdf-state { padding:18px; font-size:13px; flex-shrink:0; }
 .pdf-error { color:#f1b7b7; }
 .pdf-reading-area { flex:1; position:relative; min-height:0; background:#303035; }
