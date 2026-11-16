@@ -7,6 +7,7 @@ import { Queue, Worker, UnrecoverableError, DelayedError } from "bullmq";
 import { Store, now } from "../../persistence/store";
 import { IndexingService } from "../documents/indexing.service";
 import { TasksService, terminalTask } from "./tasks.service";
+import { monitorEventLoopDelay, IntervalHistogram } from "node:perf_hooks";
 
 /** SQL is the outbox and source of truth; Redis only transports task ids. */
 @Injectable()
@@ -18,6 +19,7 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
   private busy = false;
   private stopping = false;
   private activeDispatch?: Promise<void>;
+  private loopDelay?: IntervalHistogram;
 
   constructor(
     private readonly config: ConfigService,
@@ -29,6 +31,10 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    if (process.env.PROCESS_ROLE === "worker") {
+      this.loopDelay = monitorEventLoopDelay({ resolution: 20 });
+      this.loopDelay.enable();
+    }
     if (this.config.get("QUEUE_DRIVER") === "bullmq") {
       for (const name of ["documents", "cleanup", "qa", "mindmap"]) {
         const queue = new Queue(name, {
@@ -63,11 +69,34 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
             {
               prefix: this.config.get("QUEUE_PREFIX"),
               connection: this.connection(true),
-              concurrency: 1,
+              concurrency:
+                name === "documents"
+                  ? Number(this.config.get("INDEX_DOCUMENT_CONCURRENCY") ?? 2)
+                  : 1,
             },
           );
           worker.on("error", () => this.logger.warn("Worker 等待 Redis 连接恢复"));
           worker.on("failed", (_job, error) => this.logger.warn("任务失败: " + error.message));
+          worker.on("stalled", (jobId) =>
+            this.logger.warn(
+              JSON.stringify({
+                event: "queue-stalled",
+                queue: name,
+                jobId,
+                eventLoopMaxMs: Math.round((this.loopDelay?.max || 0) / 1e6),
+              }),
+            ),
+          );
+          worker.on("lockRenewalFailed", (jobIds) =>
+            this.logger.warn(
+              JSON.stringify({
+                event: "queue-lock-renewal-failed",
+                queue: name,
+                jobIds,
+                eventLoopMaxMs: Math.round((this.loopDelay?.max || 0) / 1e6),
+              }),
+            ),
+          );
           this.workers.push(worker);
         }
       }
@@ -116,6 +145,7 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
         .sort((a, b) => a.id - b.id);
       for (const task of pending) {
         if (this.stopping) break;
+        if (task.kind === "index" && task.payload?.indexRetryAfter > Date.now()) continue;
         const notBefore = task.payload?.notBefore;
         const delay = notBefore
           ? Math.max(0, Date.parse(notBefore + "Z") - Date.parse(now() + "Z"))
@@ -150,8 +180,27 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
           if (existing) {
             const state = await existing.getState();
             if (!["failed", "completed"].includes(state)) continue;
+            if (task.kind === "index" && task.status === "canceled") {
+              await this.indexing.process(task.id);
+              continue;
+            }
+            if (task.kind === "index") {
+              if (await this.indexing.recoverDelivery(task.id, task.dispatchGeneration))
+                await existing.remove();
+              await this.tasks.refreshParent(task.parentTaskId);
+              continue;
+            }
             // A crash between SQL completion and Redis ack can leave either side ahead.
             await existing.remove();
+          }
+          if (!existing && task.kind === "index" && task.status === "running") {
+            await this.indexing.recoverDelivery(task.id, task.dispatchGeneration);
+            await this.tasks.refreshParent(task.parentTaskId);
+            continue;
+          }
+          if (!existing && task.kind === "index" && task.status === "canceled") {
+            await this.indexing.process(task.id);
+            continue;
           }
           await queue.add(
             task.kind,
@@ -177,6 +226,7 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    this.loopDelay?.disable();
     // 关闭时先停分发，再等待正在投递的操作，最后关闭消费者和队列连接。
     this.stopping = true;
     if (this.timer) clearInterval(this.timer);

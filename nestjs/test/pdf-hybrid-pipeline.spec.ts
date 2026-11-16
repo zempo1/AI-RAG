@@ -499,7 +499,7 @@ describe("hybrid PDF recognition", () => {
     await f.run();
     expect(calls).toBe(3);
   });
-  it("stops scheduling after the first failure and lets in-flight successes settle into cache", async () => {
+  it("finishes independent regions after a failure and only fills the missing region on retry", async () => {
     let active = 0,
       calls = 0,
       fail = true;
@@ -517,11 +517,11 @@ describe("hybrid PDF recognition", () => {
     });
     await expect(f.run()).rejects.toBe(error);
     expect(active).toBe(0);
-    expect(calls).toBe(3);
+    expect(calls).toBe(6);
     fail = false;
     const result = await f.run();
     expect(result.blocks).toHaveLength(6);
-    expect(calls).toBe(7); // two successful in-flight regions were preserved
+    expect(calls).toBe(7); // five successful regions were preserved
   });
   it("shares configured concurrency across sessions", async () => {
     let active = 0,

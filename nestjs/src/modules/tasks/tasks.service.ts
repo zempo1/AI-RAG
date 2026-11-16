@@ -299,7 +299,13 @@ export class TasksService {
       attempts: 0,
       dispatchGeneration: task.dispatchGeneration + 1,
       updatedAt: now(),
-      payload: { ...task.payload, dismissedAt: null },
+      payload: {
+        ...task.payload,
+        dismissedAt: null,
+        ...(task.kind === "index"
+          ? { indexLeaseUntil: 0, indexRecoveries: 0, indexRetryAfter: 0 }
+          : {}),
+      },
     });
   }
 

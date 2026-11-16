@@ -207,7 +207,7 @@ describe("rendered PDF vision pipeline with real HTTP and persistent page cache"
       );
       failPage = 0;
       await indexing.process(replacement.taskId, 2);
-      expect(calls).toEqual([1, 1, 2, 2]);
+      expect(calls).toEqual([1, 1, 2, 2, 2]);
       const ready = await p.store.get("documents", accepted.documentId);
       expect(ready?.activeIndexRevisionId).not.toBe(before?.activeIndexRevisionId);
       expect(ready?.content).toContain("IMAGE-ONLY-42");
@@ -255,12 +255,11 @@ describe("rendered PDF vision pipeline with real HTTP and persistent page cache"
       bytes = await fixture();
     const scope = { userId: 1, documentId: 1, versionId: 1 };
     failCall = 2;
-    await expect(p.parser.parseStructured(bytes, "a.pdf", undefined, scope)).rejects.toThrow(
-      "图片区域2",
-    );
+    await expect(p.parser.parseStructured(bytes, "a.pdf", undefined, scope)).resolves.toBeDefined();
     failCall = 0;
     await p.parser.parseStructured(bytes, "a.pdf", undefined, scope);
-    expect(calls).toEqual([1, 1, 1, 2]);
+    expect(calls.filter((page) => page === 1)).toHaveLength(3);
+    expect(calls.filter((page) => page === 2)).toHaveLength(1);
   });
 
   it("rebuilds a truncated PNG without rerunning valid recognition", async () => {

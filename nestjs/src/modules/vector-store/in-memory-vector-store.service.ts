@@ -5,6 +5,22 @@ import { pointId } from "./point-id";
 
 @Injectable()
 export class InMemoryVectorStore extends VectorStore {
+  hasSegments(segments: Segment[]): boolean {
+    return segments.every((s) =>
+      this.entries.some(
+        (e) =>
+          pointId(e.segment) === pointId(s) && e.segment.indexContentHash === s.indexContentHash,
+      ),
+    );
+  }
+  pruneRevisionTail(indexRevisionId: number, userId: number, count: number): void {
+    this.entries = this.entries.filter(
+      (e) =>
+        e.segment.userId !== userId ||
+        e.segment.indexRevisionId !== indexRevisionId ||
+        e.segment.chunkIndex < count,
+    );
+  }
   removeRevision(indexRevisionId: number, userId: number): void {
     this.entries = this.entries.filter(
       (e) => e.segment.userId !== userId || e.segment.indexRevisionId !== indexRevisionId,

@@ -116,6 +116,9 @@ export function validateConfig(input: Record<string, unknown>): Record<string, a
   }
   c.MAX_DOCUMENT_BYTES = Number(c.MAX_DOCUMENT_BYTES || 128 * 1024 * 1024);
   c.VISION_CONCURRENCY = Number(c.VISION_CONCURRENCY ?? 3);
+  c.INDEX_DOCUMENT_CONCURRENCY = Number(c.INDEX_DOCUMENT_CONCURRENCY ?? 2);
+  if (![1, 2].includes(c.INDEX_DOCUMENT_CONCURRENCY))
+    throw new Error("INDEX_DOCUMENT_CONCURRENCY must be 1 or 2");
   c.MINDMAP_CONCURRENCY = Number(c.MINDMAP_CONCURRENCY ?? 3);
   if (
     !Number.isInteger(c.MINDMAP_CONCURRENCY) ||
@@ -139,6 +142,7 @@ export function validateConfig(input: Record<string, unknown>): Record<string, a
     QUERY_PLAN_TOKEN_BUDGET: 4096,
     QUALITY_MODEL_TIMEOUT_MS: 20000,
     VISION_TIMEOUT_MS: 180000,
+    VISION_REQUEST_TIMEOUT_MS: 60000,
     VISION_OUTPUT_TOKENS: 8192,
   })) {
     c[key] = Number(c[key] ?? fallback);
