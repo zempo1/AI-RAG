@@ -21,7 +21,7 @@ export class AnalysisController {
 
   @Get()
   list(@Query() dto: AnalysisTypeDto, @UserId() user: number) {
-    return this.service.list(dto.type, user);
+    return this.service.list(dto.type, user, dto.knowledgeBaseId);
   }
 
   @Delete(":id")

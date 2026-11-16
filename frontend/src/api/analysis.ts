@@ -6,7 +6,7 @@ export interface DocumentAnalysis {
   id: number;
   documentId: number;
   documentName: string;
-  type: "SUMMARY" | "OUTLINE";
+  type: "SUMMARY" | "OUTLINE" | "FLASHCARD";
   content: string;
   createdAt: string;
 }
@@ -19,9 +19,12 @@ export const generateAnalysis = (documentId: number, type: "SUMMARY" | "OUTLINE"
   );
 };
 
-export const getAnalyses = (type: "SUMMARY" | "OUTLINE" | "FLASHCARD") => {
+export const getAnalyses = (
+  type: "SUMMARY" | "OUTLINE" | "FLASHCARD",
+  knowledgeBaseId?: number,
+) => {
   return request.get<any, DocumentAnalysis[]>("/api/analysis", {
-    params: { type },
+    params: { type, knowledgeBaseId },
   });
 };
 

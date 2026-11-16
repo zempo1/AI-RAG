@@ -9,6 +9,60 @@ const analysis = (documentName: string) => ({
   createdAt: "2026-11-15T01:00:00Z",
 });
 
+for (const [label, type] of [
+  ["AI 摘要", "SUMMARY"],
+  ["文档大纲", "OUTLINE"],
+  ["学习卡片", "FLASHCARD"],
+]) {
+  test(`${label}按知识库读取且忽略切换后的旧响应`, async ({ page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let oldStarted = false;
+    await page.route(
+      (url) => url.pathname === "/src/main.ts",
+      async (route) => {
+        const response = await route.fetch();
+        const body = (await response.text())
+          .replace(/import\s*\{\s*createApp\s*\}/, "import {createApp, ref, h}")
+          .replace(/"\/src\/app\/App\.vue(?:\?[^\"]*)?"/, '"/src/features/workbench/Workbench.vue"')
+          .replace(
+            "createApp(App)",
+            `createApp({setup(){const kb=ref(1);window.setLibrary=id=>kb.value=id;return()=>h(App,{uploadedFileName:'资料',uploadedDocumentId:7,knowledgeBaseId:kb.value});}})`,
+          );
+        await route.fulfill({ response, body });
+      },
+    );
+    await page.route(
+      (url) => url.pathname.startsWith("/api/"),
+      async (route) => {
+        const url = new URL(route.request().url());
+        if (url.pathname === "/api/analysis") {
+          expect(url.searchParams.get("type")).toBe(type);
+          const kb = url.searchParams.get("knowledgeBaseId");
+          expect(["1", "2"]).toContain(kb);
+          if (kb === "1") {
+            oldStarted = true;
+            await gate;
+          }
+          await route.fulfill({
+            json: { data: [{ ...analysis(kb === "1" ? "旧知识库内容" : "新知识库内容"), type }] },
+          });
+        } else await route.fulfill({ json: { data: { items: [], generationTasks: [] } } });
+      },
+    );
+    await page.goto("/");
+    await page.locator(".wb-tab").getByText(label, { exact: true }).click();
+    await expect.poll(() => oldStarted).toBe(true);
+    await page.evaluate(() => (window as any).setLibrary(2));
+    await expect(page.getByText("新知识库内容", { exact: true })).toBeVisible();
+    release();
+    await expect(page.getByText("旧知识库内容", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("新知识库内容", { exact: true })).toBeVisible();
+  });
+}
+
 test("仅生成中的任务显示进度和预计时间，完成取消仅保留历史", async ({ page }) => {
   const tasks = [
     {

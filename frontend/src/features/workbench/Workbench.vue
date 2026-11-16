@@ -355,10 +355,16 @@ function createTabLoader<T>(
 
 const loaders = {
   mindmap: createTabLoader(mindmapLoading, mindMaps, fetchWorkspace),
-  summary: createTabLoader(summaryLoading, summaries, () => getAnalyses("SUMMARY")),
-  outline: createTabLoader(outlineLoading, outlines, () => getAnalyses("OUTLINE")),
-  flashcard: createTabLoader(flashcardLoading, flashcards, () => getAnalyses("FLASHCARD")),
+  summary: createTabLoader(summaryLoading, summaries, () => fetchAnalyses("SUMMARY")),
+  outline: createTabLoader(outlineLoading, outlines, () => fetchAnalyses("OUTLINE")),
+  flashcard: createTabLoader(flashcardLoading, flashcards, () => fetchAnalyses("FLASHCARD")),
 };
+function fetchAnalyses(type: "SUMMARY" | "OUTLINE" | "FLASHCARD") {
+  return props.knowledgeBaseId === null
+    ? Promise.resolve([])
+    : getAnalyses(type, props.knowledgeBaseId);
+}
+let libraryRevision = 0;
 const loadMindMaps = loaders.mindmap.load;
 const loadSummaries = loaders.summary.load;
 const loadOutlines = loaders.outline.load;
@@ -423,11 +429,13 @@ const handleGenerate = async (type: "SUMMARY" | "OUTLINE" | "FLASHCARD") => {
     toast.error("请先选择文件");
     return;
   }
+  const revision = libraryRevision;
   if (type === "SUMMARY") summaryGenerating.value = true;
   else if (type === "OUTLINE") outlineGenerating.value = true;
   else flashcardGenerating.value = true;
   try {
     const result = await generateAnalysis(props.uploadedDocumentId, type);
+    if (revision !== libraryRevision) return;
     if (type === "SUMMARY") {
       toast.success("AI 摘要生成成功！");
       await refreshTab("summary");
@@ -437,16 +445,20 @@ const handleGenerate = async (type: "SUMMARY" | "OUTLINE" | "FLASHCARD") => {
     } else {
       toast.success("学习卡片生成成功！");
       await refreshTab("flashcard");
+      if (revision !== libraryRevision) return;
       currentFlashcard.value = result;
       flashcardViewerVisible.value = true;
     }
   } catch (e) {
     console.error(e);
+    if (revision !== libraryRevision) return;
     toast.error("生成失败，请重试");
   } finally {
-    if (type === "SUMMARY") summaryGenerating.value = false;
-    else if (type === "OUTLINE") outlineGenerating.value = false;
-    else flashcardGenerating.value = false;
+    if (revision === libraryRevision) {
+      if (type === "SUMMARY") summaryGenerating.value = false;
+      else if (type === "OUTLINE") outlineGenerating.value = false;
+      else flashcardGenerating.value = false;
+    }
   }
 };
 const handleDeleteAnalysis = async (item: DocumentAnalysis) => {
@@ -525,14 +537,21 @@ watch(
 watch(
   () => props.knowledgeBaseId,
   () => {
+    libraryRevision++;
     workspaceRevision++;
     watchedTask = null;
     requestId = crypto.randomUUID();
     generationTasks.value = [];
 
     mindMaps.value = [];
-    loaders.mindmap.invalidate();
-    if (activeTab.value === "mindmap") void loaders.mindmap.ensure();
+    summaries.value = [];
+    outlines.value = [];
+    flashcards.value = [];
+    currentFlashcard.value = null;
+    flashcardViewerVisible.value = false;
+    summaryGenerating.value = outlineGenerating.value = flashcardGenerating.value = false;
+    Object.values(loaders).forEach((loader) => loader.invalidate());
+    void loaders[activeTab.value].ensure();
   },
 );
 watch(

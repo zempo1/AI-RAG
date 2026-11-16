@@ -1,0 +1,96 @@
+
+> ai-rag-web@0.0.0 test:e2e
+> playwright test test/browser/workbench-requests.spec.ts
+
+[WebServer] (node:26120) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:42616) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 19 tests using 1 worker
+
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+(node:17164) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+[WebServer] DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.
+[WebServer] 
+[WebServer] More info: https://sass-lang.com/d/legacy-js-api
+[WebServer] 
+  ok  1 test\browser\workbench-requests.spec.ts:13:3 › AI 摘要按知识库读取且忽略切换后的旧响应 (2.0s)
+  ok  2 test\browser\workbench-requests.spec.ts:13:3 › 文档大纲按知识库读取且忽略切换后的旧响应 (1.1s)
+  ok  3 test\browser\workbench-requests.spec.ts:13:3 › 学习卡片按知识库读取且忽略切换后的旧响应 (1.0s)
+  ok  4 test\browser\workbench-requests.spec.ts:46:1 › 仅生成中的任务显示进度和预计时间，完成取消仅保留历史 (960ms)
+  ok  5 test\browser\workbench-requests.spec.ts:87:1 › 没有可估算批次时诚实显示估算中，失败保留重试 (919ms)
+  ok  6 test\browser\workbench-requests.spec.ts:181:1 › 刷新仅重取当前标签，其余已访问标签在下次打开时更新 (1.2s)
+  ok  7 test\browser\workbench-requests.spec.ts:202:1 › 标签加载失败后重新切换会重试并显示结果 (1.2s)
+  ok  8 test\browser\workbench-requests.spec.ts:222:1 › 同一标签的并发读取复用在途请求 (1.2s)
+  ok  9 test\browser\workbench-requests.spec.ts:252:1 › 刷新后完成的过期请求不会覆盖新结果 (1.5s)
+  ok 10 test\browser\workbench-requests.spec.ts:279:1 › 删除来源只刷新当前标签，未打开的标签保持按需读取 (987ms)
+  ok 11 test\browser\workbench-requests.spec.ts:342:3 › 思维导图生成成功使生成前在途列表失效 (1.4s)
+  ok 12 test\browser\workbench-requests.spec.ts:376:3 › 思维导图删除后在途旧列表不能恢复已删项 (1.2s)
+  ok 13 test\browser\workbench-requests.spec.ts:342:3 › AI 摘要生成成功使生成前在途列表失效 (1.6s)
+  ok 14 test\browser\workbench-requests.spec.ts:376:3 › AI 摘要删除后在途旧列表不能恢复已删项 (1.2s)
+  ok 15 test\browser\workbench-requests.spec.ts:342:3 › 文档大纲生成成功使生成前在途列表失效 (1.6s)
+  ok 16 test\browser\workbench-requests.spec.ts:376:3 › 文档大纲删除后在途旧列表不能恢复已删项 (1.1s)
+  ok 17 test\browser\workbench-requests.spec.ts:342:3 › 学习卡片生成成功使生成前在途列表失效 (1.9s)
+  ok 18 test\browser\workbench-requests.spec.ts:376:3 › 学习卡片删除后在途旧列表不能恢复已删项 (1.1s)
+  ok 19 test\browser\workbench-requests.spec.ts:413:1 › 切换来源文档后使用新的生成请求标识，超时旧请求不会锁住新来源 (968ms)
