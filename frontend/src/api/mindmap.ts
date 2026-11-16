@@ -1,4 +1,5 @@
 import request from "../utils/request";
+import type { ProcessingTask } from "./knowledge-bases";
 
 export interface MindMap {
   versionId?: number | null;
@@ -10,9 +11,18 @@ export interface MindMap {
   createdAt: string;
 }
 
-export const generateMindMap = (documentId: number) => {
-  return request.post<any, MindMap>("/api/mindmaps/generate", { documentId }, { timeout: 120000 });
+export const generateMindMap = (documentId: number, requestId = crypto.randomUUID()) => {
+  return request.post<any, { taskId: number; status: string }>("/api/mindmaps/generate", {
+    documentId,
+    requestId,
+  });
 };
+
+export const getMindMapWorkspace = (knowledgeBaseId?: number | null) =>
+  request.get<any, { items: MindMap[]; generationTasks: ProcessingTask[] }>(
+    "/api/mindmaps/workspace",
+    { params: knowledgeBaseId ? { knowledgeBaseId } : {} },
+  );
 
 export const getMindMaps = () => {
   return request.get<any, MindMap[]>("/api/mindmaps");

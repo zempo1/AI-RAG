@@ -9,8 +9,84 @@ const analysis = (documentName: string) => ({
   createdAt: "2026-11-15T01:00:00Z",
 });
 
+test("仅生成中的任务显示进度和预计时间，完成取消仅保留历史", async ({ page }) => {
+  const tasks = [
+    {
+      id: 91,
+      kind: "mindmap",
+      status: "running",
+      stage: "mapping",
+      completed: 3,
+      total: 7,
+      mindmapProgress: { strategy: "batched", elapsedMs: 30000 },
+    },
+    {
+      id: 92,
+      kind: "mindmap",
+      status: "completed",
+      stage: "completed",
+      mindmapResult: { mindMapId: 7 },
+    },
+    { id: 93, kind: "mindmap", status: "canceled", stage: "canceled" },
+  ];
+  await mountWorkbench(page, async (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          items: [{ id: 7, title: "已保存的导图", createdAt: "2026-11-16" }],
+          generationTasks: tasks,
+        },
+      },
+    }),
+  );
+  const rows = page.locator(".generation-task");
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("提炼要点");
+  await expect(rows).toContainText("预计还需约");
+  await expect(page.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "42");
+  await expect(page.getByText("已保存的导图", { exact: true })).toBeVisible();
+  await expect(rows).not.toContainText("tokens");
+  await expect(rows).not.toContainText("模型请求");
+  await page.screenshot({ path: "test-results/mindmap-progress-preview.png" });
+});
+
+test("没有可估算批次时诚实显示估算中，失败保留重试", async ({ page }) => {
+  await mountWorkbench(page, async (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          items: [],
+          generationTasks: [
+            {
+              id: 1,
+              kind: "mindmap",
+              status: "running",
+              stage: "generating",
+              mindmapProgress: { strategy: "direct", elapsedMs: 5000 },
+            },
+            {
+              id: 2,
+              kind: "mindmap",
+              status: "failed",
+              stage: "failed",
+              error: "网络异常",
+              retryable: 1,
+            },
+          ],
+        },
+      },
+    }),
+  );
+  await expect(page.locator(".generation-tasks")).toContainText("剩余时间估算中");
+  await expect(page.getByRole("button", { name: "重试生成", exact: true })).toBeVisible();
+});
+
 // 使用真实工作台及其公开接口，只有外部 API 被替换；复用 Vite 已解析的依赖。
-async function mountWorkbench(page: Page, handle: (route: Route, key: string) => Promise<void>) {
+async function mountWorkbench(
+  page: Page,
+  handle: (route: Route, key: string) => Promise<void>,
+  active = false,
+) {
   await page.route(
     (url) => url.pathname === "/src/main.ts",
     async (route) => {
@@ -19,7 +95,7 @@ async function mountWorkbench(page: Page, handle: (route: Route, key: string) =>
         .replace(/"\/src\/app\/App\.vue(?:\?[^\"]*)?"/, '"/src/features/workbench/Workbench.vue"')
         .replace(
           "createApp(App)",
-          'createApp(App, { uploadedFileName: "测试资料", uploadedDocumentId: 7 })',
+          `createApp(App, { uploadedFileName: "测试资料", uploadedDocumentId: 7, active: ${active} })`,
         )
         .replace('app.mount("#app")', 'window.workbench = app.mount("#app")');
       await route.fulfill({ response, body });
@@ -29,6 +105,25 @@ async function mountWorkbench(page: Page, handle: (route: Route, key: string) =>
     (url) => url.pathname.startsWith("/api/"),
     (route) => {
       const url = new URL(route.request().url());
+      if (url.pathname === "/api/mindmaps/workspace") {
+        const wrapped = new Proxy(route, {
+          get(target, key) {
+            if (key === "fulfill")
+              return (options: any) => {
+                const data = options.json?.data;
+                if (Array.isArray(data))
+                  options = {
+                    ...options,
+                    json: { ...options.json, data: { items: data, generationTasks: [] } },
+                  };
+                return target.fulfill(options);
+              };
+            const value = Reflect.get(target, key);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+        return handle(wrapped, url.pathname + url.search);
+      }
       return handle(route, url.pathname + url.search);
     },
   );
@@ -59,12 +154,12 @@ test("刷新仅重取当前标签，其余已访问标签在下次打开时更�
   await page.locator(".wb-tab").getByText("AI 摘要", { exact: true }).click();
   await expect(page.getByText("暂无摘要记录", { exact: true })).toBeVisible();
   await invoke(page, "refresh");
-  expect(counts.get("/api/mindmaps")).toBe(1);
+  expect(counts.get("/api/mindmaps/workspace")).toBe(1);
   expect(counts.get("/api/analysis?type=SUMMARY")).toBe(2);
   expect(counts.has("/api/analysis?type=OUTLINE")).toBe(false);
   expect(counts.has("/api/analysis?type=FLASHCARD")).toBe(false);
   await page.locator(".wb-tab").getByText("思维导图", { exact: true }).click();
-  await expect.poll(() => counts.get("/api/mindmaps")).toBe(2);
+  await expect.poll(() => counts.get("/api/mindmaps/workspace")).toBe(2);
   await page.locator(".wb-tab").getByText("AI 摘要", { exact: true }).click();
   await expect(page.getByText("暂无摘要记录", { exact: true })).toBeVisible();
   expect(counts.get("/api/analysis?type=SUMMARY")).toBe(2);
@@ -155,7 +250,7 @@ test("删除来源只刷新当前标签，未打开的标签保持按需读取",
   });
   await expect(page.getByText("暂无思维导图", { exact: true })).toBeVisible();
   await invoke(page, "onSourceDeleted", 7);
-  expect(counts.get("/api/mindmaps")).toBe(2);
+  expect(counts.get("/api/mindmaps/workspace")).toBe(2);
   expect(counts.has("/api/analysis?type=SUMMARY")).toBe(false);
   expect(counts.has("/api/analysis?type=OUTLINE")).toBe(false);
   expect(counts.has("/api/analysis?type=FLASHCARD")).toBe(false);
@@ -167,7 +262,7 @@ test("删除来源只刷新当前标签，未打开的标签保持按需读取",
 const artifactTabs = [
   {
     label: "思维导图",
-    list: "/api/mindmaps",
+    list: "/api/mindmaps/workspace",
     generate: "/api/mindmaps/generate",
     remove: "/api/mindmaps/21",
     button: "生成思维导图",
@@ -223,7 +318,11 @@ for (const artifact of artifactTabs) {
         if (first) await ready;
         await route.fulfill({ json: { data: first ? [] : [artifact.item] } });
       } else if (key === artifact.generate) {
-        await route.fulfill({ json: { data: artifact.item } });
+        await route.fulfill({
+          json: {
+            data: artifact.label === "思维导图" ? { taskId: 91, status: "queued" } : artifact.item,
+          },
+        });
       } else await route.fulfill({ json: { data: [] } });
     });
     if (artifact.label !== "思维导图")
@@ -276,3 +375,45 @@ for (const artifact of artifactTabs) {
     expect(reads).toBe(2);
   });
 }
+
+test("切换来源文档后使用新的生成请求标识，超时旧请求不会锁住新来源", async ({ page }) => {
+  const accepted: any[] = [];
+  await page.route(
+    (url) => url.pathname === "/src/main.ts",
+    async (route) => {
+      const response = await route.fetch();
+      let body = await response.text();
+      body = body
+        .replace(/import\s*\{\s*createApp\s*\}/, "import {createApp, ref, h}")
+        .replace(/"\/src\/app\/App\.vue(?:\?[^\"]*)?"/, '"/src/features/workbench/Workbench.vue"')
+        .replace(
+          "createApp(App)",
+          `createApp({setup(){const documentId=ref(7);window.setSource=id=>documentId.value=id;return()=>h(App,{uploadedFileName:'测试文档',uploadedDocumentId:documentId.value});}})`,
+        );
+      await route.fulfill({ response, body });
+    },
+  );
+  await page.route(
+    (url) => url.pathname.startsWith("/api/"),
+    async (route) => {
+      if (new URL(route.request().url()).pathname === "/api/mindmaps/generate") {
+        accepted.push(route.request().postDataJSON());
+        return route.fulfill(
+          accepted.length === 1
+            ? { status: 500, json: { message: "连接中断" } }
+            : { status: 202, json: { data: { taskId: 92, status: "queued" } } },
+        );
+      }
+      await route.fulfill({ json: { data: { items: [], generationTasks: [] } } });
+    },
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "生成思维导图", exact: true }).click();
+  await expect.poll(() => accepted.length).toBe(1);
+  await page.evaluate(() => (window as any).setSource(8));
+  await expect(page.getByRole("button", { name: "生成思维导图", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "生成思维导图", exact: true }).click();
+  await expect.poll(() => accepted.length).toBe(2);
+  expect(accepted[1].documentId).toBe(8);
+  expect(accepted[1].requestId).not.toBe(accepted[0].requestId);
+});

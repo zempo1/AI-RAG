@@ -65,7 +65,8 @@ body {
 
 @media (min-width: 1200px) {
   .reader-is-open > .main-content,
-  .reader-is-open > .source-panel {
+  .reader-is-open > .source-panel,
+  .reader-is-open > .mindmap-panel {
     flex: 1 1 0;
     width: 0;
     min-width: 0;

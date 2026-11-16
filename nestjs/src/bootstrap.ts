@@ -3,8 +3,11 @@ import type { Request, Response, NextFunction } from "express";
 import { ApiError } from "./common/api-error";
 import { ApiExceptionFilter } from "./common/filters/api-exception.filter";
 import { ApiResponseInterceptor } from "./common/interceptors/api-response.interceptor";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 
 export function configureApp(app: INestApplication): void {
+  // Register before Nest's default parser; map data is itself an escaped JSON string.
+  (app as NestExpressApplication).useBodyParser("json", { limit: "4mb" });
   app.enableCors({
     origin: "*",
     methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],

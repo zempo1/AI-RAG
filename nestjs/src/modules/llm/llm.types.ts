@@ -1,4 +1,12 @@
-export class ModelOutputError extends Error {}
+export class ModelOutputError extends Error {
+  constructor(
+    message: string,
+    readonly reason: "length" | "empty" | "invalid" = "invalid",
+  ) {
+    super(message);
+    this.name = "ModelOutputError";
+  }
+}
 
 export interface ModelUsage {
   inputTokens: number;
@@ -45,10 +53,20 @@ export interface ModelCallObserver {
   /** Called once per successful reservation, including provider/validation failures. Errors propagate. */
   settle(reservationId: string, outcome: ModelCallOutcome): Promise<void>;
 }
+export type ModelAttemptEvent =
+  | { phase: "start" }
+  | {
+      phase: "end";
+      status: "success" | "error" | "cancelled";
+      elapsedMs: number;
+      usage?: ModelUsage;
+    };
 export interface ModelExecutionOptions {
   role?: "chat" | "agent";
   signal?: AbortSignal;
   observer?: ModelCallObserver;
+  /** Complete requests only: awaited per actual invoke; start may reject to prevent dispatch. */
+  onAttempt?: (event: ModelAttemptEvent) => Promise<void> | void;
   model?: string;
   maxOutputTokens?: number;
   timeoutMs?: number;

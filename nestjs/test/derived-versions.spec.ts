@@ -16,9 +16,12 @@ it("labels historical derived artifacts with their source version after replacem
       p.documents,
       { complete: async () => '{"root":{"data":{"text":"导图"},"children":[]}}' } as any,
       p.store,
+      p.config,
     );
     const old = await analyses.generate(file.documentId, "SUMMARY", 1);
-    const map = await maps.generate(1, file.documentId);
+    const accepted = await maps.generate(1, file.documentId);
+    await maps.process(accepted.taskId);
+    const map = (await maps.list(1))[0] as any;
     expect(old.versionId).toBe((await p.documents.owned(file.documentId, 1)).activeVersionId);
     const replacement = await p.documents.ingest(Buffer.from("新版来源"), "a.md", 1, {
       documentId: file.documentId,

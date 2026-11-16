@@ -2,7 +2,11 @@
   <div v-if="!isLoggedIn" class="landing-wrapper">
     <LoginLanding @success="onAuthSuccess" />
   </div>
-  <div v-else class="app-layout" :class="{ 'reader-is-open': !!readerTarget }">
+  <div
+    v-else
+    class="app-layout"
+    :class="{ 'reader-is-open': !!readerTarget || mindMapId !== null }"
+  >
     <Sidebar
       ref="sidebarRef"
       :username="username"
@@ -35,9 +39,20 @@
 
     <SourcePanel v-if="readerTarget" :target="readerTarget" @close="closeReader" />
 
+    <MindMapEditor
+      v-if="mindMapId !== null"
+      ref="mindMapEditor"
+      :map-id="mindMapId"
+      @close="closeMindMap"
+      @saved="refreshWorkbench"
+    />
+
     <Workbench
-      v-show="!readerTarget"
+      v-show="!readerTarget && mindMapId === null"
       ref="workbenchRef"
+      :active="!readerTarget && mindMapId === null"
+      :knowledge-base-id="knowledgeBaseId"
+      @open-mindmap="openMindMap"
       :uploaded-file-name="uploadedFileName"
       :uploaded-document-id="uploadedDocumentId"
     />
@@ -53,6 +68,24 @@ import Workbench from "../features/workbench/Workbench.vue";
 import LoginLanding from "../features/landing/LoginLanding.vue";
 import ModelSettingsDialog from "../features/settings/ModelSettingsDialog.vue";
 import type { DocumentTarget } from "../features/reader/types";
+const MindMapEditor = defineAsyncComponent(() => import("../features/mindmap/MindMapEditor.vue"));
+const mindMapId = ref<number | null>(null);
+const mindMapEditor = ref<any>();
+let panelRevision = 0;
+async function leaveMindMap() {
+  return !mindMapEditor.value || (await mindMapEditor.value.requestLeave());
+}
+async function openMindMap(id: number) {
+  const revision = ++panelRevision;
+  if (id === mindMapId.value) return;
+  if (!(await leaveMindMap()) || revision !== panelRevision) return;
+  readerTarget.value = null;
+  mindMapId.value = id;
+}
+function closeMindMap() {
+  panelRevision++;
+  mindMapId.value = null;
+}
 const SourcePanel = defineAsyncComponent(() => import("../features/reader/SourcePanel.vue"));
 
 const chatRef = ref<any>(null);
@@ -67,7 +100,10 @@ const uploadedFileName = ref("");
 const uploadedDocumentId = ref<number | null>(null);
 const readerTarget = ref<DocumentTarget | null>(null);
 let readerTrigger: HTMLElement | null = null;
-const openReader = (target: DocumentTarget) => {
+const openReader = async (target: DocumentTarget) => {
+  const revision = ++panelRevision;
+  if (!(await leaveMindMap()) || revision !== panelRevision) return;
+  mindMapId.value = null;
   const active = document.activeElement;
   if (active instanceof HTMLElement && !active.closest(".source-panel")) readerTrigger = active;
   readerTarget.value = target;
@@ -86,6 +122,7 @@ const closeReader = () => {
   });
 };
 const clearReader = () => {
+  closeMindMap();
   readerTarget.value = null;
   readerTrigger = null;
 };
@@ -109,16 +146,18 @@ const onFileActivated = (filename: string, id: number | null) => {
 };
 
 const onFileDeleted = (id: number) => {
+  if (mindMapEditor.value?.documentId() === id) closeMindMap();
   if (readerTarget.value?.documentId === id) clearReader();
   if (uploadedDocumentId.value === id) onFileActivated("", null);
   workbenchRef.value?.onSourceDeleted(id);
 };
 
 const refreshWorkbench = () => workbenchRef.value?.refresh();
-const changeKnowledgeBase = (id: number) => {
+const changeKnowledgeBase = async (id: number) => {
   if (knowledgeBaseId.value === id) return;
+  if (!(await leaveMindMap())) return;
   knowledgeBaseId.value = id;
-  startNewChat();
+  resetChat();
   onFileActivated("", null);
 };
 const onHistoryLoaded = (id: number) => {
@@ -130,13 +169,18 @@ const openSettings = () => {
   modelSettingsRef.value?.open();
 };
 
-const selectChat = (id: number) => {
+const selectChat = async (id: number) => {
+  if (!(await leaveMindMap())) return;
   clearReader();
   currentChatId.value = id;
   chatRef.value?.loadHistory(id);
 };
 
-const startNewChat = () => {
+const startNewChat = async () => {
+  if (isLoggedIn.value && !(await leaveMindMap())) return;
+  resetChat();
+};
+const resetChat = () => {
   clearReader();
   currentChatId.value = null;
   chatRef.value?.reset();
@@ -167,10 +211,11 @@ const onChatCreated = (id: number) => {
 const logout = () => {
   localStorage.removeItem("token");
   localStorage.removeItem("username");
+  closeMindMap();
   authToken.value = null;
   knowledgeBaseId.value = null;
   username.value = "用户";
-  startNewChat();
+  resetChat();
 };
 
 const handleUsernameChanged = (newUsername: string) => {

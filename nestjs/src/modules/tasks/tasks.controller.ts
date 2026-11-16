@@ -15,7 +15,9 @@ export class TasksController {
     private readonly tasks: TasksService,
     private readonly agentTasks: AgentQaTasksService,
   ) {}
-  @Post(":id/cancel") cancel(@UserId() user: number, @Param("id", IdPipe) id: number) {
+  @Post(":id/cancel") async cancel(@UserId() user: number, @Param("id", IdPipe) id: number) {
+    if ((await this.tasks.get(id, user)).kind === "mindmap")
+      return this.tasks.cancelMindMap(id, user);
     return this.agentTasks.cancel(id, user);
   }
   @Delete() clear(@UserId() user: number, @Query() query: TasksQuery) {

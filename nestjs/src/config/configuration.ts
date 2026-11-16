@@ -116,6 +116,13 @@ export function validateConfig(input: Record<string, unknown>): Record<string, a
   }
   c.MAX_DOCUMENT_BYTES = Number(c.MAX_DOCUMENT_BYTES || 128 * 1024 * 1024);
   c.VISION_CONCURRENCY = Number(c.VISION_CONCURRENCY ?? 3);
+  c.MINDMAP_CONCURRENCY = Number(c.MINDMAP_CONCURRENCY ?? 3);
+  if (
+    !Number.isInteger(c.MINDMAP_CONCURRENCY) ||
+    c.MINDMAP_CONCURRENCY < 1 ||
+    c.MINDMAP_CONCURRENCY > 4
+  )
+    throw new Error("MINDMAP_CONCURRENCY must be an integer within [1,4]");
   if (
     !Number.isInteger(c.VISION_CONCURRENCY) ||
     c.VISION_CONCURRENCY < 1 ||

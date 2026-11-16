@@ -137,3 +137,109 @@
   margin: 0 12px 0;
   flex-shrink: 0;
 }
+.generation-tasks {
+  padding: 10px 12px;
+  max-height: 35%;
+  overflow: auto;
+}
+.generation-task {
+  font-size: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  padding: 16px;
+  border-radius: 12px;
+  margin-bottom: 8px;
+  line-height: 1.7;
+  button {
+    margin: 5px 6px 0 0;
+    padding: 4px 8px;
+    color: var(--text-primary);
+    background: var(--bg-hover);
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  p {
+    color: #f1b7b7;
+    overflow-wrap: anywhere;
+  }
+}
+.generation-topline {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  color: #e8f1f7;
+}
+.generation-indicator {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #73d5dc;
+  box-shadow: 0 0 10px #73d5dc40;
+}
+.generation-percent {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: #8dd8e0;
+}
+.generation-track {
+  height: 5px;
+  border-radius: 10px;
+  background: #29323b;
+  overflow: hidden;
+  margin: 14px 0 10px;
+}
+.generation-track > span {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #358da5, #8bdde0);
+  transition: transform 900ms ease;
+  position: relative;
+}
+.generation-track > span::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, #ffffff45, transparent);
+  animation: generation-shimmer 2s linear infinite;
+}
+.generation-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-secondary);
+  text-align: left;
+  font-size: 12px;
+}
+.generation-footer button {
+  margin: 0;
+  background: transparent;
+  border: 0;
+  color: #a5bac7;
+  min-height: 32px;
+}
+@keyframes generation-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .generation-track > span {
+    transition: none;
+  }
+  .generation-track > span::after {
+    animation: none;
+  }
+}
+.generation-metrics {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}

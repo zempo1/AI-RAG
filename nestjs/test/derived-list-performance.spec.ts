@@ -121,6 +121,6 @@ it("keeps the mindmap detail ownership check", async () => {
   const store = new CountingStore();
   await store.save("mindmaps", { id: 1, userId: 2, documentId: 10 });
   const service = new MindMapsService(null as any, null as any, store);
-  await expect(service.get(1, 1)).rejects.toThrow("Mind Map not found");
+  await expect(service.get(1, 1)).rejects.toThrow("思维导图不存在");
   expect(store.reads).toEqual([{ table: "mindmaps", id: 1 }]);
 });

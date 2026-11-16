@@ -21,6 +21,36 @@ export class TasksService {
     const waitingUntil = raw ? (/[zZ]|[+-]\d\d:\d\d$/.test(raw) ? raw : raw + "Z") : null;
     const delayed =
       waitingUntil && Date.parse(waitingUntil) > Date.now() && !terminalTask(row.status);
+    const progress = row.payload?.mindmapProgress;
+    const mindmapProgress = progress
+      ? Object.fromEntries(
+          [
+            "strategy",
+            "modelCalls",
+            "cacheHits",
+            "startedAt",
+            "elapsedMs",
+            "failedBatches",
+            "inputTokens",
+            "outputTokens",
+            "totalTokens",
+            "usageReportedCalls",
+            "usageMissingCalls",
+            "usageScope",
+          ]
+            .filter((key) => progress[key] !== undefined)
+            .map((key) => [key, progress[key]]),
+        )
+      : undefined;
+    if (mindmapProgress && !terminalTask(row.status)) {
+      const started = Date.parse(String(progress.startedAt));
+      if (Number.isFinite(started))
+        mindmapProgress.elapsedMs = Math.max(
+          Number(progress.elapsedMs) || 0,
+          Date.now() - started,
+          0,
+        );
+    }
     return {
       ...result,
       payload: row.payload
@@ -52,6 +82,13 @@ export class TasksService {
       ...(row.kind === "index" && row.payload?.indexProgress
         ? { indexProgress: row.payload.indexProgress }
         : {}),
+      ...(row.kind === "mindmap"
+        ? {
+            mindmapResult: row.payload?.mindmapResult,
+            mindmapProgress,
+            filename: row.payload?.filename,
+          }
+        : {}),
       canDismiss: terminalTask(row.status) && !executionToken && !row.parentTaskId,
       waitingUntil: delayed ? waitingUntil : null,
       waitingReason: delayed
@@ -81,6 +118,28 @@ export class TasksService {
       updatedAt: now(),
       ...values,
     });
+  }
+
+  async cancelMindMap(id: number, userId: number) {
+    const initial = await this.get(id, userId);
+    if (initial.kind !== "mindmap") throw new ApiError(409, "不支持取消此任务");
+    await this.store.transaction(async (tx) => {
+      await tx.lock("knowledgeBases", initial.knowledgeBaseId);
+      if (initial.documentId) await tx.lock("documents", initial.documentId);
+      const task = await tx.lock("tasks", id);
+      if (!task || task.userId !== userId) throw new ApiError(404, "任务不存在");
+      if (!terminalTask(task.status))
+        await tx.save("tasks", {
+          id,
+          status: "canceled",
+          stage: "canceled",
+          executionToken: null,
+          retryable: 0,
+          updatedAt: now(),
+          payload: { ...task.payload, credential: null, modelSnapshot: null },
+        });
+    });
+    return this.get(id, userId);
   }
 
   async get(id: number, userId: number) {
@@ -202,6 +261,24 @@ export class TasksService {
           if (task.parentTaskId) throw new ApiError(409, "请重试所属知识库重建任务");
           await tx.save("documents", { id: doc.id, status: "queued" });
         }
+        if (
+          task.kind === "mindmap" &&
+          (!doc ||
+            doc.deletedAt ||
+            doc.activeVersionId !== task.payload?.versionId ||
+            doc.activeIndexRevisionId !== task.indexRevisionId)
+        )
+          throw new ApiError(409, "文档或索引已更新，请重新生成");
+        if (
+          task.kind === "mindmap" &&
+          (await tx.list("tasks", { userId, documentId: task.documentId, kind: "mindmap" })).some(
+            (other) =>
+              other.id !== task.id &&
+              other.indexRevisionId === task.indexRevisionId &&
+              !terminalTask(other.status),
+          )
+        )
+          throw new ApiError(409, "已有生成中的思维导图任务");
         await this.reset(tx, task);
       }
     });
