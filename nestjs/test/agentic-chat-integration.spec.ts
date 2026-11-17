@@ -1,6 +1,44 @@
 import { EventEmitter } from "node:events";
 import { ChatService } from "../src/modules/chat/chat.service";
 import { ChatController } from "../src/modules/chat/chat.controller";
+it("检索开始前发送可恢复的任务标识，断流也能找到同一会话", async () => {
+  const order: string[] = [];
+  let notice: any;
+  const controller = new ChatController(
+    {
+      prepare: async () => {
+        order.push("prepare");
+        return {};
+      },
+    } as any,
+    {} as any,
+    {} as any,
+    {
+      begin: async () => ({
+        existing: false,
+        task: { id: 9 },
+        chat: { id: 7, knowledgeBaseId: 1, messages: [] },
+        token: "token",
+      }),
+      accepted: () => ({ taskId: 9, chatId: 7, requestId: "r" }),
+      execution: () => ({ signal: new AbortController().signal, dispose: () => {} }),
+    } as any,
+  );
+  await (controller as any).prepare(
+    { question: "讲解题目", knowledgeBaseId: 1 },
+    1,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    (task: any) => {
+      notice = task;
+      order.push("started");
+    },
+  );
+  expect(order).toEqual(["started", "prepare"]);
+  expect(notice).toMatchObject({ taskId: 9, chatId: 7 });
+});
 
 it("routes prepared Agent contexts and both answer forms through the same Agent finalizer", async () => {
   const context = { engine: "agentic-v1", sources: [], prompt: "test" };

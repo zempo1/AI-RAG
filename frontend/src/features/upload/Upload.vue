@@ -337,6 +337,7 @@ const props = defineProps<{
   documentId: number | null;
 }>();
 const emit = defineEmits<{
+  (event: "source-ready", ready: boolean): void;
   (event: "knowledge-base-deleted", id: number): void;
   (event: "preview-document", target: DocumentTarget): void;
   (event: "knowledge-base-change", id: number): void;
@@ -403,6 +404,23 @@ const currentLibrary = computed(() =>
   libraries.value.find((kb) => kb.id === props.knowledgeBaseId),
 );
 const selectedDocument = ref<ManagedDocument | null>(null);
+watch(
+  () => [
+    props.documentId,
+    selectedDocument.value?.id,
+    selectedDocument.value?.status,
+    selectedDocument.value?.activeIndexRevisionId,
+  ],
+  () =>
+    emit(
+      "source-ready",
+      !!props.documentId &&
+        selectedDocument.value?.id === props.documentId &&
+        selectedDocument.value?.status === "ready" &&
+        !!selectedDocument.value?.activeIndexRevisionId,
+    ),
+  { immediate: true },
+);
 const fileInput = ref<HTMLInputElement>(),
   uploading = ref(false),
   paused = ref(false),
@@ -437,10 +455,13 @@ const stageLabels: Record<string, string> = {
   waiting: "等待前置任务",
   summarizing: "逐章节总结中",
   retrieving: "检索资料中",
+  reading: "读取文档",
+  validating: "校验生成结果",
   generating: "生成回答中",
   superseded: "已有更新版本",
 };
 const kindLabels: Record<string, string> = {
+  quiz: "智能测验",
   qa: "后台问答",
   index: "文档索引",
   rebuild: "全库重建",

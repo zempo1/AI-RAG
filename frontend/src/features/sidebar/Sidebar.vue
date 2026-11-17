@@ -68,18 +68,12 @@
           :document-id="documentId"
           @knowledge-base-change="(id) => emit('knowledge-base-change', id)"
           @activated="handleFileActivated"
+          @source-ready="(ready) => emit('source-ready', ready)"
           @deleted="(id) => emit('file-deleted', id)"
           @version-changed="emit('version-changed')"
           @preview-document="(target) => emit('preview-document', target)"
           @knowledge-base-deleted="(id) => emit('knowledge-base-deleted', id)"
         />
-      </div>
-      <div class="upload-collapsed" v-show="isCollapsed">
-        <el-tooltip content="上传文档" placement="right">
-          <el-button circle class="collapsed-upload-btn">
-            <el-icon><UploadFilled /></el-icon>
-          </el-button>
-        </el-tooltip>
       </div>
     </div>
 
@@ -115,7 +109,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import Upload from "../upload/Upload.vue";
 import ChangePasswordDialog from "../account/ChangePasswordDialog.vue";
 import {
@@ -141,9 +135,12 @@ const props = defineProps<{
   currentChatId: number | null;
   knowledgeBaseId: number | null;
   documentId: number | null;
+  collapsed?: boolean;
 }>();
 
 const emit = defineEmits<{
+  (e: "source-ready", ready: boolean): void;
+  (e: "update:collapsed", value: boolean): void;
   (e: "knowledge-base-deleted", id: number): void;
   (e: "preview-document", target: DocumentTarget): void;
   (e: "new-chat"): void;
@@ -161,7 +158,14 @@ const emit = defineEmits<{
 const confirm = useConfirm();
 const toast = useToast();
 
-const isCollapsed = ref(false);
+const localCollapsed = ref(false);
+const isCollapsed = computed({
+  get: () => props.collapsed ?? localCollapsed.value,
+  set: (value: boolean) => {
+    localCollapsed.value = value;
+    emit("update:collapsed", value);
+  },
+});
 const chats = ref<ChatItem[]>([]);
 const changePasswordVisible = ref(false);
 

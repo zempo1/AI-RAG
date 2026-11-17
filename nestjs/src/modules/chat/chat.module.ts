@@ -1,3 +1,4 @@
+import { QuizzesModule } from "../quizzes/quizzes.module";
 import { Module } from "@nestjs/common";
 import { RagModule } from "../rag/rag.module";
 import { LlmModule } from "../llm/llm.module";
@@ -8,7 +9,7 @@ import { QaTasksModule } from "../tasks/qa-tasks.module";
 import { AgentModule } from "../agent/agent.module";
 
 @Module({
-  imports: [RagModule, LlmModule, HistoryModule, QaTasksModule, AgentModule],
+  imports: [RagModule, LlmModule, HistoryModule, QaTasksModule, AgentModule, QuizzesModule],
   controllers: [ChatController],
   providers: [ChatService],
 })

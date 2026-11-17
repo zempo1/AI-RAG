@@ -4,13 +4,12 @@ const analysis = (documentName: string) => ({
   id: 21,
   documentId: 7,
   documentName,
-  type: "SUMMARY",
+  type: "OUTLINE",
   content: "摘要正文",
   createdAt: "2026-11-15T01:00:00Z",
 });
 
 for (const [label, type] of [
-  ["AI 摘要", "SUMMARY"],
   ["文档大纲", "OUTLINE"],
   ["学习卡片", "FLASHCARD"],
 ]) {
@@ -187,7 +186,7 @@ async function mountWorkbench(
 
 async function invoke(
   page: Page,
-  method: "refresh" | "onSourceDeleted" | "loadSummaries",
+  method: "refresh" | "onSourceDeleted" | "loadOutlines",
   argument?: number,
 ) {
   await page.evaluate(
@@ -205,24 +204,23 @@ test("刷新仅重取当前标签，其余已访问标签在下次打开时更�
     await route.fulfill({ json: { data: [] } });
   });
   await expect(page.getByText("暂无思维导图", { exact: true })).toBeVisible();
-  await page.locator(".wb-tab").getByText("AI 摘要", { exact: true }).click();
-  await expect(page.getByText("暂无摘要记录", { exact: true })).toBeVisible();
+  await page.locator(".wb-tab").getByText("文档大纲", { exact: true }).click();
+  await expect(page.getByText("暂无大纲记录", { exact: true })).toBeVisible();
   await invoke(page, "refresh");
   expect(counts.get("/api/mindmaps/workspace")).toBe(1);
-  expect(counts.get("/api/analysis?type=SUMMARY")).toBe(2);
-  expect(counts.has("/api/analysis?type=OUTLINE")).toBe(false);
+  expect(counts.get("/api/analysis?type=OUTLINE")).toBe(2);
   expect(counts.has("/api/analysis?type=FLASHCARD")).toBe(false);
   await page.locator(".wb-tab").getByText("思维导图", { exact: true }).click();
   await expect.poll(() => counts.get("/api/mindmaps/workspace")).toBe(2);
-  await page.locator(".wb-tab").getByText("AI 摘要", { exact: true }).click();
-  await expect(page.getByText("暂无摘要记录", { exact: true })).toBeVisible();
-  expect(counts.get("/api/analysis?type=SUMMARY")).toBe(2);
+  await page.locator(".wb-tab").getByText("文档大纲", { exact: true }).click();
+  await expect(page.getByText("暂无大纲记录", { exact: true })).toBeVisible();
+  expect(counts.get("/api/analysis?type=OUTLINE")).toBe(2);
 });
 
 test("标签加载失败后重新切换会重试并显示结果", async ({ page }) => {
   let attempts = 0;
   await mountWorkbench(page, async (route, key) => {
-    if (key === "/api/analysis?type=SUMMARY") {
+    if (key === "/api/analysis?type=OUTLINE") {
       attempts++;
       await route.fulfill(
         attempts === 1
@@ -231,10 +229,10 @@ test("标签加载失败后重新切换会重试并显示结果", async ({ page 
       );
     } else await route.fulfill({ json: { data: [] } });
   });
-  await page.locator(".wb-tab").getByText("AI 摘要", { exact: true }).click();
-  await expect(page.getByText("暂无摘要记录", { exact: true })).toBeVisible();
+  await page.locator(".wb-tab").getByText("文档大纲", { exact: true }).click();
+  await expect(page.getByText("暂无大纲记录", { exact: true })).toBeVisible();
   await page.locator(".wb-tab").getByText("思维导图", { exact: true }).click();
-  await page.locator(".wb-tab").getByText("AI 摘要", { exact: true }).click();
+  await page.locator(".wb-tab").getByText("文档大纲", { exact: true }).click();
   await expect(page.locator(".analysis-doc")).toHaveText("重试后摘要");
   expect(attempts).toBe(2);
 });
@@ -246,20 +244,20 @@ test("同一标签的并发读取复用在途请求", async ({ page }) => {
     release = resolve;
   });
   await mountWorkbench(page, async (route, key) => {
-    if (key === "/api/analysis?type=SUMMARY") {
+    if (key === "/api/analysis?type=OUTLINE") {
       requests++;
       await ready;
       await route.fulfill({ json: { data: [analysis("共享加载结果")] } });
     } else await route.fulfill({ json: { data: [] } });
   });
-  await page.locator(".wb-tab").getByText("AI 摘要", { exact: true }).click();
+  await page.locator(".wb-tab").getByText("文档大纲", { exact: true }).click();
   await expect.poll(() => requests).toBe(1);
   await page.locator(".wb-tab").getByText("思维导图", { exact: true }).click();
-  await page.locator(".wb-tab").getByText("AI 摘要", { exact: true }).click();
+  await page.locator(".wb-tab").getByText("文档大纲", { exact: true }).click();
   const pending = page.evaluate(async () => {
     await Promise.all([
-      (window as any).workbench.loadSummaries(),
-      (window as any).workbench.loadSummaries(),
+      (window as any).workbench.loadOutlines(),
+      (window as any).workbench.loadOutlines(),
     ]);
   });
   await expect(page.getByText("加载中…", { exact: true })).toBeVisible();
@@ -276,19 +274,19 @@ test("刷新后完成的过期请求不会覆盖新结果", async ({ page }) => 
     release = resolve;
   });
   await mountWorkbench(page, async (route, key) => {
-    if (key === "/api/analysis?type=SUMMARY") {
+    if (key === "/api/analysis?type=OUTLINE") {
       requests++;
       const first = requests === 1;
       if (first) await ready;
       await route.fulfill({ json: { data: [analysis(first ? "过期摘要" : "刷新后摘要")] } });
     } else await route.fulfill({ json: { data: [] } });
   });
-  await page.locator(".wb-tab").getByText("AI 摘要", { exact: true }).click();
+  await page.locator(".wb-tab").getByText("文档大纲", { exact: true }).click();
   await expect.poll(() => requests).toBe(1);
   await invoke(page, "refresh");
   await expect(page.locator(".analysis-doc")).toHaveText("刷新后摘要");
   const oldResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/analysis?type=SUMMARY"),
+    response.url().includes("/api/analysis?type=OUTLINE"),
   );
   release();
   await oldResponse;
@@ -305,7 +303,7 @@ test("删除来源只刷新当前标签，未打开的标签保持按需读取",
   await expect(page.getByText("暂无思维导图", { exact: true })).toBeVisible();
   await invoke(page, "onSourceDeleted", 7);
   expect(counts.get("/api/mindmaps/workspace")).toBe(2);
-  expect(counts.has("/api/analysis?type=SUMMARY")).toBe(false);
+  expect(counts.has("/api/analysis?type=OUTLINE")).toBe(false);
   expect(counts.has("/api/analysis?type=OUTLINE")).toBe(false);
   expect(counts.has("/api/analysis?type=FLASHCARD")).toBe(false);
   await page.locator(".wb-tab").getByText("文档大纲", { exact: true }).click();
@@ -328,15 +326,6 @@ const artifactTabs = [
       data: '{"data":{"text":"根节点"}}',
       createdAt: "2026-11-15T01:00:00Z",
     },
-  },
-  {
-    label: "AI 摘要",
-    list: "/api/analysis?type=SUMMARY",
-    generate: "/api/analysis/generate",
-    remove: "/api/analysis/21",
-    button: "生成 AI 摘要",
-    title: ".analysis-doc",
-    item: analysis("新产物"),
   },
   {
     label: "文档大纲",

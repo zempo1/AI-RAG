@@ -125,7 +125,11 @@ import { normalizeMindMap, isOversizedMindMap, type MindMapDocument } from "./mi
 import { useToast } from "../../composables/useToast";
 import "simple-mind-map/dist/simpleMindMap.esm.css";
 const props = defineProps<{ mapId: number }>();
-const emit = defineEmits<{ (e: "close"): void; (e: "saved"): void }>();
+const emit = defineEmits<{
+  (e: "close"): void;
+  (e: "saved"): void;
+  (e: "fullscreen-change", value: boolean): void;
+}>();
 const toast = useToast(),
   container = ref<HTMLElement>(),
   canvas = shallowRef<any>(null),
@@ -282,6 +286,7 @@ function changeLayout(value: string) {
 }
 async function toggleFullscreen() {
   fullscreen.value = !fullscreen.value;
+  emit("fullscreen-change", fullscreen.value);
   await nextTick();
   canvas.value?.resize();
   fit();

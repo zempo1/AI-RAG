@@ -8,6 +8,7 @@ export interface StreamChatCallbacks {
   onSources?: (sources: Citation[]) => void;
   onStatus?: (stage: string) => void;
   onAccepted?: (accepted: AcceptedAnswer) => void;
+  onTaskStarted?: (task: AcceptedAnswer) => void;
   onAgentStep?: (step: AgentStep) => void;
   onCitations?: (citations: Citation[]) => void;
   onDone: (answer: FinalAnswer) => void;
@@ -20,6 +21,7 @@ export function dispatchChatEvent(frame: SseEvent, callbacks: StreamChatCallback
   if (frame.event === "status") callbacks.onStatus?.(String(value.stage));
   else if (frame.event === "chatId") callbacks.onChatId(Number(value));
   else if (frame.event === "agent_step") callbacks.onAgentStep?.(value);
+  else if (frame.event === "task_started") callbacks.onTaskStarted?.(value);
   else if (frame.event === "accepted") {
     callbacks.onAccepted?.(value);
     return true;

@@ -82,6 +82,19 @@ export class TasksService {
       ...(row.kind === "index" && row.payload?.indexProgress
         ? { indexProgress: row.payload.indexProgress }
         : {}),
+      ...(row.kind === "quiz"
+        ? {
+            quizResult: row.payload?.quizResult,
+            filename: row.payload?.filename,
+            quizProgress: row.payload?.quizProgress
+              ? Object.fromEntries(
+                  ["modelCalls", "startedAt", "elapsedMs"]
+                    .filter((key) => row.payload.quizProgress[key] !== undefined)
+                    .map((key) => [key, row.payload.quizProgress[key]]),
+                )
+              : undefined,
+          }
+        : {}),
       ...(row.kind === "mindmap"
         ? {
             mindmapResult: row.payload?.mindmapResult,
@@ -122,7 +135,7 @@ export class TasksService {
 
   async cancelMindMap(id: number, userId: number) {
     const initial = await this.get(id, userId);
-    if (initial.kind !== "mindmap") throw new ApiError(409, "不支持取消此任务");
+    if (!["mindmap", "quiz"].includes(initial.kind)) throw new ApiError(409, "不支持取消此任务");
     await this.store.transaction(async (tx) => {
       await tx.lock("knowledgeBases", initial.knowledgeBaseId);
       if (initial.documentId) await tx.lock("documents", initial.documentId);
@@ -262,7 +275,15 @@ export class TasksService {
           await tx.save("documents", { id: doc.id, status: "queued" });
         }
         if (
-          task.kind === "mindmap" &&
+          task.kind === "quiz" &&
+          doc &&
+          (doc.status !== "ready" ||
+            (doc.desiredIndexRevisionId != null &&
+              doc.desiredIndexRevisionId !== doc.activeIndexRevisionId))
+        )
+          throw new ApiError(409, "文档正在更新，请等待就绪后重新生成");
+        if (
+          ["mindmap", "quiz"].includes(task.kind) &&
           (!doc ||
             doc.deletedAt ||
             doc.activeVersionId !== task.payload?.versionId ||
@@ -270,15 +291,18 @@ export class TasksService {
         )
           throw new ApiError(409, "文档或索引已更新，请重新生成");
         if (
-          task.kind === "mindmap" &&
-          (await tx.list("tasks", { userId, documentId: task.documentId, kind: "mindmap" })).some(
+          ["mindmap", "quiz"].includes(task.kind) &&
+          (await tx.list("tasks", { userId, documentId: task.documentId, kind: task.kind })).some(
             (other) =>
               other.id !== task.id &&
               other.indexRevisionId === task.indexRevisionId &&
               !terminalTask(other.status),
           )
         )
-          throw new ApiError(409, "已有生成中的思维导图任务");
+          throw new ApiError(
+            409,
+            task.kind === "quiz" ? "已有生成中的测验任务" : "已有生成中的思维导图任务",
+          );
         await this.reset(tx, task);
       }
     });

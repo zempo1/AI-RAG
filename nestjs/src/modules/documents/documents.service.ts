@@ -214,6 +214,24 @@ export class DocumentsService {
     });
     // 同一文档以最新目标索引为准；取消未完成的旧构建，防止旧结果晚到后覆盖新版本。
     for (const previous of await tx.list("tasks", { documentId: doc.id })) {
+      if (previous.kind === "quiz" && previous.status === "failed")
+        await tx.save("tasks", {
+          id: previous.id,
+          retryable: 0,
+          executionToken: null,
+          updatedAt: now(),
+          payload: { ...previous.payload, credential: null, modelSnapshot: null, leaseUntil: null },
+        });
+      if (previous.kind === "quiz" && !terminalTask(previous.status))
+        await tx.save("tasks", {
+          id: previous.id,
+          status: "canceled",
+          stage: "superseded",
+          executionToken: null,
+          retryable: 0,
+          updatedAt: now(),
+          payload: { ...previous.payload, credential: null, modelSnapshot: null, leaseUntil: null },
+        });
       if (previous.id !== task.id && previous.kind === "index" && !terminalTask(previous.status))
         await tx.save("tasks", {
           id: previous.id,
@@ -400,19 +418,33 @@ export class DocumentsService {
 
   private async tombstone(tx: Store, doc: Row) {
     for (const task of await tx.list("tasks", { documentId: doc.id })) {
-      if (["index", "mindmap"].includes(task.kind) && !terminalTask(task.status))
+      if (task.kind === "quiz" && task.status === "failed")
+        await tx.save("tasks", {
+          id: task.id,
+          retryable: 0,
+          executionToken: null,
+          updatedAt: now(),
+          payload: { ...task.payload, credential: null, modelSnapshot: null, leaseUntil: null },
+        });
+      if (["index", "mindmap", "quiz"].includes(task.kind) && !terminalTask(task.status))
         await tx.save("tasks", {
           id: task.id,
           status: "canceled",
           stage: "canceled",
-          ...(task.kind === "mindmap"
+          ...(["mindmap", "quiz"].includes(task.kind)
             ? {
                 executionToken: null,
+                retryable: 0,
                 payload: { ...task.payload, credential: null, modelSnapshot: null },
               }
             : {}),
           updatedAt: now(),
         });
+    }
+    for (const quiz of await tx.list("quizzes", { documentId: doc.id })) {
+      for (const attempt of await tx.list("quizAttempts", { quizId: quiz.id }))
+        await tx.delete("quizAttempts", attempt.id);
+      await tx.delete("quizzes", quiz.id);
     }
     for (const table of ["analyses", "mindmaps"] as const)
       for (const row of await tx.list(table, { documentId: doc.id }))
