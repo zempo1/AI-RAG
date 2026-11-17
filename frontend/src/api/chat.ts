@@ -1,4 +1,5 @@
 import request from "../utils/request";
+import { readWithIdleTimeout } from "../utils/stream-idle";
 import { SseDecoder, type SseEvent } from "../utils/sse";
 import { dispatchChatEvent, type StreamChatCallbacks } from "../utils/chat-stream";
 import type { Citation } from "./knowledge-bases";
@@ -65,7 +66,7 @@ export async function sendStreamChat(
     };
     try {
       while (true) {
-        const { done, value } = await reader.read();
+        const { done, value } = await readWithIdleTimeout(reader);
         if (done) break;
         for (const frame of decoder.feed(value)) handle(frame);
       }
@@ -73,7 +74,7 @@ export async function sendStreamChat(
       if (!completed && !signal?.aborted)
         throw new Error("连接已中断，可重新打开会话查看已保存内容");
     } finally {
-      await reader.cancel().catch(() => undefined);
+      void reader.cancel().catch(() => undefined);
       reader.releaseLock();
     }
   } catch (error) {
