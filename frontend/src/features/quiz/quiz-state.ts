@@ -16,5 +16,5 @@ export function buildQuizExplanation(
   question: { stem: string; options: { id: string; text: string }[]; correctOptionIds?: string[] },
   answer: { selectedOptionIds: string[] },
 ) {
-  return `我在文档测验中遇到了这道题：\n\n${question.stem}\n\n${question.options.map((option) => `${option.id}. ${option.text}`).join("\n")}\n\n我选择了：${answer.selectedOptionIds.join("、")}\n测验参考答案：${question.correctOptionIds?.join("、") || "见判题结果"}\n\n请结合原文深入讲解这个主题，核对参考答案，若参考答案/解析有误请明确指出。`;
+  return `我在文档测验中遇到了这道题：\n\n${question.stem}\n\n${question.options.map((option) => `${option.id}. ${option.text}`).join("\n")}\n\n我选择了：${answer.selectedOptionIds.join("、")}\n测验参考答案：${question.correctOptionIds?.join("、") || "见判题结果"}\n\n请结合原文深入讲解这个主题。`;
 }
