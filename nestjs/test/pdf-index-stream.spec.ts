@@ -32,6 +32,44 @@ const page = (number: number, visual = false): ParsedDocument => {
 };
 const vector = [1, ...Array(255).fill(0)];
 
+it("resumes acknowledged vector batches without clearing or rewriting them", async () => {
+  let fail = true,
+    acknowledged!: () => void;
+  const ready = new Promise<void>((r) => {
+    acknowledged = r;
+  });
+  const p = await setup(
+    {
+      async *parsePages() {
+        for (let i = 1; i <= 20; i++) {
+          if (i === 11 && fail) {
+            await ready;
+            throw new Error("late page failure");
+          }
+          yield page(i);
+        }
+      },
+    },
+    async (texts) => texts.map(() => vector),
+  );
+  const original = p.vectors.addAll.bind(p.vectors);
+  const writes: number[] = [];
+  p.vectors.addAll = (v, s) => {
+    original(v, s);
+    writes.push(s.length);
+    acknowledged();
+  };
+  try {
+    await expect(p.indexing.process(p.accepted.taskId)).rejects.toThrow("late page failure");
+    fail = false;
+    await p.indexing.process(p.accepted.taskId, 2);
+    expect(writes).toEqual([10, 10]);
+    expect(p.vectors.search(vector, 30, 0)).toHaveLength(20);
+  } finally {
+    await p.cleanup();
+  }
+});
+
 async function setup(
   parser: {
     parsePages: (input: Uint8Array, context: ParseContext) => AsyncGenerator<ParsedDocument>;

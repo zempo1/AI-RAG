@@ -6,6 +6,7 @@ import { ParsedDocument, PdfSourceAnchor, paragraphBlocks } from "./parsed-docum
 import { shiftSourceLocation, sliceSourceLocation } from "./source-anchors";
 import { PdfVisualService, ParseContext, markPdfFailure } from "./pdf-visual.service";
 import { localRendering } from "./vision-scheduler";
+import { spoolPages } from "./parsed-page-cache";
 import { textPositions } from "./pdf-layout";
 import {
   detectPdfTableGrids,
@@ -186,6 +187,11 @@ export class DocumentParser {
           },
         }
       : undefined;
+    const pageCache = context ? await this.visual?.parsedPages?.(context) : undefined;
+    const pageRegions = new Map<number, number>();
+    const pageCompleted = new Map<number, number>();
+    const pageManifests = new Map<number, string>();
+    let pageCacheHits = 0;
     const poll = original?.guard
       ? setInterval(() => {
           polling ??= check()
@@ -196,6 +202,34 @@ export class DocumentParser {
         }, 1000)
       : undefined;
     const processPage = async (i: number): Promise<ParsedDocument> => {
+      let completedRegions = 0;
+      const pageContext =
+        pageCache && context
+          ? {
+              ...context,
+              // A failed page is retried after other pages; only the final failure aborts the document.
+              failed: () => {},
+              deferTransientRetry: true,
+              analysisManifest: (manifest: string) => {
+                pageManifests.set(i, manifest);
+              },
+              discovered: async (count: number) => {
+                if (!pageRegions.has(i)) prepared++;
+                regionTotal += count - (pageRegions.get(i) || 0);
+                pageRegions.set(i, count);
+                await report();
+              },
+              completed: async () => {
+                completedRegions++;
+                const before = pageCompleted.get(i) || 0;
+                if (completedRegions > before) {
+                  regionDone += completedRegions - before;
+                  pageCompleted.set(i, completedRegions);
+                }
+                await report();
+              },
+            }
+          : context;
       const blocks: ParsedDocument["blocks"] = [];
       beforeRequest();
       await check();
@@ -263,7 +297,7 @@ export class DocumentParser {
           nativeBlocks.map((block, n) => ({ order: n, block }));
         if (context && this.visual) {
           try {
-            const result = await this.visual.page(document, page, pageText, context, content);
+            const result = await this.visual.page(document, page, pageText, pageContext!, content);
             if (result.stats)
               for (const key of Object.keys(counts) as (keyof typeof counts)[])
                 counts[key] += result.stats[key];
@@ -381,32 +415,77 @@ export class DocumentParser {
       pending.set(number, page);
     };
     try {
-      for (let i = 1; i <= document.numPages; i++) {
-        beforeRequest();
-        while (pending.size < window && next <= document.numPages) {
-          prepare(next++);
+      if (pageCache) {
+        let previous: ParsedDocument | undefined;
+        for await (const result of spoolPages(
+          document.numPages,
+          window,
+          pageCache,
+          async (number) => ({
+            document: await processPage(number),
+            regions: pageRegions.get(number) || 0,
+            analysisManifest: pageManifests.get(number),
+          }),
+          signal,
+          async (page, hit) => {
+            finished++;
+            if (hit) {
+              pageCacheHits++;
+              prepared++;
+              regionTotal += page.regions;
+              regionDone += page.regions;
+            }
+            await report();
+          },
+        )) {
+          await check();
+          const current = result.document;
+          if (previous) {
+            linkAdjacentPageTables(previous, current);
+            hasContent ||= !!previous.text.trim();
+            yield previous;
+          }
+          previous = current;
         }
-        const result = await pending.get(i);
-        pending.delete(i);
-        beforeRequest();
-        if (!result) throw new Error("PDF 页面未解析完成");
-        // A possible tail table waits for exactly one adjacent page. Ordinary pages
-        // retain the existing streaming latency and recognition concurrency bound.
-        if (i < document.numPages && hasPageTailTable(result)) {
-          if (!pending.has(i + 1)) prepare(next++);
-          const following = await pending.get(i + 1);
+        if (previous) {
+          hasContent ||= !!previous.text.trim();
+          yield previous;
+        }
+      } else {
+        for (let i = 1; i <= document.numPages; i++) {
           beforeRequest();
-          if (!following) throw new Error("PDF 续页未解析完成");
-          linkAdjacentPageTables(result, following);
+          while (pending.size < window && next <= document.numPages) {
+            prepare(next++);
+          }
+          const result = await pending.get(i);
+          pending.delete(i);
+          beforeRequest();
+          if (!result) throw new Error("PDF 页面未解析完成");
+          // A possible tail table waits for exactly one adjacent page. Ordinary pages
+          // retain the existing streaming latency and recognition concurrency bound.
+          if (i < document.numPages && hasPageTailTable(result)) {
+            if (!pending.has(i + 1)) prepare(next++);
+            const following = await pending.get(i + 1);
+            beforeRequest();
+            if (!following) throw new Error("PDF 续页未解析完成");
+            linkAdjacentPageTables(result, following);
+          }
+          hasContent ||= Boolean(result.text.trim());
+          yield result;
         }
-        hasContent ||= Boolean(result.text.trim());
-        yield result;
       }
       if (enhanced) {
         if (regionTotal > 0) stage ??= "vision";
         await report(true);
         this.logger.log(
-          JSON.stringify({ event: "pdf-document-layout", pages: document.numPages, ...counts }),
+          JSON.stringify({
+            event: "pdf-document-layout",
+            taskId: original?.taskId,
+            attempt: original?.attempt,
+            pages: document.numPages,
+            pageCacheHits,
+            ...counts,
+          }),
         );
       }
       beforeRequest();

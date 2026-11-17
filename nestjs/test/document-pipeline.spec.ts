@@ -171,7 +171,7 @@ describe("asynchronous document lifecycle", () => {
     expect(p.vectors.search([1, 0], 10, 0)).toEqual([]);
   });
 
-  it("waits for an older vector write before resetting and publishing a redelivered revision", async () => {
+  it("waits for an expired owner's vector write before overwriting and publishing a redelivered revision", async () => {
     const first = await upload();
     const originalWrite = p.vectors.addAll.bind(p.vectors);
     const originalReset = p.vectors.removeRevision.bind(p.vectors);
@@ -209,6 +209,12 @@ describe("asynchronous document lifecycle", () => {
     };
     const older = p.indexing.process(first.taskId);
     await writing;
+    // Simulate a lost lease; a live lease now correctly rejects duplicate delivery.
+    const running = (await p.store.get("tasks", first.taskId))!;
+    await p.store.save("tasks", {
+      id: first.taskId,
+      payload: { ...running.payload, indexLeaseUntil: 0 },
+    });
     const newer = p.indexing.process(first.taskId, 2);
     try {
       await waiting;
@@ -217,12 +223,7 @@ describe("asynchronous document lifecycle", () => {
       release();
       await Promise.all([older, newer]);
     }
-    expect(events).toEqual([
-      "older-write-started",
-      "older-write-finished",
-      "newer-reset",
-      "newer-write",
-    ]);
+    expect(events).toEqual(["older-write-started", "older-write-finished", "newer-write"]);
     expect((await p.tasks.get(first.taskId, 1)).status).toBe("completed");
     expect(p.vectors.search([1, 0], 10, 0)).toHaveLength(1);
   });

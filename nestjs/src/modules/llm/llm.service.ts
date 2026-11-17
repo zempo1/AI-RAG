@@ -176,6 +176,29 @@ export class LlmService {
     return result!;
   }
 
+  private async attempt<T>(
+    execution: ModelExecutionOptions,
+    operation: () => Promise<T>,
+  ): Promise<{ message: T } | { error: unknown }> {
+    execution.signal?.throwIfAborted();
+    await execution.onAttempt?.({ phase: "start" });
+    const started = performance.now();
+    let result: { message: T } | { error: unknown };
+    try {
+      result = { message: await operation() };
+    } catch (error) {
+      result = { error };
+    }
+    const usage = "message" in result ? this.usage(result.message) : undefined;
+    await execution.onAttempt?.({
+      phase: "end",
+      status: execution.signal?.aborted ? "cancelled" : "error" in result ? "error" : "success",
+      elapsedMs: performance.now() - started,
+      ...(usage ? { usage } : {}),
+    });
+    return result;
+  }
+
   async complete(
     prompt: string,
     apiKey?: string,
@@ -190,13 +213,14 @@ export class LlmService {
       options,
       async (record) => {
         const model = await this.model(apiKey, false, images.length > 0, execution);
-        let message: any;
-        try {
-          message = await model.invoke(input, {
+        let attempt = await this.attempt(options, () =>
+          model.invoke(input, {
             signal: options.signal,
             ...(execution.json ? { response_format: { type: "json_object" } } : {}),
-          });
-        } catch (error: any) {
+          }),
+        );
+        if ("error" in attempt) {
+          const error = attempt.error as any;
           // Some compatible endpoints explicitly reject this optional parameter.
           // Authentication, overload and generic bad requests must remain failures.
           const unsupported =
@@ -215,14 +239,18 @@ export class LlmService {
                 .model,
             }),
           );
-          message = await model.invoke(input, { signal: options.signal });
+          attempt = await this.attempt(options, () =>
+            model.invoke(input, { signal: options.signal }),
+          );
         }
+        if ("error" in attempt) throw attempt.error;
+        const message: any = attempt.message;
         record(message);
         this.reportUsage(message, images);
         if (message.response_metadata?.finish_reason === "length")
-          throw new ModelOutputError("回答达到输出长度上限，请缩小问题范围或分次提问");
+          throw new ModelOutputError("回答达到输出长度上限，请缩小问题范围或分次提问", "length");
         if (typeof message.content !== "string" || !message.content.trim())
-          throw new ModelOutputError("模型返回空内容或不支持的内容格式");
+          throw new ModelOutputError("模型返回空内容或不支持的内容格式", "empty");
         return message.content;
       },
     );

@@ -128,7 +128,25 @@ export function redactModelError(
   let safe = message;
   for (const key of keys) safe = safe.split(key).join("[已隐藏]");
   if (safe === message) return error;
-  return error instanceof ApiError ? new ApiError(error.getStatus(), safe) : new Error(safe);
+  const result =
+    error instanceof ApiError ? new ApiError(error.getStatus(), safe) : new Error(safe);
+  // Keep classification metadata without copying provider response bodies or credential-bearing headers.
+  const provider = error as {
+    status?: unknown;
+    headers?: any;
+    response?: { headers?: any };
+  } | null;
+  const status = Number(provider?.status);
+  if (Number.isInteger(status) && status >= 400 && status <= 599) Object.assign(result, { status });
+  const headers = provider?.headers ?? provider?.response?.headers;
+  const retryAfter = headers?.get?.("retry-after") ?? headers?.["retry-after"];
+  if (typeof retryAfter === "string" || typeof retryAfter === "number") {
+    const delay = /^\d+(\.\d+)?$/.test(String(retryAfter))
+      ? Number(retryAfter) * 1000
+      : Date.parse(String(retryAfter)) - Date.now();
+    if (Number.isFinite(delay) && delay >= 0) Object.assign(result, { retryAfterMs: delay });
+  }
+  return result;
 }
 
 function encryptionKey(config: ConfigService, purpose: string) {

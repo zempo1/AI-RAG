@@ -12,6 +12,7 @@ export interface Segment {
   chunkId?: number;
   location?: SourceLocation;
   retrievalMetadata?: Record<string, unknown>;
+  indexContentHash?: string;
 }
 
 export interface SearchScope {
@@ -27,6 +28,13 @@ export interface Match {
 }
 
 export abstract class VectorStore {
+  abstract hasSegments(segments: Segment[], profile?: ModelProfile): boolean | Promise<boolean>;
+  abstract pruneRevisionTail(
+    indexRevisionId: number,
+    userId: number,
+    count: number,
+    profile?: ModelProfile,
+  ): void | Promise<void>;
   abstract removeDocument(documentId: number, userId: number): void | Promise<void>;
   abstract removeRevision(
     indexRevisionId: number,

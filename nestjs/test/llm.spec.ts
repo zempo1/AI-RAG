@@ -1,8 +1,10 @@
 import { createServer, Server } from "node:http";
 import { AddressInfo } from "node:net";
 import { ConfigService } from "@nestjs/config";
-import { LlmService } from "../src/modules/llm/llm.service";
+import { LlmService, ModelAttemptEvent } from "../src/modules/llm/llm.service";
 import { environmentBindings, runWithModels } from "../src/modules/model-settings/model-runtime";
+
+type AttemptEvent = ModelAttemptEvent;
 
 describe("real LangChain HTTP adapter against a local OpenAI-compatible server", () => {
   let server: Server;
@@ -12,6 +14,9 @@ describe("real LangChain HTTP adapter against a local OpenAI-compatible server",
   let stall = false;
   let jsonFailure: "unsupported" | "auth" | undefined;
   let jsonRequests: any[] = [];
+  let requestCount = 0;
+  let arrived: (() => void) | undefined;
+  let responseDelayMs = 0;
   beforeAll(async () => {
     server = createServer(async (req, res) => {
       const buffers: Buffer[] = [];
@@ -20,6 +25,8 @@ describe("real LangChain HTTP adapter against a local OpenAI-compatible server",
         auth: req.headers.authorization,
         body: JSON.parse(Buffer.concat(buffers).toString()),
       };
+      requestCount++;
+      arrived?.();
       if (jsonFailure) {
         jsonRequests.push(received.body);
         if (jsonFailure === "auth" || received.body.response_format) {
@@ -54,6 +61,8 @@ describe("real LangChain HTTP adapter against a local OpenAI-compatible server",
           );
         res.end("data: [DONE]\n\n");
       } else {
+        if (responseDelayMs)
+          await new Promise<void>((resolve) => setTimeout(resolve, responseDelayMs));
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
@@ -85,6 +94,204 @@ describe("real LangChain HTTP adapter against a local OpenAI-compatible server",
   afterAll(async () => {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  afterEach(() => {
+    arrived = undefined;
+    responseDelayMs = 0;
+  });
+  it("reports one safe attempt with provider usage and elapsed time without changing observer reservations", async () => {
+    const events: AttemptEvent[] = [];
+    const reservations: string[] = [];
+    const outcomes: unknown[] = [];
+    const countBefore = requestCount;
+    responseDelayMs = 25;
+    const execution = {
+      json: false,
+      onAttempt: (event: AttemptEvent) => {
+        events.push(event);
+      },
+      observer: {
+        before: async () => {
+          reservations.push("reserved");
+          return "reservation";
+        },
+        settle: async (id: string, outcome: unknown) => {
+          outcomes.push({ id, outcome });
+        },
+      },
+    };
+    expect(await llm.complete("私密原文", "private-key", [], undefined, execution)).toBe(
+      "模型答案",
+    );
+    expect(requestCount - countBefore).toBe(1);
+    expect(events).toEqual([
+      { phase: "start" },
+      {
+        phase: "end",
+        status: "success",
+        elapsedMs: expect.any(Number),
+        usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 },
+      },
+    ]);
+    expect((events[1] as Extract<AttemptEvent, { phase: "end" }>).elapsedMs).toBeGreaterThanOrEqual(
+      25,
+    );
+    expect(reservations).toEqual(["reserved"]);
+    expect(outcomes).toEqual([
+      {
+        id: "reservation",
+        outcome: { status: "success", usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } },
+      },
+    ]);
+  });
+  it("counts JSON compatibility fallback as two attempts but one observer reservation", async () => {
+    const events: AttemptEvent[] = [];
+    const reservations: string[] = [];
+    const outcomes: unknown[] = [];
+    const countBefore = requestCount;
+    jsonFailure = "unsupported";
+    try {
+      const execution = {
+        json: true,
+        onAttempt: (event: AttemptEvent) => {
+          events.push(event);
+        },
+        observer: {
+          before: async () => {
+            reservations.push("reserved");
+            return "reservation";
+          },
+          settle: async (_id: string, outcome: unknown) => {
+            outcomes.push(outcome);
+          },
+        },
+      };
+      expect(await llm.complete("私密原文", undefined, [], undefined, execution)).toBe("模型答案");
+      expect(requestCount - countBefore).toBe(2);
+      expect(events).toEqual([
+        { phase: "start" },
+        { phase: "end", status: "error", elapsedMs: expect.any(Number) },
+        { phase: "start" },
+        {
+          phase: "end",
+          status: "success",
+          elapsedMs: expect.any(Number),
+          usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 },
+        },
+      ]);
+      expect(reservations).toEqual(["reserved"]);
+      expect(outcomes).toEqual([
+        { status: "success", usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } },
+      ]);
+    } finally {
+      jsonFailure = undefined;
+    }
+  });
+  it("reports one failed attempt for a provider failure and each subsequent complete retry", async () => {
+    const events: AttemptEvent[] = [];
+    const countBefore = requestCount;
+    const execution = {
+      json: false,
+      onAttempt: (event: AttemptEvent) => {
+        events.push(event);
+      },
+    };
+    failure = true;
+    try {
+      await expect(llm.complete("失败", undefined, [], undefined, execution)).rejects.toThrow(
+        "provider unavailable",
+      );
+      await expect(llm.complete("重试", undefined, [], undefined, execution)).rejects.toThrow(
+        "provider unavailable",
+      );
+      expect(requestCount - countBefore).toBe(2);
+      expect(events).toEqual([
+        { phase: "start" },
+        { phase: "end", status: "error", elapsedMs: expect.any(Number) },
+        { phase: "start" },
+        { phase: "end", status: "error", elapsedMs: expect.any(Number) },
+      ]);
+    } finally {
+      failure = false;
+    }
+  });
+  it("reports cancellation for an in-flight request with a positional AbortSignal", async () => {
+    const controller = new AbortController();
+    const events: AttemptEvent[] = [];
+    const countBefore = requestCount;
+    const receivedRequest = new Promise<void>((resolve) => {
+      arrived = resolve;
+    });
+    const execution = {
+      json: false,
+      onAttempt: (event: AttemptEvent) => {
+        events.push(event);
+      },
+    };
+    stall = true;
+    try {
+      const pending = llm.complete("取消", undefined, [], controller.signal, execution);
+      const rejected = expect(pending).rejects.toThrow();
+      await receivedRequest;
+      controller.abort(new Error("user cancelled"));
+      await rejected;
+      expect(requestCount - countBefore).toBe(1);
+      expect(events).toEqual([
+        { phase: "start" },
+        { phase: "end", status: "cancelled", elapsedMs: expect.any(Number) },
+      ]);
+    } finally {
+      stall = false;
+    }
+  });
+  it("does not dispatch when a start hook rejects and still settles the existing observer", async () => {
+    const events: AttemptEvent[] = [];
+    const outcomes: any[] = [];
+    const countBefore = requestCount;
+    const execution = {
+      json: true,
+      onAttempt: async (event: AttemptEvent) => {
+        events.push(event);
+        if (event.phase === "start")
+          throw Object.assign(new Error("response_format is not supported by budget"), {
+            status: 400,
+          });
+      },
+      observer: {
+        before: async () => "reservation",
+        settle: async (_id: string, outcome: unknown) => {
+          outcomes.push(outcome);
+        },
+      },
+    };
+    await expect(llm.complete("不可发送", undefined, [], undefined, execution)).rejects.toThrow(
+      "budget",
+    );
+    expect(requestCount - countBefore).toBe(0);
+    expect(events).toEqual([{ phase: "start" }]);
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0].status).toBe("error");
+  });
+  it("does not count model construction failures or pre-aborted calls as provider attempts", async () => {
+    const events: AttemptEvent[] = [];
+    const countBefore = requestCount;
+    const execution = {
+      json: false,
+      onAttempt: (event: AttemptEvent) => {
+        events.push(event);
+      },
+    };
+    const missing = new LlmService(new ConfigService({}));
+    await expect(missing.complete("缺少配置", undefined, [], undefined, execution)).rejects.toThrow(
+      "CHAT_API_KEY",
+    );
+    const controller = new AbortController();
+    controller.abort(new Error("already cancelled"));
+    await expect(llm.complete("取消", undefined, [], controller.signal, execution)).rejects.toThrow(
+      "already cancelled",
+    );
+    expect(requestCount - countBefore).toBe(0);
+    expect(events).toEqual([]);
   });
   it("sends the original prompt and configured model with request-scoped key overrides", async () => {
     expect(await llm.complete("原始问题", "request-key")).toBe("模型答案");

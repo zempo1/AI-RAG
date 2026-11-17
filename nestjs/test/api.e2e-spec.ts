@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { IndexingService } from "../src/modules/documents/indexing.service";
 import { TaskQueueRuntime } from "../src/modules/tasks/task-queue.runtime";
 import { agentLlmFixture } from "./helpers/agent-llm.fixture";
+import { MindMapsService } from "../src/modules/mindmaps/mindmaps.service";
 
 describe("existing Vue API contract", () => {
   let app: INestApplication;
@@ -55,7 +56,7 @@ describe("existing Vue API contract", () => {
         agentLlmFixture({
           complete: async (prompt: string) => {
             if (failLlm) throw new Error("upstream unavailable");
-            if (prompt.startsWith("Generate a mind map"))
+            if (prompt.startsWith("你是中文文档知识结构整理助手"))
               return '{"root":{"data":{"text":"测试"},"children":[]}}';
             if (prompt.includes("Flashcard")) return '[{"q":"问题","a":"答案"}]';
             finalCalls++;
@@ -290,15 +291,45 @@ describe("existing Vue API contract", () => {
     const map = await request(app.getHttpServer())
       .post("/api/mindmaps/generate")
       .set(auth())
-      .send({ documentId: doc })
+      .send({ documentId: doc, requestId: randomUUID() })
+      .expect(202);
+    await app.get(MindMapsService).process(map.body.data.taskId);
+    const task = await request(app.getHttpServer())
+      .get(`/api/tasks/${map.body.data.taskId}`)
+      .set(auth())
       .expect(200);
-    const id = map.body.data.id;
-    expect(JSON.parse(map.body.data.data).root.data.text).toBe("测试");
+    const id = task.body.data.mindmapResult.mindMapId;
+    const detail = await request(app.getHttpServer())
+      .get(`/api/mindmaps/${id}`)
+      .set(auth())
+      .expect(200);
+    expect(JSON.parse(detail.body.data.data).root.data.text).toBe("测试");
     await request(app.getHttpServer())
       .put(`/api/mindmaps/${id}`)
       .set(auth())
       .send({ data: '{"root":{"data":{"text":"修改"},"children":[]}}' })
       .expect(200);
+    // Exercise the real HTTP parser above Nest's old 100KiB default.
+    await request(app.getHttpServer())
+      .put(`/api/mindmaps/${id}`)
+      .set(auth())
+      .send({
+        data: JSON.stringify({
+          root: { data: { text: "修改" } },
+          theme: { note: "x".repeat(2 * 1024 * 1024 - 200) },
+        }),
+      })
+      .expect(200);
+    await request(app.getHttpServer())
+      .put(`/api/mindmaps/${id}`)
+      .set(auth())
+      .send({
+        data: JSON.stringify({
+          root: { data: { text: "修改" } },
+          theme: { note: "x".repeat(2 * 1024 * 1024) },
+        }),
+      })
+      .expect(413);
     await request(app.getHttpServer()).get(`/api/mindmaps/${id}`).set(auth()).expect(200);
     await request(app.getHttpServer()).delete(`/api/mindmaps/${id}`).set(auth()).expect(200);
   });

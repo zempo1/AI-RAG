@@ -30,6 +30,8 @@ import { runWithTaskModels } from "../model-settings/model-runtime";
 
 class Superseded extends Error {}
 class DependencyPending extends Error {}
+class LeaseBusy extends Error {}
+const INDEX_LEASE_MS = 60000;
 const wallTime = (value: string) => Date.parse(value.replace(" ", "T") + "Z");
 type IndexBlock = ParsedBlock & { retrievalMetadata?: Record<string, unknown> };
 type Count = { completed: number; total: number | null };
@@ -79,6 +81,10 @@ export class IndexingService {
     }
     // 每次执行领取独立令牌；后续写状态前核对令牌，防止旧 Worker 覆盖新执行结果。
     const token = randomUUID();
+    let heartbeat: NodeJS.Timeout | undefined;
+    let beating: Promise<void> | undefined;
+    let claimed = false;
+    const startedAt = Date.now();
     try {
       await this.store.transaction(async (tx) => {
         await tx.lock("knowledgeBases", task!.knowledgeBaseId);
@@ -86,6 +92,25 @@ export class IndexingService {
         task = await tx.lock("tasks", id);
         if (!task || terminalTask(task.status)) throw new Superseded();
         if (task.kind === "index") await this.guard(task, undefined, tx);
+        if (task.kind === "index") {
+          if (task.executionToken && task.payload?.indexLeaseUntil > Date.now())
+            throw new LeaseBusy();
+          attempt = Math.max(attempt, Number(task.attempts || 0) + 1);
+          if (attempt > 3) {
+            task = await tx.save("tasks", {
+              id,
+              status: "failed",
+              stage: "failed",
+              retryable: 1,
+              executionToken: null,
+              error: "索引自动恢复次数已达上限，请手动重试",
+              updatedAt: now(),
+              payload: { ...task.payload, indexLeaseUntil: 0 },
+            });
+            await tx.save("documents", { id: task.documentId, status: "failed" });
+            return;
+          }
+        }
         task = await tx.save("tasks", {
           id,
           executionToken: token,
@@ -93,11 +118,37 @@ export class IndexingService {
           attempts: attempt,
           updatedAt: now(),
           error: null,
+          ...(task.kind === "index"
+            ? { payload: { ...task.payload, indexLeaseUntil: Date.now() + INDEX_LEASE_MS } }
+            : {}),
         });
       });
+      if (task?.executionToken !== token) return;
+      claimed = true;
+      if (task!.kind === "index") {
+        heartbeat = setInterval(() => {
+          if (beating) return;
+          beating = this.store
+            .transaction(async (tx) => {
+              const current = await tx.lock("tasks", id);
+              if (current?.executionToken === token && !terminalTask(current.status))
+                await tx.save("tasks", {
+                  id,
+                  payload: { ...current.payload, indexLeaseUntil: Date.now() + INDEX_LEASE_MS },
+                  updatedAt: now(),
+                });
+            })
+            .catch(() => {})
+            .finally(() => {
+              beating = undefined;
+            });
+        }, 10000);
+        heartbeat.unref();
+      }
       if (task!.kind === "index") await this.index(task!, token, report);
       else await this.cleanup(task!, token);
     } catch (error) {
+      if (error instanceof LeaseBusy) return "waiting" as const;
       if (error instanceof DependencyPending) {
         await this.store.transaction(async (tx) => {
           const current = await tx.lock("tasks", id);
@@ -140,6 +191,7 @@ export class IndexingService {
             updatedAt: now(),
           });
           if (
+            claimed &&
             task!.kind === "index" &&
             doc &&
             !doc.deletedAt &&
@@ -153,16 +205,90 @@ export class IndexingService {
       });
       if (!canceled && (await this.store.get("tasks", id))?.status !== "canceled") throw error;
     } finally {
+      clearInterval(heartbeat);
+      await beating;
       if (task) {
         await this.store.transaction(async (tx) => {
           const current = await tx.lock("tasks", id);
           if (current?.executionToken === token)
-            await tx.save("tasks", { id, executionToken: null, updatedAt: now() });
+            await tx.save("tasks", {
+              id,
+              executionToken: null,
+              updatedAt: now(),
+              payload: { ...current.payload, indexLeaseUntil: 0 },
+            });
+          // Each owned attempt is persisted even when the catch path has released its token.
+          if (
+            claimed &&
+            task!.kind === "index" &&
+            current &&
+            current.attempts === attempt &&
+            (!current.executionToken || current.executionToken === token) &&
+            !(current.payload?.indexAttempts || []).some((a: any) => a.token === token)
+          ) {
+            await tx.save("tasks", {
+              id,
+              payload: {
+                ...current.payload,
+                indexLeaseUntil: 0,
+                indexAttempts: [
+                  ...(current.payload?.indexAttempts || []),
+                  {
+                    token,
+                    attempt,
+                    startedAt,
+                    elapsedMs: Date.now() - startedAt,
+                    status: current.status,
+                    error: current.error,
+                  },
+                ].slice(-20),
+              },
+            });
+          }
         });
         if (task.kind === "index") await this.ensureDeletedCleanup(task);
         await this.tasks.refreshParent(task.parentTaskId);
       }
     }
+  }
+
+  /** Recover the SQL outbox after a lost/stalled Redis delivery, without resetting its budget. */
+  async recoverDelivery(id: number, generation: number): Promise<boolean> {
+    const initial = await this.store.get("tasks", id);
+    if (!initial || initial.kind !== "index") return false;
+    return this.store.transaction(async (tx) => {
+      await tx.lock("knowledgeBases", initial.knowledgeBaseId);
+      const doc = await tx.lock("documents", initial.documentId);
+      const task = await tx.lock("tasks", id);
+      if (
+        !task ||
+        terminalTask(task.status) ||
+        task.dispatchGeneration !== generation ||
+        task.payload?.indexLeaseUntil > Date.now()
+      )
+        return false;
+      const recoveries = Number(task.payload?.indexRecoveries || 0) + 1;
+      const exhausted = task.attempts >= 3 || recoveries > 3;
+      await tx.save("tasks", {
+        id,
+        status: exhausted ? "failed" : "queued",
+        stage: exhausted ? "failed" : "queued",
+        executionToken: null,
+        retryable: 1,
+        dispatchGeneration: generation + 1,
+        updatedAt: now(),
+        error: exhausted ? "索引自动恢复次数已达上限，请手动重试" : task.error,
+        payload: {
+          ...task.payload,
+          indexLeaseUntil: 0,
+          indexRecoveries: recoveries,
+          indexRetryAfter: Date.now() + Math.min(30000, 1000 * 2 ** recoveries),
+        },
+      });
+      if (doc && !doc.deletedAt && doc.desiredIndexRevisionId === task.indexRevisionId)
+        await tx.save("documents", { id: doc.id, status: exhausted ? "failed" : "queued" });
+      return true;
+    });
   }
 
   // 统一检查文档是否删除、目标版本是否变更、任务是否取消；耗时步骤之间也要检查。
@@ -273,6 +399,9 @@ export class IndexingService {
       this.logger.log(
         JSON.stringify({
           event: "pdf-index-published",
+          taskId: task.id,
+          documentId: task.documentId,
+          attempt: task.attempts,
           elapsedMs: Date.now() - started,
           chunks: content.count,
           ...content.metrics,
@@ -353,6 +482,27 @@ export class IndexingService {
       return progressQueue;
     };
     const context: ParseContext = {
+      taskId: task.id,
+      attempt: task.attempts,
+      modelAttempt: async (event) => {
+        await this.withExecution(task, token, async (tx) => {
+          const latest = (await tx.get("tasks", task.id))!;
+          const d = { ...(latest.payload?.indexDiagnostics || {}) };
+          if (event.phase === "start") d.modelCalls = (d.modelCalls || 0) + 1;
+          else {
+            d.modelElapsedMs = (d.modelElapsedMs || 0) + event.elapsedMs;
+            if (event.usage) {
+              d.inputTokens = (d.inputTokens || 0) + event.usage.inputTokens;
+              d.outputTokens = (d.outputTokens || 0) + event.usage.outputTokens;
+              d.totalTokens = (d.totalTokens || 0) + event.usage.totalTokens;
+            } else d.usageMissingCalls = (d.usageMissingCalls || 0) + 1;
+          }
+          await tx.save("tasks", {
+            id: task.id,
+            payload: { ...latest.payload, indexDiagnostics: d },
+          });
+        });
+      },
       userId: task.userId,
       documentId: task.documentId,
       versionId: version.id,
@@ -376,11 +526,9 @@ export class IndexingService {
       const chunks = await tx.list("chunks", { indexRevisionId: revision.id });
       return new Map(chunks.map((chunk) => [chunk.chunkIndex, chunk.id]));
     });
-    // 重试重写隐藏版本，清掉上次执行可能留下的尾部向量。
-    if (existing.size)
-      await this.withVectorExecution(task, token, () =>
-        Promise.resolve(this.vectors.removeRevision(revision.id, task.userId, profile)),
-      );
+    // Acknowledged batches are reusable; deterministic point ids overwrite changed batches.
+    // Obsolete tail points are removed only after the complete new stream is known.
+    const checkpoints = task.payload?.indexBatches || {};
     const batchSize = profile.provider !== "local" ? REMOTE_EMBEDDING_BATCH_SIZE : 16;
     const concurrency = profile.provider !== "local" ? REMOTE_EMBEDDING_CONCURRENCY : 1;
     const metrics = {
@@ -390,6 +538,7 @@ export class IndexingService {
       cacheHits: 0,
       startedWhileParsing: 0,
       vectorWriteMs: 0,
+      resumedBatches: 0,
     };
     const pending = new Set<Promise<void>>();
     let batch: IndexBlock[] = [];
@@ -434,6 +583,8 @@ export class IndexingService {
           }
           return result;
         });
+        const batchHash = digest(JSON.stringify({ profile, segments }));
+        for (const segment of segments) segment.indexContentHash = batchHash;
         checkPending();
         if (parseDone && lastStage.stage !== "indexing")
           await update("embedding", counters.embedding.completed, counters.embedding.total);
@@ -446,15 +597,32 @@ export class IndexingService {
         counters.embedding.completed += segments.length;
         // 文档级向量锁让重投和清理等待当前 RPC，数据库行锁在网络调用前已释放。
         const writeStarted = Date.now();
-        await this.withVectorExecution(task, token, async () =>
-          retryTransientRequest(async () => {
+        await this.withVectorExecution(task, token, async () => {
+          if (
+            checkpoints[offset] === batchHash &&
+            (await this.vectors.hasSegments(segments, profile))
+          ) {
+            metrics.resumedBatches++;
+            return;
+          }
+          await retryTransientRequest(async () => {
             await checkOwned();
             return this.vectors.addAll(vectors, segments, profile);
           }, controller.signal).catch((error) => {
             controller.signal.throwIfAborted();
             throw new Error("写入向量库失败：" + errorMessage(error), { cause: error });
-          }),
-        );
+          });
+        });
+        await this.withExecution(task, token, async (tx) => {
+          const latest = (await tx.get("tasks", task.id))!;
+          await tx.save("tasks", {
+            id: task.id,
+            payload: {
+              ...latest.payload,
+              indexBatches: { ...latest.payload?.indexBatches, [offset]: batchHash },
+            },
+          });
+        });
         metrics.vectorWriteMs += Date.now() - writeStarted;
         firstVector ||= vectors[0];
         counters.indexing.completed += segments.length;
@@ -511,6 +679,9 @@ export class IndexingService {
       await Promise.all(pending);
       checkPending();
       await checkOwned();
+      await this.withVectorExecution(task, token, () =>
+        Promise.resolve(this.vectors.pruneRevisionTail(revision.id, task.userId, count, profile)),
+      );
       // 发布前确认写入的新索引可被实际检索。
       const check = await this.vectors.search(firstVector!, 1, 0, {
         userId: task.userId,

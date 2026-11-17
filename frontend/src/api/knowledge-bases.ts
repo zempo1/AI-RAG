@@ -13,6 +13,21 @@ export interface Category {
   knowledgeBaseId: number;
 }
 export interface ProcessingTask {
+  mindmapResult?: { mindMapId: number; coverage?: Record<string, unknown> };
+  mindmapProgress?: {
+    strategy: "direct" | "batched";
+    modelCalls: number;
+    cacheHits: number;
+    startedAt: string;
+    elapsedMs: number;
+    failedBatches?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    usageReportedCalls?: number;
+    usageMissingCalls?: number;
+    usageScope?: "pipeline";
+  };
   agentProgress?: AgentProgress;
   indexProgress?: Record<
     "pages" | "regions" | "embedding" | "indexing",

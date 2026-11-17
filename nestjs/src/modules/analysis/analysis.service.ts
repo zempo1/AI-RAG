@@ -53,10 +53,21 @@ export class AnalysisService {
     );
   }
 
-  async list(type: string, userId: number) {
+  async list(type: string, userId: number, knowledgeBaseId?: number) {
+    let allowed: Set<number> | undefined;
+    if (knowledgeBaseId !== undefined) {
+      const kb = await this.store.get("knowledgeBases", knowledgeBaseId);
+      if (!kb || kb.userId !== userId || kb.deletedAt) throw new ApiError(404, "知识库不存在");
+      allowed = new Set(
+        (await this.store.list("documents", { userId, knowledgeBaseId }))
+          .filter((doc) => !doc.deletedAt)
+          .map((doc) => doc.id),
+      );
+    }
     const sources = new Map<number, Promise<Row | undefined>>();
     return Promise.all(
       (await this.store.list("analyses", { type, userId }))
+        .filter((row) => !allowed || allowed.has(row.documentId))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)
         .map(async (row) => {
           if (row.documentId && !sources.has(row.documentId))

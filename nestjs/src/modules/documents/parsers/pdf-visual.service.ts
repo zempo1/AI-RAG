@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { LlmService } from "../../llm/llm.service";
-import { ModelOutputError } from "../../llm/llm.types";
+import { ModelOutputError, ModelAttemptEvent } from "../../llm/llm.types";
 import { PageAssetsService, ParseScope } from "../page-assets.service";
 import { ContentType, PageImageRef, RegionImageRef } from "./parsed-document";
 import { PdfRegion } from "./pdf-layout";
@@ -27,7 +27,9 @@ import {
 import { locateAdaptiveRegions } from "./adaptive-layout";
 import { RegionBox } from "./parsed-document";
 import { missingOcrText } from "./pdf-ocr-coverage";
-import { retryTransientRequest } from "../../../common/transient-request";
+import { isTransientRequestError } from "../../../common/transient-request";
+import { setTimeout as pause } from "node:timers/promises";
+import { ParsedPageCache } from "./parsed-page-cache";
 const imagePools = new Map<number, VisionScheduler>();
 const fallbackImageSlot = new VisionScheduler(1);
 const sessionFlights = new WeakMap<object, Map<string, Promise<any>>>();
@@ -66,6 +68,11 @@ export interface VisualPage {
   stats?: { textPages: number; regions: number; scanPages: number; fallbackPages: number };
 }
 export interface ParseContext extends ParseScope {
+  analysisManifest?: (manifest: string) => void;
+  deferTransientRetry?: boolean;
+  taskId?: number;
+  attempt?: number;
+  modelAttempt?: (event: ModelAttemptEvent) => Promise<void>;
   sourceHash?: string;
   progress?: (counts: {
     pages: number;
@@ -118,6 +125,34 @@ export class PdfVisualService {
 
   get enabled() {
     return this.config.get("VISION_ENABLED") !== false;
+  }
+
+  async parsedPages(scope: ParseContext): Promise<ParsedPageCache | undefined> {
+    if (!this.config.get("PAGE_ASSETS_DIR") || !scope.sourceHash) return;
+    const identity = sha256(
+      JSON.stringify({
+        parser: "parsed-pages-v2",
+        source: scope.sourceHash,
+        profile: this.profile(),
+        analysisUrl: this.config.get("PDF_ANALYSIS_URL") || "http://127.0.0.1:8091",
+      }),
+    );
+    return new ParsedPageCache(
+      this.assets.directory(scope, identity),
+      async (ref) => {
+        if (
+          ref.versionId !== scope.versionId ||
+          !Number.isSafeInteger(ref.page) ||
+          ref.page < 1 ||
+          !/^[a-f0-9]{64}$/.test(ref.profile) ||
+          ("regionId" in ref && !/^[a-f0-9]{24}$/.test(ref.regionId))
+        )
+          return;
+        const file = "regionId" in ref ? `${ref.page}-${ref.regionId}.png` : `${ref.page}.png`;
+        return join(this.assets.directory(scope, ref.profile), file);
+      },
+      async (manifest) => (await analysisHealth(this.analysis, scope)).manifest === manifest,
+    );
   }
 
   private profile(analysisProfile?: string) {
@@ -254,7 +289,7 @@ export class PdfVisualService {
     let next = 0,
       failure: unknown;
     const worker = async () => {
-      while (next < regions.length && !failure) {
+      while (next < regions.length) {
         const index = next++;
         try {
           await scope.guard?.();
@@ -507,70 +542,114 @@ export class PdfVisualService {
     const signal = scope.signal
       ? AbortSignal.any([scope.signal, deadline.signal])
       : deadline.signal;
-    let release: (() => void) | undefined;
     try {
-      release = await pool.acquire(signal, scope.beforeRequest);
-      const queueMs = Date.now() - queued;
       const request = async (repair = false) => {
         signal.throwIfAborted();
         await scope.guard?.();
         scope.beforeRequest?.();
-        await pool.ready(signal);
-        signal.throwIfAborted();
-        scope.beforeRequest?.();
-        pool.requests++;
-        pool.requestPeak = Math.max(pool.requestPeak, pool.requests);
-        const started = Date.now();
-        let status = "error";
-        this.logger.log(
-          JSON.stringify({
-            event: "pdf-vision-request-start",
-            page,
-            region: index,
-            repair,
-            queueMs,
-            remainingMs: Math.max(0, budgetMs - (started - queued)),
-          }),
+        const release = await pool.acquire(signal, scope.beforeRequest);
+        const queueMs = Date.now() - queued;
+        const requestMs = Math.min(
+          Number(this.config.get("VISION_REQUEST_TIMEOUT_MS") || 60000),
+          Math.max(1, budgetMs - queueMs),
         );
+        const requestDeadline = AbortSignal.timeout(requestMs);
+        const requestSignal = AbortSignal.any([signal, requestDeadline]);
+        const requestId = randomUUID();
         try {
-          const result = await this.llm.complete(
-            PDF_VISION_PROMPT +
-              (repair ? "\n上次输出格式校验失败。请只返回符合约定的 JSON 对象。" : "") +
-              "\n当前输入：局部图片或图表，勿推测裁剪外的内容。\n附近原生文字（只作为上下文，不要重复输出）：\n" +
-              region.context,
-            undefined,
-            [
-              {
-                label: `第${page}页`,
-                dataUrl: "data:image/png;base64," + bytes.toString("base64"),
-              },
-            ],
-            signal,
-            { json: true, timeoutMs: Math.max(1, budgetMs - (Date.now() - queued)) },
-          );
           signal.throwIfAborted();
-          status = "success";
-          return result;
-        } catch (error) {
-          pool.cooldown(error);
-          throw error;
-        } finally {
-          pool.requests--;
+          scope.beforeRequest?.();
+          pool.requests++;
+          pool.requestPeak = Math.max(pool.requestPeak, pool.requests);
+          const started = Date.now();
+          let status = "error";
           this.logger.log(
             JSON.stringify({
-              event: "pdf-vision-request",
-              mode: "adaptive",
+              event: "pdf-vision-request-start",
+              taskId: scope.taskId,
+              documentId: scope.documentId,
+              attempt: scope.attempt,
+              requestId,
               page,
               region: index,
               repair,
-              status,
               queueMs,
-              imageBytes: bytes.length,
-              elapsedMs: Date.now() - started,
-              concurrency: this.concurrency,
-              peakConcurrency: pool.requestPeak,
+              remainingMs: Math.max(0, budgetMs - (started - queued)),
             }),
           );
+          try {
+            const result = await this.llm.complete(
+              PDF_VISION_PROMPT +
+                (repair ? "\n上次输出格式校验失败。请只返回符合约定的 JSON 对象。" : "") +
+                "\n当前输入：局部图片或图表，勿推测裁剪外的内容。\n附近原生文字（只作为上下文，不要重复输出）：\n" +
+                region.context,
+              undefined,
+              [
+                {
+                  label: `第${page}页`,
+                  dataUrl: "data:image/png;base64," + bytes.toString("base64"),
+                },
+              ],
+              requestSignal,
+              {
+                json: true,
+                timeoutMs: requestMs,
+                onAttempt: async (event) => {
+                  await scope.modelAttempt?.(event);
+                  if (event.phase === "end")
+                    this.logger.log(
+                      JSON.stringify({
+                        event: "pdf-vision-usage",
+                        taskId: scope.taskId,
+                        documentId: scope.documentId,
+                        attempt: scope.attempt,
+                        requestId,
+                        page,
+                        region: index,
+                        status: event.status,
+                        elapsedMs: event.elapsedMs,
+                        usage: event.usage ?? null,
+                      }),
+                    );
+                },
+              },
+            );
+            requestSignal.throwIfAborted();
+            status = "success";
+            return result;
+          } catch (error) {
+            signal.throwIfAborted();
+            if (requestDeadline.aborted) {
+              const timeout = new Error(`视觉请求单次超时（${requestMs}ms）`);
+              timeout.name = "TimeoutError";
+              throw timeout;
+            }
+            pool.cooldown(error);
+            throw error;
+          } finally {
+            pool.requests--;
+            this.logger.log(
+              JSON.stringify({
+                event: "pdf-vision-request",
+                taskId: scope.taskId,
+                documentId: scope.documentId,
+                attempt: scope.attempt,
+                requestId,
+                mode: "adaptive",
+                page,
+                region: index,
+                repair,
+                status,
+                queueMs,
+                imageBytes: bytes.length,
+                elapsedMs: Date.now() - started,
+                concurrency: this.concurrency,
+                peakConcurrency: pool.requestPeak,
+              }),
+            );
+          }
+        } finally {
+          release();
         }
       };
       const decode = (raw: string) => {
@@ -609,13 +688,27 @@ export class PdfVisualService {
         }
       };
       try {
-        return decode(await retryTransientRequest(request, signal));
+        let raw: string;
+        try {
+          raw = await request();
+        } catch (error) {
+          signal.throwIfAborted();
+          if (!isTransientRequestError(error) && Number((error as any)?.status) !== 429)
+            throw error;
+          if (scope.deferTransientRetry) throw error;
+          await pause(350, undefined, { signal });
+          raw = await request();
+        }
+        return decode(raw);
       } catch (error) {
         signal.throwIfAborted();
+        // Repeating the same image/prompt cannot repair an exhausted output budget.
+        if (error instanceof ModelOutputError && error.reason === "length") throw error;
         if (!(error instanceof VisionOutputError || error instanceof ModelOutputError)) throw error;
         return decode(await request(true));
       }
     } catch (error) {
+      if (signal.aborted) error = signal.reason;
       if (!scope.signal?.aborted) {
         markPdfFailure(error, page, index);
         scope.failed?.(error);
@@ -623,7 +716,6 @@ export class PdfVisualService {
       throw error;
     } finally {
       clearTimeout(timer);
-      release?.();
     }
   }
 

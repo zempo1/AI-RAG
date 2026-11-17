@@ -1,6 +1,17 @@
 import { GenerateMindMapDto } from "./dto/generate-mindmap.dto";
 import { UpdateMindMapDto } from "./dto/update-mindmap.dto";
-import { Body, Controller, Delete, Get, Headers, Param, Post, Put } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  Param,
+  Post,
+  Put,
+  Query,
+  HttpCode,
+} from "@nestjs/common";
 
 import { MindMapsService } from "./mindmaps.service";
 import { UserId } from "../auth/auth.guard";
@@ -11,12 +22,18 @@ export class MindMapsController {
   constructor(private readonly service: MindMapsService) {}
 
   @Post("generate")
+  @HttpCode(202)
   generate(
     @Body() dto: GenerateMindMapDto,
     @UserId() user: number,
     @Headers("x-api-key") key?: string,
   ) {
-    return this.service.generate(user, dto?.documentId, key);
+    return this.service.generate(user, dto.documentId, key, dto.requestId);
+  }
+
+  @Get("workspace")
+  workspace(@UserId() user: number, @Query("knowledgeBaseId", IdPipe) knowledgeBaseId: number) {
+    return this.service.workspace(user, knowledgeBaseId);
   }
 
   @Get()

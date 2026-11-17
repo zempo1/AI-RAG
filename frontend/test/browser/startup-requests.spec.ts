@@ -28,7 +28,7 @@ test("首屏每个初始化请求只发送一次，点击历史再加载正文",
   await page.waitForLoadState("networkidle");
   for (const key of [
     "/api/chats",
-    "/api/mindmaps",
+    "/api/mindmaps/workspace?knowledgeBaseId=2",
     "/api/knowledge-bases",
     "/api/knowledge-bases/2/documents?page=1&pageSize=100",
   ])
@@ -134,9 +134,13 @@ test("切换对话仅加载历史及必要来源，不加载隐藏的管理数�
   await expect(page.locator(".markdown-body")).toContainText("会话2");
   await expect
     .poll(() => requests)
-    .toEqual(["/api/chats/2", "/api/knowledge-bases/2/documents?page=1&pageSize=100"]);
+    .toEqual([
+      "/api/chats/2",
+      "/api/knowledge-bases/2/documents?page=1&pageSize=100",
+      "/api/mindmaps/workspace?knowledgeBaseId=2",
+    ]);
   await page.waitForLoadState("networkidle");
-  expect(requests).toHaveLength(2);
+  expect(requests).toHaveLength(3);
 });
 
 test("来源下拉展开复用在途请求", async ({ page }) => {

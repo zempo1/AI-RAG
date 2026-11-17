@@ -18,6 +18,42 @@ export function embeddingFingerprint(config: ConfigService) {
 
 @Injectable()
 export class QdrantVectorStore extends VectorStore {
+  async hasSegments(
+    segments: Segment[],
+    profile: ModelProfile = this.defaultProfile,
+  ): Promise<boolean> {
+    const points = await this.client.retrieve(await this.ready(profile), {
+      ids: segments.map(pointId),
+      with_payload: true,
+      with_vector: false,
+    });
+    return segments.every((segment) =>
+      points.some(
+        (point) =>
+          point.id === pointId(segment) &&
+          point.payload?.userId === segment.userId &&
+          point.payload?.indexRevisionId === segment.indexRevisionId &&
+          point.payload?.indexContentHash === segment.indexContentHash,
+      ),
+    );
+  }
+  async pruneRevisionTail(
+    indexRevisionId: number,
+    userId: number,
+    count: number,
+    profile: ModelProfile = this.defaultProfile,
+  ) {
+    await this.client.delete(await this.ready(profile), {
+      wait: true,
+      filter: {
+        must: [
+          { key: "userId", match: { value: userId } },
+          { key: "indexRevisionId", match: { value: indexRevisionId } },
+          { key: "chunkIndex", range: { gte: count } },
+        ],
+      },
+    });
+  }
   private readonly client: QdrantClient;
   private readonly prefix: string;
   private readonly defaultProfile: ModelProfile;

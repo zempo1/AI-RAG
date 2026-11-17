@@ -101,7 +101,7 @@ export function validateOcr(raw: any): OcrResult {
 const sessionManifests = new WeakMap<PdfAnalysisClient, WeakMap<object, Promise<AnalysisHealth>>>();
 export function analysisHealth(
   client: PdfAnalysisClient,
-  scope: ParseScope & { signal?: AbortSignal },
+  scope: ParseScope & { signal?: AbortSignal; analysisManifest?: (manifest: string) => void },
 ) {
   let sessions = sessionManifests.get(client);
   if (!sessions) {
@@ -114,7 +114,10 @@ export function analysisHealth(
     health = client.health(scope.signal);
     sessions.set(key, health);
   }
-  return health;
+  return health.then((value) => {
+    scope.analysisManifest?.(value.manifest);
+    return value;
+  });
 }
 
 export function verifyAnalysisManifest(result: { manifest: string }, expected: string) {

@@ -139,7 +139,6 @@
             </el-icon>
           </button>
         </div>
-        <div class="disclaimer">AI 可能会犯错。请核对重要信息。</div>
       </div>
     </div>
 

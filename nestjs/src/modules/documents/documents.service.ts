@@ -400,11 +400,17 @@ export class DocumentsService {
 
   private async tombstone(tx: Store, doc: Row) {
     for (const task of await tx.list("tasks", { documentId: doc.id })) {
-      if (task.kind === "index" && !terminalTask(task.status))
+      if (["index", "mindmap"].includes(task.kind) && !terminalTask(task.status))
         await tx.save("tasks", {
           id: task.id,
           status: "canceled",
           stage: "canceled",
+          ...(task.kind === "mindmap"
+            ? {
+                executionToken: null,
+                payload: { ...task.payload, credential: null, modelSnapshot: null },
+              }
+            : {}),
           updatedAt: now(),
         });
     }

@@ -1,10 +1,13 @@
-import { IsInt, IsOptional, Min } from "class-validator";
+import { IsInt, IsString, Length, Min } from "class-validator";
 import { Type } from "class-transformer";
 
 export class GenerateMindMapDto {
-  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  documentId?: number | null;
+  documentId: number;
+
+  @IsString()
+  @Length(1, 100)
+  requestId: string;
 }
