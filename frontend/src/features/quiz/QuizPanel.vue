@@ -120,13 +120,14 @@
               :key="item.question.id"
               @click="navigate(item.index)"
             >
-              <span>第 {{ item.index + 1 }} 题</span>{{ item.question.stem
-              }}<span aria-hidden="true">→</span>
+              <span>第 {{ item.index + 1 }} 题</span>
+              <span class="quiz-result-wrong-stem">{{ item.question.stem }}</span>
+              <span aria-hidden="true">→</span>
             </button>
           </div>
           <div class="quiz-result-buttons">
             <button @click="navigate(0)">查看全部解析</button
-            ><button class="quiz-panel-primary" @click="restartPractice">
+            ><button class="quiz-restart" @click="restartPractice">
               <el-icon><RefreshRight /></el-icon>重新练习
             </button>
           </div>
@@ -176,17 +177,18 @@
             >
               <span class="quiz-option-letter">{{ option.id }}</span
               ><span class="quiz-option-content"
-                ><span class="quiz-option-text">{{ option.text }}</span
-                ><span
-                  v-if="answer?.submitted && question.correctOptionIds?.includes(option.id)"
-                  class="quiz-option-result"
-                  ><el-icon><Check /></el-icon>正确答案{{
-                    selected.includes(option.id) ? " · 你的选择" : ""
-                  }}</span
-                ><span
-                  v-else-if="answer?.submitted && selected.includes(option.id)"
-                  class="quiz-option-result"
-                  ><el-icon><Close /></el-icon>你的选择</span
+                ><span class="quiz-option-text"
+                  >{{ option.text }} <span
+                    v-if="answer?.submitted && question.correctOptionIds?.includes(option.id)"
+                    class="quiz-option-result"
+                    ><el-icon><Check /></el-icon>正确答案{{
+                      selected.includes(option.id) ? " · 你的选择" : ""
+                    }}</span
+                  ><span
+                    v-else-if="answer?.submitted && selected.includes(option.id)"
+                    class="quiz-option-result"
+                    ><el-icon><Close /></el-icon>你的选择</span
+                  ></span
                 ><span v-if="answer?.submitted" class="quiz-option-explanation">{{
                   question.optionExplanations?.[option.id]
                 }}</span></span

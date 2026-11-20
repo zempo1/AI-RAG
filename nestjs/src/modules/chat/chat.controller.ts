@@ -81,6 +81,7 @@ export class ChatController {
           {
             documentIds: body.documentIds,
             mode: body.mode || "auto",
+            quizContext: body.quizContext,
             requestId,
             chatId: started.chat.id,
             history: started.chat.messages || [],
@@ -125,6 +126,7 @@ export class ChatController {
       onProgress,
       signal,
       onAgentStep,
+      quizContext: body.quizContext,
     });
     // 全文证据超出上下文时转为后台任务，HTTP/SSE 返回受理信息，前端随后轮询。
     if (context.requiresAsync) {

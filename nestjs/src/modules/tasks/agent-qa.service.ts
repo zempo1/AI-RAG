@@ -7,8 +7,14 @@ import { ApiError } from "../../common/api-error";
 import { HistoryService } from "../history/history.service";
 import { KnowledgeBasesService } from "../knowledge-bases/knowledge-bases.service";
 import { AgentService } from "../agent/agent.service";
+import type { AgentOptions } from "../agent/agent.types";
 import { INTERRUPT } from "@langchain/langgraph-checkpoint";
-import { AgentExecutionRevoked, agentThreadId } from "../agent/agent-graph-owner";
+import {
+  AGENT_LEASE_MS,
+  AGENT_LEASE_RENEW_MS,
+  AgentExecutionRevoked,
+  agentThreadId,
+} from "../agent/agent-graph-owner";
 import { MysqlAgentCheckpointer } from "../agent/mysql-agent-checkpointer";
 import { sealQaCredential, openQaCredential } from "./qa-credentials";
 import { runWithTaskModels, sealRuntimeModels } from "../model-settings/model-runtime";
@@ -23,6 +29,7 @@ interface AgentRequest {
   mode?: string;
   documentIds?: number[];
   apiKey?: string;
+  quizContext?: AgentOptions["quizContext"];
 }
 const ended = (status: string) =>
   ["completed", "partial_failed", "failed", "canceled"].includes(status);
@@ -139,12 +146,13 @@ export class AgentQaTasksService {
           requestId: input.requestId,
           fingerprint: input.fingerprint,
           foreground: true,
-          leaseUntil: Date.now() + 300000,
+          leaseUntil: Date.now() + AGENT_LEASE_MS,
           graphVersion: 2,
           input: {
             question: input.question,
             documentIds: input.documentIds,
             mode: input.mode || "auto",
+            ...(input.quizContext ? { quizContext: input.quizContext } : {}),
             history: messages,
           },
           credential: sealQaCredential(this.config.getOrThrow("JWT_SECRET"), input.apiKey),
@@ -449,18 +457,18 @@ export class AgentQaTasksService {
       checking = true;
       void this.guard(id, token, signal)
         .then(async (task) => {
-          if (Date.now() - renewing < 30000) return;
-          renewing = Date.now();
+          if (Date.now() - renewing < AGENT_LEASE_RENEW_MS) return;
           await this.store.transaction(async (tx) => {
             await tx.lock("knowledgeBases", task.knowledgeBaseId);
             const row = await tx.lock("tasks", id);
             this.assertOwner(row, token);
             await tx.save("tasks", {
               id,
-              payload: { ...row.payload, leaseUntil: Date.now() + 300000 },
+              payload: { ...row.payload, leaseUntil: Date.now() + AGENT_LEASE_MS },
               updatedAt: now(),
             });
           });
+          renewing = Date.now();
         })
         .catch((error) => abort.abort(error))
         .finally(() => {
@@ -535,7 +543,7 @@ export class AgentQaTasksService {
           graphVersion: 2,
           graphThreadId: agentThreadId(id),
           foreground: false,
-          leaseUntil: Date.now() + 300000,
+          leaseUntil: Date.now() + AGENT_LEASE_MS,
         },
       });
     });
