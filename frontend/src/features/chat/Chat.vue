@@ -7,7 +7,6 @@
     <QuestionSources
       :knowledge-base-id="knowledgeBaseId"
       v-model:document-ids="selectedDocumentIds"
-      v-model:mode="mode"
       :disabled="loading || readOnly"
     />
     <div class="messages-viewport">
@@ -15,10 +14,10 @@
         <div ref="messagesContent" class="messages-content">
           <div v-if="messages.length === 0" class="empty-state">
             <div class="logo-container">
-              <div class="logo">AI</div>
+              <div class="logo" aria-hidden="true">屿</div>
             </div>
-            <h1>有什么我可以帮您的吗？</h1>
-            <p class="subtitle">直接提问，或选择文档深入交流</p>
+            <h1>知屿 · Islet</h1>
+            <p class="subtitle">让每一份知识，都有自己的归处。</p>
           </div>
 
           <div v-for="(msg, index) in messages" :key="index" class="message-row" :class="msg.role">
@@ -186,7 +185,6 @@ const props = defineProps<{ knowledgeBaseId: number | null }>();
 const emit = defineEmits(["chat-created", "history-loaded", "open-source", "availability-change"]);
 const readOnly = ref(false);
 const selectedDocumentIds = ref<number[]>([]),
-  mode = ref<QaMode>("auto"),
   debugRunId = ref<number | null>(null);
 const activeTask = ref<ProcessingTask | null>(null),
   taskConnectionError = ref(false);
@@ -252,7 +250,6 @@ function restoreContext(rows: Message[]) {
     .find((m) => m.role === "user" && m.retrievalContext)?.retrievalContext;
   if (context) {
     selectedDocumentIds.value = [...(context.documentIds || [])];
-    mode.value = context.mode || "auto";
   }
 }
 function pollTask(task: ProcessingTask, taskChatId: number, currentEpoch: number) {
@@ -474,7 +471,6 @@ const reset = () => {
   cancelError.value = "";
   stopTaskPolling();
   selectedDocumentIds.value = [];
-  mode.value = "auto";
   debugRunId.value = null;
   loading.value = false;
   readOnly.value = false;
@@ -499,12 +495,10 @@ async function sendExternalQuestion(
   // Deleted-library history is read-only. Start a writable conversation without discarding the draft.
   if (readOnly.value) {
     const draft = input.value,
-      sources = [...selectedDocumentIds.value],
-      previousMode = mode.value;
+      sources = [...selectedDocumentIds.value];
     reset();
     input.value = draft;
     selectedDocumentIds.value = sources;
-    mode.value = previousMode;
   }
   void sendMessage({ question, ...options });
   return true;
@@ -541,7 +535,7 @@ const sendMessage = async (external?: { question: string } & ExternalQuestionOpt
 
   const retrievalContext: RetrievalContext = {
     documentIds: [...(supplied?.documentIds ?? selectedDocumentIds.value)],
-    mode: supplied?.mode ?? mode.value,
+    mode: supplied?.mode ?? "auto",
   };
   messages.value.push({ role: "user", content: question, retrievalContext });
   if (!supplied) {

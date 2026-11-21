@@ -6,7 +6,7 @@
           <el-icon><Menu /></el-icon>
         </div>
         <div class="brand" v-show="!isCollapsed">
-          <h2>RAG 问答</h2>
+          <h2>知屿 · Islet</h2>
         </div>
         <div v-if="!isCollapsed" class="settings-icon-wrapper">
           <el-tooltip content="模型设置" placement="bottom">
@@ -82,7 +82,6 @@
         <el-avatar :size="32" class="user-avatar" icon="UserFilled" />
         <div class="user-details" v-show="!isCollapsed">
           <span class="name">{{ username }}</span>
-          <span class="status">专业版</span>
         </div>
         <div class="user-actions" v-if="!isCollapsed">
           <el-tooltip content="账户设置" placement="top">

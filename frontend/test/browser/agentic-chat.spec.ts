@@ -467,7 +467,7 @@ test("leaving an accepted background task never sends cancellation", async ({ pa
   await page.getByPlaceholder("发送消息...").press("Enter");
   await expect(page.getByRole("button", { name: "停止后台任务", exact: true })).toBeEnabled();
   await page.getByText("新对话", { exact: true }).click();
-  await expect(page.getByText("有什么我可以帮您的吗？", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "知屿 · Islet", level: 1 })).toBeVisible();
   await page.goto("about:blank");
   expect(cancelCalls).toBe(0);
 });

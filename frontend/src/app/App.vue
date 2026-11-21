@@ -14,7 +14,7 @@
       id="document-sidebar"
       ref="sidebarRef"
       v-model:collapsed="sidebarCollapsed"
-      :style="{ width: widths.sidebar + 'px', boxSizing: 'border-box', transition: 'none' }"
+      :style="{ width: widths.sidebar + 'px', boxSizing: 'border-box' }"
       :username="username"
       :current-chat-id="currentChatId"
       :knowledge-base-id="knowledgeBaseId"
@@ -267,7 +267,6 @@ const rightPanelStyle = computed(() =>
         width: widths.value.right + "px",
         flex: "0 0 auto",
         boxSizing: "border-box" as const,
-        transition: "none",
       }
     : {},
 );

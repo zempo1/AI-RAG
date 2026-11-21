@@ -78,6 +78,17 @@ body {
 .app-layout > .quiz-panel {
   min-width: 0;
 }
+.app-layout > :is(.sidebar, .workbench) {
+  transition: width 240ms ease, padding 240ms ease, max-width 240ms ease;
+}
+.app-layout:has(> .panel-resize-handle.dragging) > :is(.sidebar, .workbench) {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-layout > :is(.sidebar, .workbench) {
+    transition: none;
+  }
+}
 @media (max-width: 767px) {
   .app-layout > .sidebar:not(.collapsed) {
     max-width: 42vw;
