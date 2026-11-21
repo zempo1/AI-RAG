@@ -10,6 +10,7 @@ import { HistoryService } from "../history/history.service";
 import { UserId } from "../auth/auth.guard";
 import { ApiError, errorMessage } from "../../common/api-error";
 import { Citation, normalizeCitations } from "../rag/citations";
+import { QuizzesService } from "../quizzes/quizzes.service";
 import { AgentQaTasksService } from "../tasks/agent-qa.service";
 
 @Controller("api")
@@ -19,6 +20,7 @@ export class ChatController {
     private readonly history: HistoryService,
     private readonly qa: QaTasksService,
     @Optional() private readonly agentTasks?: AgentQaTasksService,
+    @Optional() private readonly quizzes?: QuizzesService,
   ) {}
 
   private fingerprint(body: ChatDto) {
@@ -30,6 +32,7 @@ export class ChatController {
           body.question?.trim(),
           [...(body.documentIds || [])].sort((a, b) => a - b),
           body.mode || "auto",
+          ...(body.quizContext ? [body.quizContext] : []),
         ]),
       )
       .digest("hex");
@@ -41,7 +44,20 @@ export class ChatController {
     onProgress?: (stage: string) => void,
     signal?: AbortSignal,
     onAgentStep?: (step: any) => Promise<void> | void,
+    onTaskStarted?: (task: ReturnType<AgentQaTasksService["accepted"]>) => void,
   ) {
+    if (!body.question?.trim()) throw new ApiError(400, "Question is required.");
+    if (body.quizContext) {
+      if (!this.quizzes) throw new ApiError(503, "测验解释暂不可用");
+      const resolved = await this.quizzes.resolveChatContext(
+        user,
+        body.quizContext,
+        body.knowledgeBaseId,
+      );
+      // The canonical, readable question is also persisted as the user message.
+      // Source retrieval already supplies evidence privately; never serialize metadata into chat text.
+      body = { ...body, ...resolved };
+    }
     if (!body.question?.trim()) throw new ApiError(400, "Question is required.");
     const fingerprint = this.fingerprint(body),
       requestId = body.requestId || randomUUID();
@@ -55,6 +71,7 @@ export class ChatController {
         fingerprint,
       });
       if (started.existing) return { accepted: this.agentTasks.accepted(started.task) };
+      onTaskStarted?.(this.agentTasks.accepted(started.task));
       const execution = this.agentTasks.execution(started.task.id, started.token!, signal);
       try {
         const context = await this.chat.prepare(
@@ -64,6 +81,7 @@ export class ChatController {
           {
             documentIds: body.documentIds,
             mode: body.mode || "auto",
+            quizContext: body.quizContext,
             requestId,
             chatId: started.chat.id,
             history: started.chat.messages || [],
@@ -108,6 +126,7 @@ export class ChatController {
       onProgress,
       signal,
       onAgentStep,
+      quizContext: body.quizContext,
     });
     // 全文证据超出上下文时转为后台任务，HTTP/SSE 返回受理信息，前端随后轮询。
     if (context.requiresAsync) {
@@ -187,7 +206,14 @@ export class ChatController {
   ) {
     // Preserve HTTP authorization/validation errors before switching to SSE.
     if (!body.question?.trim()) throw new ApiError(400, "Question is required.");
-    if (body.chatId != null) await this.history.writable(body.chatId, user, body.knowledgeBaseId);
+    let scopedKnowledgeBaseId = body.knowledgeBaseId;
+    if (body.quizContext) {
+      if (!this.quizzes) throw new ApiError(503, "测验解释暂不可用");
+      scopedKnowledgeBaseId = (
+        await this.quizzes.resolveChatContext(user, body.quizContext, body.knowledgeBaseId)
+      ).knowledgeBaseId;
+    }
+    if (body.chatId != null) await this.history.writable(body.chatId, user, scopedKnowledgeBaseId);
     const status = (stage: string) => {
       if (!res.destroyed && !res.writableEnded)
         res.write("event: status\ndata: " + JSON.stringify({ stage }) + "\n\n");
@@ -215,10 +241,21 @@ export class ChatController {
     status("understanding");
     let prepared: Awaited<ReturnType<ChatController["prepare"]>>;
     try {
-      prepared = await this.prepare(body, user, apiKey, status, abort.signal, (step) => {
-        if (!res.destroyed && !res.writableEnded)
-          res.write("event: agent_step\ndata: " + JSON.stringify(step) + "\n\n");
-      });
+      prepared = await this.prepare(
+        body,
+        user,
+        apiKey,
+        status,
+        abort.signal,
+        (step) => {
+          if (!res.destroyed && !res.writableEnded)
+            res.write("event: agent_step\ndata: " + JSON.stringify(step) + "\n\n");
+        },
+        (task) => {
+          if (!res.destroyed && !res.writableEnded)
+            res.write("event: task_started\ndata: " + JSON.stringify(task) + "\n\n");
+        },
+      );
     } catch (error) {
       if (!res.destroyed && !res.writableEnded) {
         res.write(

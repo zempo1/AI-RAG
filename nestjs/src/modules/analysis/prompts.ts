@@ -21,19 +21,6 @@ export function analysisPrompt(type: string, content: string): string {
       "文档内容：\n\n" +
       content
     );
-  if (type === "FLASHCARD")
-    return (
-      "请根据以下文档内容生成 10-15 张知识点问答卡片（Flashcard），严格按照 JSON 数组格式输出。\n" +
-      "要求：\n" +
-      '1. 每张卡片包含 "q"（问题）和 "a"（答案）两个字段\n' +
-      "2. 问题应简明扼要，考查核心知识点\n" +
-      "3. 答案应完整准确，100字以内\n" +
-      "4. 覆盖文档的重要概念、定义、流程等\n" +
-      "只输出 JSON 数组，不要任何其他文字或代码块标记，格式示例：\n" +
-      '[{"q":"问题1","a":"答案1"},{"q":"问题2","a":"答案2"}]\n\n' +
-      "文档内容：\n\n" +
-      content
-    );
   throw new Error("Unknown analysis type: " + type);
 }
 

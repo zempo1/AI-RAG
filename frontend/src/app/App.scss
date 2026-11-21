@@ -63,12 +63,45 @@ body {
     radial-gradient(circle at 100% 100%, rgba(6, 182, 212, 0.05) 0%, transparent 50%);
 }
 
-@media (min-width: 1200px) {
-  .reader-is-open > .main-content,
-  .reader-is-open > .source-panel,
-  .reader-is-open > .mindmap-panel {
-    flex: 1 1 0;
-    width: 0;
-    min-width: 0;
+.return-to-quiz {
+  align-self: flex-start;
+  margin: 10px 16px 0;
+  border: 1px solid var(--accent-color);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 9px 14px;
+  cursor: pointer;
+}
+.app-layout > .source-panel,
+.app-layout > .mindmap-panel,
+.app-layout > .quiz-panel {
+  min-width: 0;
+}
+.app-layout > :is(.sidebar, .workbench) {
+  transition: width 240ms ease, padding 240ms ease, max-width 240ms ease;
+}
+.app-layout:has(> .panel-resize-handle.dragging) > :is(.sidebar, .workbench) {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-layout > :is(.sidebar, .workbench) {
+    transition: none;
+  }
+}
+@media (max-width: 767px) {
+  .app-layout > .sidebar:not(.collapsed) {
+    max-width: 42vw;
+    padding: 12px;
+  }
+  .app-layout > .workbench {
+    position: fixed;
+    right: 0;
+    top: 0;
+    height: 100dvh;
+    z-index: 20;
+  }
+  .app-layout > .workbench:not(.collapsed) {
+    max-width: 48vw;
   }
 }

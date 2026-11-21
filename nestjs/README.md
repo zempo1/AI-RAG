@@ -124,3 +124,14 @@ POST /api/chat 返回 answer/citations；POST /api/stream-chat 保留默认 toke
 前端 npm run test:e2e 使用本机 Edge 无头浏览器，验证引用抽屉、流式中断、跨库筛选重置、替换完成及失败重试、已删除知识库的历史只读。接口为受控测试响应，不访问用户账号。
 
 默认集成测试会短暂停止并恢复专用 redis-test 容器，验证 MySQL outbox 补投；不操作日常 redis 服务。设置 TEST_REDIS_RESTART=0 可跳过该项；覆盖 TEST_REDIS_URL 时默认跳过。测试结束后可在项目根目录执行 docker compose --profile test stop mysql-test redis-test qdrant-test 停止专用测试容器。
+# 智能测验
+
+`QuizzesModule` 与已有摘要接口并存，题集使用 `quizzes`，练习记录使用 `quiz_attempts`。已有数据库运行 `npm run schema:upgrade`，空数据库运行 `npm run migration:run`；升级脚本包含可重复执行的 `Quizzes1794873600000`，应用启动仍只检查结构。升级不会清理旧摘要、旧题集和历史成绩。
+
+测验接口：`POST /api/quizzes/generate` 接收 `documentId`、`singleCount`、`multipleCount` 和 UUID `requestId`，总题数 1～20，返回 202 后轮询已有任务接口。任务 `kind=quiz`，成功展示 `quizResult={quizId}`，取消和重试沿用 `/api/tasks/:id/cancel`、`retry`。SQL 为任务事实来源，支持 memory 和独立 BullMQ `quiz` 队列。仅从固定版本原文分块选材，每批最多两题，最多一次格式修复，整套通过校验后原子保存；生成中替换上传、重建索引或删源会撤销发布权限。
+
+`GET /api/quizzes/workspace?knowledgeBaseId=...` 返回题集与任务；`GET/DELETE /api/quizzes/:id` 查看或删除题集。`POST /api/quizzes/:id/attempts {requestId}` 创建练习；使用新 UUID 重新练习，旧成绩保留。`GET /api/quiz-attempts/:id` 恢复作答；`PATCH /api/quiz-attempts/:id/progress` 接收 `currentIndex?`、`questionId?`、`selectedOptionIds?`、`submit?`。单选一项，多选任意非空选择均可提交；完全匹配才得分，每题等权百分制。重复相同提交幂等，不同答案返回 409。未提交题绝不返回答案和解析；已提交题只在对应练习中展示答案与逐项解析。
+
+聊天可传 `quizContext={attemptId,questionId}`。服务端在幂等指纹前验证所有权、已提交状态和来源版本，并构造权威题目及判分上下文，强制同知识库唯一文档的 `search` 模式。来源更新后旧题仍可练习，但不能 AI 解释。删除题集、文档或知识库会级联删除练习记录并取消生成。
+
+针对测验的无网络测试：`npm test -- --runTestsByPath test/quizzes.spec.ts test/quiz-generation.spec.ts test/quiz-lifecycle.spec.ts test/quiz-http.spec.ts test/quiz-chat-context.spec.ts test/store-lock-current.spec.ts`。真实模型质量和实际 MySQL 迁移需在相应部署环境另行核验。

@@ -24,7 +24,12 @@ import { AgentCheckpoints1794268800000 } from "./migrations/1794268800000-agent-
 import { ModelSetting } from "../modules/model-settings/model-setting.entity";
 import { ModelSettings1794355200000 } from "./migrations/1794355200000-model-settings";
 
+import { Quiz, QuizAttempt } from "../modules/quizzes/entities/quiz.entity";
+import { Quizzes1794873600000 } from "./migrations/1794873600000-quizzes";
+
 export const entityTargets = {
+  quizzes: Quiz,
+  quizAttempts: QuizAttempt,
   modelSettings: ModelSetting,
   agentCheckpoints: AgentCheckpoint,
   agentCheckpointWrites: AgentCheckpointWrite,
@@ -68,6 +73,7 @@ export function mysqlOptions(env: Record<string, any>): DataSourceOptions {
       RagQuality1793491200000,
       AgentCheckpoints1794268800000,
       ModelSettings1794355200000,
+      Quizzes1794873600000,
     ],
     synchronize: false,
     migrationsRun: false,

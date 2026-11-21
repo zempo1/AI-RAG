@@ -1,6 +1,6 @@
 import { Store, now } from "../../persistence/store";
 import { AgentBudget, AgentBudgetState } from "./agent-budget";
-import { AgentGraphOwner, withAgentGraphOwner } from "./agent-graph-owner";
+import { AGENT_LEASE_MS, AgentGraphOwner, withAgentGraphOwner } from "./agent-graph-owner";
 import type { AgentSnapshot, PublicStep } from "./agent.types";
 
 export interface AgentLedger {
@@ -49,7 +49,7 @@ export class AgentGraphRun {
         completed: this.budget.decisions,
         payload: {
           ...task.payload,
-          leaseUntil: Date.now() + 300000,
+          leaseUntil: Date.now() + AGENT_LEASE_MS,
           agentBudgetLedger: {
             budget: this.budget,
             repairUsed: this.repairUsed,

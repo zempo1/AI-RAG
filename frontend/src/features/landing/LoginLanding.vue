@@ -6,8 +6,8 @@
 
     <nav class="navbar">
       <div class="brand">
-        <div class="ai-logo">AI</div>
-        <span>AI-RAG</span>
+        <div class="ai-logo" aria-hidden="true">屿</div>
+        <span>知屿 · Islet</span>
       </div>
       <div class="nav-links">
         <el-button link @click="scrollTo('features')">特性</el-button>
@@ -20,10 +20,10 @@
 
     <main class="hero-section">
       <div class="hero-content">
-        <h1 class="hero-title">您的个人 <span class="gradient-text">知识大脑</span></h1>
-        <p class="hero-subtitle">
-          上传您的文档，即刻开启基于私有数据的 AI 对话。支持流式响应、思维导图生成及多用户隔离。
-        </p>
+        <p class="brand-tagline" lang="en">A PLACE FOR THOUGHTS</p>
+        <h1 class="hero-title">知屿 · <span class="gradient-text">Islet</span></h1>
+        <p class="hero-subtitle">让每一份知识，都有自己的归处。</p>
+        <p class="brand-values">简约 · 沉淀 · 探索 · 成长</p>
         <div class="hero-btns">
           <el-button type="primary" size="large" round class="main-btn" @click="showAuth = true">
             开始体验 <el-icon class="el-icon--right"><ArrowRight /></el-icon>

@@ -213,6 +213,52 @@ it("publishes v2 progress without replacing the durable budget ledger", async ()
   }
 });
 
+it("recovers an abandoned foreground task within 20 seconds of its last checkpoint", async () => {
+  const p = await fixture();
+  const clock = jest.spyOn(Date, "now").mockReturnValue(100_000);
+  try {
+    const started = await p.service.begin(1, p.input);
+    const id = started.task.id;
+    const owner = { taskId: id, token: started.token! };
+    const graph = new AgentGraphRun(p.store, owner, undefined, []);
+    expect(started.task.payload.leaseUntil).toBe(120_000);
+    clock.mockReturnValue(105_000);
+    await graph.charge({ phase: "tool" } as any);
+    clock.mockReturnValue(124_999);
+    expect(await p.service.process(id)).toBe("waiting");
+    clock.mockReturnValue(125_000);
+    expect(await p.service.process(id)).toBe("done");
+    expect((await p.store.get("tasks", id))?.status).toBe("completed");
+    await expect(p.service.guard(id, owner.token)).rejects.toThrow();
+    expect((await p.store.list("messages")).map((m) => m.role)).toEqual(["user", "assistant"]);
+  } finally {
+    clock.mockRestore();
+    await p.cleanup();
+  }
+});
+
+it("renews a live execution while it waits for a tool or model without checkpoint progress", async () => {
+  const p = await fixture();
+  jest.useFakeTimers({ now: 100_000 });
+  try {
+    const started = await p.service.begin(1, p.input);
+    const id = started.task.id;
+    const execution = p.service.execution(id, started.token!);
+    try {
+      await jest.advanceTimersByTimeAsync(60_000);
+      const lease = (await p.store.get("tasks", id))?.payload.leaseUntil;
+      expect(lease).toBeGreaterThan(Date.now());
+      expect(lease).toBeLessThanOrEqual(Date.now() + 20_000);
+      expect(await p.service.process(id)).toBe("waiting");
+    } finally {
+      execution.dispose();
+    }
+  } finally {
+    jest.useRealTimers();
+    await p.cleanup();
+  }
+});
+
 it("cancel clears ownership and records an interrupted history message", async () => {
   const p = await fixture();
   try {

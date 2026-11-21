@@ -10,7 +10,7 @@ export function configureApp(app: INestApplication): void {
   (app as NestExpressApplication).useBodyParser("json", { limit: "4mb" });
   app.enableCors({
     origin: "*",
-    methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Api-Key", "Range"],
     exposedHeaders: ["Accept-Ranges", "Content-Range", "Content-Length"],
   });

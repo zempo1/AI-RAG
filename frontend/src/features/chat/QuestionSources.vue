@@ -27,21 +27,6 @@
         disabled
       />
     </el-select>
-    <el-select
-      :model-value="mode"
-      :disabled="disabled"
-      aria-label="问答模式"
-      popper-class="knowledge-theme knowledge-popper"
-      @update:model-value="emit('update:mode', $event)"
-    >
-      <el-option label="自动判断" value="auto" /><el-option
-        label="通用回答"
-        value="general"
-      /><el-option label="知识问答" value="search" /><el-option
-        label="全文概览"
-        value="overview"
-      /><el-option label="文档比较" value="compare" />
-    </el-select>
     <span v-if="error" class="qa-control-error" role="alert"
       >来源加载失败 <button @click="load()">重试</button></span
     >
@@ -50,16 +35,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { listLibraryDocuments, type ManagedDocument } from "../../api/knowledge-bases";
-import type { QaMode } from "../../api/chat";
 const props = defineProps<{
   knowledgeBaseId: number | null;
   documentIds: number[];
-  mode: QaMode;
   disabled: boolean;
 }>();
 const emit = defineEmits<{
   (e: "update:documentIds", ids: number[]): void;
-  (e: "update:mode", mode: QaMode): void;
 }>();
 const documents = ref<ManagedDocument[]>([]),
   loading = ref(false),

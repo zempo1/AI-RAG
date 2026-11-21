@@ -15,6 +15,7 @@ export interface PublicStep {
   sources?: { filename: string; page: number | null }[];
 }
 export interface AgentOptions extends RetrievalOptions {
+  quizContext?: { attemptId: number; questionId: string };
   onAgentStep?: (step: PublicStep) => Promise<void> | void;
   onCheckpoint?: (snapshot: AgentSnapshot) => Promise<void>;
   guard?: () => Promise<unknown> | unknown;

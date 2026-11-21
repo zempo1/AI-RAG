@@ -1,5 +1,9 @@
 import { Row, Store } from "../../persistence/store";
 
+// Keep crash recovery bounded while allowing several missed heartbeats.
+export const AGENT_LEASE_MS = 20_000;
+export const AGENT_LEASE_RENEW_MS = 4_000;
+
 export interface AgentGraphOwner {
   taskId: number;
   token: string;

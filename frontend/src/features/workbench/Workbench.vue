@@ -93,26 +93,17 @@
         />
       </template>
 
-      <!-- ===== AI 摘要 ===== -->
-      <template v-else-if="activeTab === 'summary'">
-        <GenerateSection
-          :file-name="uploadedFileName"
-          :icon="Memo"
-          button-text="生成 AI 摘要"
-          :loading="summaryGenerating"
-          :disabled="!uploadedFileName || !props.uploadedDocumentId"
-          @generate="handleGenerate('SUMMARY')"
-        />
-        <div class="wb-divider" />
-        <AnalysisList
-          :items="summaries"
-          :loading="summaryLoading"
-          empty-text="暂无摘要记录"
-          @export="exportMarkdown"
-          @delete="handleDeleteAnalysis"
-        />
-      </template>
-
+      <!-- ===== 智能测验 ===== -->
+      <QuizWorkbench
+        v-else-if="activeTab === 'quiz'"
+        ref="quizWorkspaceRef"
+        :document-id="uploadedDocumentId"
+        :document-ready="props.uploadedDocumentReady"
+        :filename="uploadedFileName"
+        :knowledge-base-id="knowledgeBaseId"
+        :active="props.active"
+        @open="(id, restart) => emit('open-quiz', id, restart)"
+      />
       <!-- ===== 文档大纲 ===== -->
       <template v-else-if="activeTab === 'outline'">
         <GenerateSection
@@ -172,6 +163,7 @@ import { getTask, retryTask } from "../../api/knowledge-bases";
 import type { ProcessingTask } from "../../api/knowledge-bases";
 import request from "../../utils/request";
 import FlashcardViewer from "../flashcard/FlashcardViewer.vue";
+import QuizWorkbench from "../quiz/QuizWorkbench.vue";
 import GenerateSection from "./components/GenerateSection/GenerateSection.vue";
 import HistoryList from "./components/HistoryList/HistoryList.vue";
 import AnalysisList from "./components/AnalysisList/AnalysisList.vue";
@@ -193,25 +185,39 @@ import { useConfirm } from "../../composables/useConfirm";
 const props = defineProps<{
   uploadedFileName: string;
   uploadedDocumentId: number | null;
+  uploadedDocumentReady?: boolean;
   knowledgeBaseId?: number | null;
   active?: boolean;
+  collapsed?: boolean;
 }>();
 
-const emit = defineEmits<{ (e: "open-mindmap", id: number): void }>();
+const emit = defineEmits<{
+  (e: "open-mindmap", id: number): void;
+  (e: "update:collapsed", value: boolean): void;
+  (e: "open-quiz", id: number, restart?: boolean): void;
+}>();
 const toast = useToast();
 const confirm = useConfirm();
 
 const tabs: {
-  key: "mindmap" | "summary" | "outline" | "flashcard";
+  key: "mindmap" | "quiz" | "outline" | "flashcard";
   label: string;
 }[] = [
   { key: "mindmap", label: "思维导图" },
-  { key: "summary", label: "AI 摘要" },
+  { key: "quiz", label: "智能测验" },
   { key: "outline", label: "文档大纲" },
   { key: "flashcard", label: "学习卡片" },
 ];
-const activeTab = ref<"mindmap" | "summary" | "outline" | "flashcard">("mindmap");
-const isCollapsed = ref(false);
+const activeTab = ref<"mindmap" | "quiz" | "outline" | "flashcard">("mindmap");
+const quizWorkspaceRef = ref<InstanceType<typeof QuizWorkbench>>();
+const localCollapsed = ref(false);
+const isCollapsed = computed({
+  get: () => props.collapsed ?? localCollapsed.value,
+  set: (value: boolean) => {
+    localCollapsed.value = value;
+    emit("update:collapsed", value);
+  },
+});
 
 // 思维导图
 const mindmapGenerating = ref(false);
@@ -378,7 +384,7 @@ const refreshTab = (tab: keyof typeof loaders) => {
 watch(
   activeTab,
   (tab) => {
-    void loaders[tab].ensure();
+    if (tab !== "quiz") void loaders[tab].ensure();
   },
   { immediate: true },
 );
@@ -525,7 +531,9 @@ const onSourceDeleted = async (documentId: number) => {
 const refresh = () => {
   workspaceRevision++;
   Object.values(loaders).forEach((loader) => loader.invalidate());
-  return loaders[activeTab.value].ensure();
+  return activeTab.value === "quiz"
+    ? quizWorkspaceRef.value?.refresh()
+    : loaders[activeTab.value].ensure();
 };
 watch(
   () => props.uploadedDocumentId,
@@ -551,7 +559,7 @@ watch(
     flashcardViewerVisible.value = false;
     summaryGenerating.value = outlineGenerating.value = flashcardGenerating.value = false;
     Object.values(loaders).forEach((loader) => loader.invalidate());
-    void loaders[activeTab.value].ensure();
+    if (activeTab.value !== "quiz") void loaders[activeTab.value].ensure();
   },
 );
 watch(

@@ -263,25 +263,6 @@
       padding: 0 4px;
     }
 
-    .upload-collapsed {
-      display: flex;
-      justify-content: center;
-      margin-top: 10px;
-
-      .collapsed-upload-btn {
-        background: rgba(255, 255, 255, 0.02);
-        border: 1px dashed var(--border-color);
-        color: var(--text-secondary);
-        width: 40px;
-        height: 40px;
-
-        &:hover {
-          color: var(--accent-color);
-          border-color: var(--accent-color);
-          background: var(--bg-hover);
-        }
-      }
-    }
   }
 
   .sidebar-footer {
@@ -322,10 +303,6 @@
           font-weight: 500;
         }
 
-        .status {
-          font-size: 0.75rem;
-          color: var(--text-secondary);
-        }
       }
 
       .user-actions {

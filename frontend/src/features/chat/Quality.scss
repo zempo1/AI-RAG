@@ -1,6 +1,6 @@
 .qa-controls {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) 140px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   padding: 12px 24px;
   border-bottom: 1px solid var(--border-color);
@@ -22,7 +22,6 @@
 }
 @media (max-width: 768px) {
   .qa-controls {
-    grid-template-columns: minmax(0, 1fr) 100px;
     padding: 12px;
   }
 }
@@ -107,6 +106,5 @@
 @media (max-width: 600px) {
   .qa-controls {
     padding: 10px 12px;
-    grid-template-columns: minmax(100px, 1fr) 115px;
   }
 }

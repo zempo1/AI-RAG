@@ -186,7 +186,7 @@ export function compileAgentGraph(
     .addNode("plan", run("plan"), { ends: ["decide", "tool", "finalize", "handoff"] })
     .addNode("decide", run("decide"), { ends: ["tool", "assess", "finalize", "handoff"] })
     .addNode("tool", run("tool"), { ends: ["tool", "decide", "assess", "finalize", "handoff"] })
-    .addNode("assess", run("assess"), { ends: ["decide", "finalize", "handoff"] })
+    .addNode("assess", run("assess"), { ends: ["decide", "tool", "finalize", "handoff"] })
     .addNode(
       "handoff",
       (state) => {

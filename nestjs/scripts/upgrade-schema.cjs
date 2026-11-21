@@ -24,6 +24,10 @@ const {
       ModelSettings1794355200000,
     } = require("../dist/persistence/migrations/1794355200000-model-settings");
     await new ModelSettings1794355200000().up(runner);
+    const {
+      Quizzes1794873600000,
+    } = require("../dist/persistence/migrations/1794873600000-quizzes");
+    await new Quizzes1794873600000().up(runner);
     console.log("知识库、版本、任务与引用结构升级完成；旧文档归入用户默认库，旧页码保持未知。");
   } finally {
     await runner.release();

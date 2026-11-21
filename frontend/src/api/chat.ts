@@ -19,6 +19,7 @@ export interface AcceptedAnswer {
 }
 export const getRetrievalRun = (id: number) => request.get<any, any>("/api/retrieval-runs/" + id);
 export interface StreamChatParams {
+  quizContext?: { attemptId: number; questionId: string };
   question: string;
   chatId: number | null;
   knowledgeBaseId: number;

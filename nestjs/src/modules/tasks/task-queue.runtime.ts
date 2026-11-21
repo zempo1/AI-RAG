@@ -1,6 +1,7 @@
 /** 以数据库任务为准，将任务 ID 投递到队列并组织消费。 */
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy, Optional } from "@nestjs/common";
 import { QaTasksService } from "./qa-tasks.service";
+import { QuizzesService } from "../quizzes/quizzes.service";
 import { MindMapsService } from "../mindmaps/mindmaps.service";
 import { ConfigService } from "@nestjs/config";
 import { Queue, Worker, UnrecoverableError, DelayedError } from "bullmq";
@@ -28,6 +29,7 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
     private readonly tasks: TasksService,
     @Optional() private readonly qa?: QaTasksService,
     @Optional() private readonly mindmaps?: MindMapsService,
+    @Optional() private readonly quizzes?: QuizzesService,
   ) {}
 
   onModuleInit() {
@@ -36,7 +38,7 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
       this.loopDelay.enable();
     }
     if (this.config.get("QUEUE_DRIVER") === "bullmq") {
-      for (const name of ["documents", "cleanup", "qa", "mindmap"]) {
+      for (const name of ["documents", "cleanup", "qa", "mindmap", "quiz"]) {
         const queue = new Queue(name, {
           prefix: this.config.get("QUEUE_PREFIX"),
           connection: this.connection(false),
@@ -50,7 +52,13 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
             async (job) => {
               try {
                 const result = await (
-                  name === "mindmap" ? this.mindmaps! : name === "qa" ? this.qa! : this.indexing
+                  name === "quiz"
+                    ? this.quizzes!
+                    : name === "mindmap"
+                      ? this.mindmaps!
+                      : name === "qa"
+                        ? this.qa!
+                        : this.indexing
                 ).process(job.data.taskId, job.attemptsMade + 1, (progress) =>
                   job.updateProgress(progress),
                 );
@@ -154,24 +162,28 @@ export class TaskQueueRuntime implements OnModuleInit, OnModuleDestroy {
           if (delay) continue;
           try {
             await (
-              task.kind === "mindmap"
-                ? this.mindmaps!
-                : task.kind === "qa"
-                  ? this.qa!
-                  : this.indexing
+              task.kind === "quiz"
+                ? this.quizzes!
+                : task.kind === "mindmap"
+                  ? this.mindmaps!
+                  : task.kind === "qa"
+                    ? this.qa!
+                    : this.indexing
             ).process(task.id, task.attempts + 1);
           } catch {
             /* Durable task status carries the failure; next tick retries. */
           }
         } else {
           const queue = this.queues.get(
-            task.kind === "mindmap"
-              ? "mindmap"
-              : task.kind === "qa"
-                ? "qa"
-                : task.kind === "index"
-                  ? "documents"
-                  : "cleanup",
+            task.kind === "quiz"
+              ? "quiz"
+              : task.kind === "mindmap"
+                ? "mindmap"
+                : task.kind === "qa"
+                  ? "qa"
+                  : task.kind === "index"
+                    ? "documents"
+                    : "cleanup",
           );
           if (!queue) continue;
           // 任务 ID 加投递代数构成队列标识，普通补投可去重，手动重试可创建新一代队列任务。

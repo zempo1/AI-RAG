@@ -7,7 +7,6 @@
     <QuestionSources
       :knowledge-base-id="knowledgeBaseId"
       v-model:document-ids="selectedDocumentIds"
-      v-model:mode="mode"
       :disabled="loading || readOnly"
     />
     <div class="messages-viewport">
@@ -15,10 +14,10 @@
         <div ref="messagesContent" class="messages-content">
           <div v-if="messages.length === 0" class="empty-state">
             <div class="logo-container">
-              <div class="logo">AI</div>
+              <div class="logo" aria-hidden="true">屿</div>
             </div>
-            <h1>有什么我可以帮您的吗？</h1>
-            <p class="subtitle">直接提问，或选择文档深入交流</p>
+            <h1>知屿 · Islet</h1>
+            <p class="subtitle">让每一份知识，都有自己的归处。</p>
           </div>
 
           <div v-for="(msg, index) in messages" :key="index" class="message-row" :class="msg.role">
@@ -183,10 +182,9 @@ interface Message {
 }
 
 const props = defineProps<{ knowledgeBaseId: number | null }>();
-const emit = defineEmits(["chat-created", "history-loaded", "open-source"]);
+const emit = defineEmits(["chat-created", "history-loaded", "open-source", "availability-change"]);
 const readOnly = ref(false);
 const selectedDocumentIds = ref<number[]>([]),
-  mode = ref<QaMode>("auto"),
   debugRunId = ref<number | null>(null);
 const activeTask = ref<ProcessingTask | null>(null),
   taskConnectionError = ref(false);
@@ -252,7 +250,6 @@ function restoreContext(rows: Message[]) {
     .find((m) => m.role === "user" && m.retrievalContext)?.retrievalContext;
   if (context) {
     selectedDocumentIds.value = [...(context.documentIds || [])];
-    mode.value = context.mode || "auto";
   }
 }
 function pollTask(task: ProcessingTask, taskChatId: number, currentEpoch: number) {
@@ -474,7 +471,6 @@ const reset = () => {
   cancelError.value = "";
   stopTaskPolling();
   selectedDocumentIds.value = [];
-  mode.value = "auto";
   debugRunId.value = null;
   loading.value = false;
   readOnly.value = false;
@@ -486,7 +482,35 @@ const reset = () => {
   if (textareaRef.value) textareaRef.value.style.height = "auto";
 };
 
-defineExpose({ loadHistory, reset });
+interface ExternalQuestionOptions {
+  documentIds: number[];
+  mode: QaMode;
+  quizContext?: { attemptId: number; questionId: string };
+}
+async function sendExternalQuestion(
+  question: string,
+  options: ExternalQuestionOptions,
+): Promise<boolean> {
+  if (loading.value || !props.knowledgeBaseId || !question.trim()) return false;
+  // Deleted-library history is read-only. Start a writable conversation without discarding the draft.
+  if (readOnly.value) {
+    const draft = input.value,
+      sources = [...selectedDocumentIds.value];
+    reset();
+    input.value = draft;
+    selectedDocumentIds.value = sources;
+  }
+  void sendMessage({ question, ...options });
+  return true;
+}
+defineExpose({ loadHistory, reset, sendExternalQuestion });
+watch(
+  [loading, readOnly],
+  ([isLoading, isReadOnly]) => {
+    emit("availability-change", { loading: isLoading, readOnly: isReadOnly });
+  },
+  { immediate: true },
+);
 
 watch(input, () => {
   adjustTextareaHeight();
@@ -498,38 +522,52 @@ const handleEnter = (e: KeyboardEvent) => {
   }
 };
 
-const sendMessage = async () => {
-  if (!input.value.trim() || loading.value || readOnly.value || !props.knowledgeBaseId) return;
+const sendMessage = async (external?: { question: string } & ExternalQuestionOptions) => {
+  // Vue click handlers pass a MouseEvent; only our explicit envelope is an external question.
+  const supplied = external && typeof external.question === "string" ? external : undefined;
+  const question = supplied?.question ?? input.value;
+  if (!question.trim() || loading.value || readOnly.value || !props.knowledgeBaseId) return;
   const currentEpoch = ++epoch;
   streamAbort = new AbortController();
   canceling.value = false;
   stopRequested.value = false;
   cancelError.value = "";
 
-  const question = input.value;
   const retrievalContext: RetrievalContext = {
-    documentIds: [...selectedDocumentIds.value],
-    mode: mode.value,
+    documentIds: [...(supplied?.documentIds ?? selectedDocumentIds.value)],
+    mode: supplied?.mode ?? "auto",
   };
   messages.value.push({ role: "user", content: question, retrievalContext });
-  input.value = "";
-  if (textareaRef.value) textareaRef.value.style.height = "auto";
+  if (!supplied) {
+    input.value = "";
+    if (textareaRef.value) textareaRef.value.style.height = "auto";
+  }
 
   loading.value = true;
   const aiMsgIndex = messages.value.push({ role: "assistant", content: "", loading: true }) - 1;
 
   await scrollToBottom(true);
 
+  let recoverableTask: AcceptedAnswer | undefined;
   await sendStreamChat(
     {
       question,
       chatId: chatId.value,
       knowledgeBaseId: props.knowledgeBaseId,
-      ...(selectedDocumentIds.value.length ? { documentIds: [...selectedDocumentIds.value] } : {}),
-      mode: mode.value,
+      ...(retrievalContext.documentIds?.length
+        ? { documentIds: retrievalContext.documentIds }
+        : {}),
+      mode: retrievalContext.mode,
+      ...(supplied?.quizContext ? { quizContext: supplied.quizContext } : {}),
       requestId: crypto.randomUUID(),
     },
     {
+      onTaskStarted: (task) => {
+        if (currentEpoch !== epoch) return;
+        recoverableTask = task;
+        chatId.value = task.chatId;
+        emit("chat-created", task.chatId);
+      },
       onAgentStep: (step) => {
         if (currentEpoch !== epoch) return;
         const message = messages.value[aiMsgIndex];
@@ -576,6 +614,7 @@ const sendMessage = async () => {
       },
       onDone: (final) => {
         if (currentEpoch !== epoch) return;
+        recoverableTask = undefined;
         Object.assign(messages.value[aiMsgIndex], {
           content: final.answer,
           citations: final.citations,
@@ -586,6 +625,20 @@ const sendMessage = async () => {
       },
       onError: (err) => {
         if (currentEpoch !== epoch) return;
+        if (recoverableTask && !streamAbort?.signal.aborted) {
+          pollTask(
+            {
+              id: recoverableTask.taskId,
+              status: "running",
+              stage: "reconnecting",
+              completed: 0,
+              total: null,
+            } as ProcessingTask,
+            recoverableTask.chatId,
+            currentEpoch,
+          );
+          return;
+        }
         console.error(err);
         toast.error(err instanceof Error ? err.message : "获取响应失败");
         const message = messages.value[aiMsgIndex];

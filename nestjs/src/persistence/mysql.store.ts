@@ -12,8 +12,19 @@ export class MysqlStore extends Store {
   async lock(table: Table, id: number): Promise<Row | undefined> {
     if (!this.manager.queryRunner?.isTransactionActive)
       throw new Error("Row locks require a transaction");
-    await this.query(`SELECT id FROM ${this.name(table)} WHERE id = ? FOR UPDATE`, [id]);
-    return this.get(table, id);
+    // Return values from the locking current read itself. A subsequent ordinary
+    // SELECT can still see a pre-lock REPEATABLE READ snapshot and lose a submit.
+    const select = this.manager.connection
+      .getMetadata(entityTargets[table])
+      .columns.map(
+        (column) => `${this.column(table, column.propertyName)} AS \`${column.propertyName}\``,
+      )
+      .join(", ");
+    const rows = await this.query(
+      `SELECT ${select} FROM ${this.name(table)} WHERE id = ? FOR UPDATE`,
+      [id],
+    );
+    return rows[0] ? this.normalize(rows[0], table) : undefined;
   }
 
   private name(table: Table) {

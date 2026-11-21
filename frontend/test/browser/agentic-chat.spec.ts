@@ -14,6 +14,59 @@ const agent = {
   status: "running",
   stopReason: null,
 };
+test("前台连接断流后恢复已创建任务，不把仍在执行的讲解标为中断", async ({ page }) => {
+  await fixture(page);
+  let complete = false;
+  await page.route("**/api/stream-chat", (route) =>
+    route.fulfill({
+      contentType: "text/event-stream",
+      body:
+        'event: task_started\ndata: {"taskId":91,"chatId":7,"requestId":"recover"}\n\nevent: agent_step\ndata: ' +
+        JSON.stringify(step) +
+        "\n\n",
+    }),
+  );
+  await page.route("**/api/tasks/91", (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          id: 91,
+          status: complete ? "completed" : "running",
+          stage: "tool",
+          agentProgress: agent,
+        },
+      },
+    }),
+  );
+  await page.route("**/api/chats/7", (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          id: 7,
+          knowledgeBaseId: 1,
+          messages: [
+            { role: "user", content: "解释这道题" },
+            {
+              role: "assistant",
+              content: "恢复后的完整讲解",
+              generationStatus: "completed",
+              citations: [],
+            },
+          ],
+          pendingTasks: [],
+        },
+      },
+    }),
+  );
+  await page.getByPlaceholder("发送消息...").fill("解释这道题");
+  await page.getByPlaceholder("发送消息...").press("Enter");
+  await expect(page.locator(".generation-status")).toContainText("后台");
+  await expect(page.getByText("生成已中断，内容可能不完整", { exact: true })).toHaveCount(0);
+  complete = true;
+  await expect(page.locator(".markdown-body").last()).toContainText("恢复后的完整讲解", {
+    timeout: 8000,
+  });
+});
 async function fixture(page: Page) {
   await page.addInitScript(() => localStorage.setItem("token", "test-token"));
   await page.route(
@@ -414,7 +467,7 @@ test("leaving an accepted background task never sends cancellation", async ({ pa
   await page.getByPlaceholder("发送消息...").press("Enter");
   await expect(page.getByRole("button", { name: "停止后台任务", exact: true })).toBeEnabled();
   await page.getByText("新对话", { exact: true }).click();
-  await expect(page.getByText("有什么我可以帮您的吗？", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "知屿 · Islet", level: 1 })).toBeVisible();
   await page.goto("about:blank");
   expect(cancelCalls).toBe(0);
 });

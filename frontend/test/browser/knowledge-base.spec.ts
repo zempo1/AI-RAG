@@ -634,7 +634,7 @@ test("refreshes derived artifacts only after a replacement task has actually com
   await page.getByRole("button", { name: "管理文档", exact: true }).click();
   await page.getByRole("button", { name: "用于工作台", exact: true }).click();
   await page.locator(".el-drawer__close-btn:visible").click();
-  await page.getByText("AI 摘要", { exact: true }).click();
+  await page.getByText("文档大纲", { exact: true }).click();
   await expect.poll(() => state.analysisRequests).toBeGreaterThan(0);
   await page.getByRole("button", { name: "管理文档", exact: true }).click();
   const baseline = state.analysisRequests;
@@ -679,7 +679,7 @@ test("tracks a manually retried replacement until it publishes and refreshes the
   page,
 }) => {
   const state = await fixture(page);
-  await page.getByText("AI 摘要", { exact: true }).click();
+  await page.getByText("文档大纲", { exact: true }).click();
   await expect.poll(() => state.analysisRequests).toBeGreaterThan(0);
   await page.getByRole("button", { name: "管理文档", exact: true }).click();
   const baseline = state.analysisRequests;
