@@ -9,6 +9,11 @@ import { runWithTaskModels } from "../model-settings/model-runtime";
 import { openQaCredential } from "../tasks/qa-credentials";
 import { terminalTask } from "../tasks/tasks.service";
 import {
+  selectGenerationSources,
+  generationBatchSources,
+  packGenerationSources,
+} from "../documents/generation-sources";
+import {
   normalizeQuestions,
   validateCounts,
   QuizQuestion,
@@ -16,52 +21,7 @@ import {
   quizEvidenceSources,
 } from "./quiz-data";
 
-/** Stratify by section, then by source position; exact duplicate chunks never consume a slot. */
-export function selectQuizSources(chunks: Row[], limit: number): Row[] {
-  const seen = new Set<string>();
-  const groups = new Map<string, Row[]>();
-  for (const chunk of [...chunks].sort((a, b) => a.chunkIndex - b.chunkIndex || a.id - b.id)) {
-    if (typeof chunk.text !== "string" || !chunk.text.trim()) continue;
-    const normalized = chunk.text.replace(/\s+/g, " ").trim();
-    if (seen.has(normalized)) continue;
-    seen.add(normalized);
-    const section = String(
-      chunk.location?.sectionTitle ||
-        chunk.location?.heading ||
-        chunk.retrievalMetadata?.sectionTitle ||
-        chunk.location?.page ||
-        "document",
-    );
-    const group = groups.get(section) || [];
-    group.push(chunk);
-    groups.set(section, group);
-  }
-  const values = [...groups.values()];
-  const result: Row[] = [];
-  let round = 0;
-  // Interleave sections before taking more from the same section. Within each section use
-  // alternating beginning/end and then the middle to avoid an introduction-only sample.
-  while (result.length < limit) {
-    let added = false;
-    for (let g = 0; g < values.length && result.length < limit; g++) {
-      const index =
-        values.length > limit ? Math.round((g * (values.length - 1)) / Math.max(1, limit - 1)) : g;
-      const group = values[index];
-      if (!group) continue;
-      const position =
-        round % 2 === 0 ? Math.floor(round / 2) : group.length - 1 - Math.floor(round / 2);
-      if (position < 0 || position >= group.length) continue;
-      const chunk = group[position];
-      if (!result.some((c) => c.id === chunk.id)) {
-        result.push(chunk);
-        added = true;
-      }
-    }
-    if (!added) break;
-    round++;
-  }
-  return result;
-}
+export { selectGenerationSources as selectQuizSources } from "../documents/generation-sources";
 const LEASE = 300000;
 export class QuizRunner {
   constructor(
@@ -178,7 +138,7 @@ export class QuizRunner {
           ).filter(
             (c) => c.documentId === task.documentId && c.versionId === task.payload.versionId,
           );
-          const source = selectQuizSources(all, Math.max(8, (single + multiple) * 2));
+          const source = selectGenerationSources(all, Math.max(8, (single + multiple) * 2));
           if (!source.length) throw new ApiError(422, "原文没有足够内容生成测验");
           const questions: QuizQuestion[] = [];
           let remainingSingle = single,
@@ -193,37 +153,12 @@ export class QuizRunner {
             const batchCount = batch + Math.ceil((remainingSingle + remainingMultiple) / batchSize);
             const singles = Math.min(batchSize, remainingSingle);
             const multiples = Math.min(batchSize - singles, remainingMultiple);
-            // Position-stratified slices cover the document even for a one-batch quiz.
-            const preferred = source.filter(
-              (_, i) => batchCount === 1 || Math.floor((i * batchCount) / source.length) === batch,
+            const selected = await packGenerationSources(
+              generationBatchSources(source, batch, batchCount),
+              (chunks) => this.prompt(chunks, singles, multiples, questions, true),
+              this.tokenizer,
+              context - output - 1024,
             );
-            if (!preferred.length) preferred.push(source[batch % source.length]);
-            const selected: Row[] = [];
-            for (const chunk of preferred) {
-              const candidate = [...selected, chunk];
-              if (
-                (await this.tokenizer.count(
-                  this.prompt(candidate, singles, multiples, questions, true),
-                )) +
-                  output +
-                  1024 <=
-                context
-              )
-                selected.push(chunk);
-              else if (!selected.length) {
-                const base =
-                  (await this.tokenizer.count(
-                    this.prompt([{ ...chunk, text: "" }], singles, multiples, questions, true),
-                  )) +
-                  output +
-                  1024;
-                const budget = context - base - 64;
-                if (budget > 32) {
-                  const windows = await this.tokenizer.windows(chunk.text, budget, 0);
-                  if (windows[0]) selected.push({ ...chunk, text: windows[0].text });
-                }
-              }
-            }
             if (!selected.length) throw new ApiError(422, "模型上下文预算不足以容纳原文和完整题目");
             let parsed: QuizQuestion[] | undefined;
             let retrySmallBatch = false;

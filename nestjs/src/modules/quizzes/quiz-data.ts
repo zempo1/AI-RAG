@@ -1,5 +1,6 @@
 import { ApiError } from "../../common/api-error";
 import { Row } from "../../persistence/store";
+import { generationEvidenceSources } from "../documents/generation-sources";
 
 export interface QuizQuestion {
   id: string;
@@ -19,32 +20,7 @@ export interface QuizAnswer {
 }
 export type Answers = Record<string, QuizAnswer>;
 export const OPTION_IDS = ["A", "B", "C", "D"];
-/** Server-owned contiguous snippets: the model selects IDs instead of transcribing PDF text. */
-export function quizEvidenceSources(chunks: Row[]) {
-  return chunks.flatMap((chunk) => {
-    const chars = Array.from(String(chunk.text || ""));
-    const parts: { sourceId: string; chunkId: number; text: string; location: unknown }[] = [];
-    let text = "",
-      index = 0;
-    const append = () => {
-      if (text) {
-        parts.push({
-          sourceId: `s${chunk.id}_${index++}`,
-          chunkId: chunk.id,
-          text,
-          location: chunk.location ?? null,
-        });
-        text = "";
-      }
-    };
-    for (const char of chars) {
-      if (text.length + char.length > 600) append();
-      text += char;
-    }
-    append();
-    return parts;
-  });
-}
+export { generationEvidenceSources as quizEvidenceSources } from "../documents/generation-sources";
 export class QuizValidationError extends ApiError {
   constructor(reason: string) {
     super(502, `测验校验失败：${reason}`);
@@ -99,7 +75,9 @@ export function normalizeQuestions(
   if (!Array.isArray(value) || value.length !== single + multiple)
     return invalid("题目数量与请求不一致");
   let singles = 0;
-  const sources = new Map(quizEvidenceSources(chunks).map((source) => [source.sourceId, source]));
+  const sources = new Map(
+    generationEvidenceSources(chunks).map((source) => [source.sourceId, source]),
+  );
   const seen = new Set(previous.map((q) => q.stem.replace(/[\s\p{P}]/gu, "").toLowerCase()));
   const result = value.map((q: any, index: number): QuizQuestion => {
     if (

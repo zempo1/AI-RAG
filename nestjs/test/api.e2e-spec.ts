@@ -58,7 +58,20 @@ describe("existing Vue API contract", () => {
             if (failLlm) throw new Error("upstream unavailable");
             if (prompt.startsWith("你是中文文档知识结构整理助手"))
               return '{"root":{"data":{"text":"测试"},"children":[]}}';
-            if (prompt.includes("Flashcard")) return '[{"q":"问题","a":"答案"}]';
+            if (prompt.includes("Flashcard")) {
+              const previous = JSON.parse(prompt.match(/已有问题：([^\n]+)/)![1]);
+              const [source] = JSON.parse(prompt.match(/<原文>\n([^\n]+)\n<\/原文>/)![1]);
+              return JSON.stringify({
+                cards: Array.from(
+                  { length: Number(prompt.match(/生成 ([12]) 张/)![1]) },
+                  (_, i) => ({
+                    q: `问题 ${previous.length + i + 1}`,
+                    a: "答案",
+                    sourceId: source.sourceId,
+                  }),
+                ),
+              });
+            }
             finalCalls++;
             return "根据文档回答";
           },
@@ -277,6 +290,7 @@ describe("existing Vue API contract", () => {
         .send({ documentId: doc, type })
         .expect(200);
       expect(res.body.data.type).toBe(type);
+      if (type === "FLASHCARD") expect(JSON.parse(res.body.data.content)).toHaveLength(10);
       const list = await request(app.getHttpServer())
         .get("/api/analysis")
         .query({ type })
